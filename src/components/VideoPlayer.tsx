@@ -2,13 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-function VideoPlayer() {
+
+type VideoPlayerProps = {
+  onDurationChange?: (duration: number) => void;
+  onTimeChange?: (currentTime: number) => void;
+  seekTo?: number;
+  onVideoNameChange?: (name: string) => void;
+
+  // Waveforms
+  onVideoPathChange?: (path: string) => void;
+  
+};
+
+function VideoPlayer({
+  onDurationChange,
+  onTimeChange,
+  onVideoNameChange,
+  onVideoPathChange,
+  seekTo,
+}: VideoPlayerProps) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [skipSeconds] = useState(10);
+  
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -28,9 +47,12 @@ function VideoPlayer() {
       return;
     }
 
+    onVideoPathChange?.(selected);
+
     const name = selected.split(/[\\/]/).pop() ?? "Unknown video";
 
     setVideoName(name);
+    onVideoNameChange?.(name);
     setVideoUrl(convertFileSrc(selected));
 
     setCurrentTime(0);
@@ -114,6 +136,13 @@ function VideoPlayer() {
     };
   }, [skipSeconds]);
 
+  useEffect(() => {
+    if (videoRef.current && seekTo !== undefined) {
+      videoRef.current.currentTime = seekTo;
+      setCurrentTime(seekTo);
+    }
+  }, [seekTo]);
+
   return (
     <section>
       <button onClick={chooseVideo}>
@@ -128,14 +157,21 @@ function VideoPlayer() {
             ref={videoRef}
             src={videoUrl}
             onTimeUpdate={() => {
-              if (videoRef.current) {
-                setCurrentTime(videoRef.current.currentTime);
-              }
+                const video = videoRef.current;
+                if (!video) return;
+
+                const time = video.currentTime;
+
+                setCurrentTime(time);
+                onTimeChange?.(time);
             }}
             onLoadedMetadata={() => {
-              if (videoRef.current) {
-                setDuration(videoRef.current.duration);
-              }
+                if (videoRef.current) {
+                    const videoDuration = videoRef.current.duration;
+
+                    setDuration(videoDuration);
+                    onDurationChange?.(videoDuration);
+                }
             }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
