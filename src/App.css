@@ -207,3 +207,180 @@ input {
   font-size: 12px;
   color: #aaa;
 }
+
+/* Subtitle Track */
+.subtitle-track {
+  position: relative;
+  width: 100%;
+  height: 42px;
+  margin-top: 8px;
+
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.subtitle-clip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+
+  padding: 6px 8px;
+
+  background: #4a4a4a;
+  border: 1px solid #666;
+  border-radius: 4px;
+
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.subtitle-clip.selected {
+  outline: 2px solid white;
+}
+
+.subtitle-panel {
+  display: flex;
+  flex-direction: column;
+
+  padding: 0;
+  border-left: 1px solid #333;
+  background: #202020;
+
+  min-height: 0;
+}
+
+.subtitle-panel-header {
+  padding: 14px;
+  border-bottom: 1px solid #333;
+}
+
+.subtitle-panel-header h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.subtitle-search {
+  width: 100%;
+  padding: 8px 10px;
+
+  background: #181818;
+  color: white;
+
+  border: 1px solid #444;
+  border-radius: 6px;
+
+  outline: none;
+}
+
+.subtitle-search:focus {
+  border-color: #777;
+}
+
+.subtitle-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.subtitle-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+
+  min-height: 38px;
+  padding: 3px 8px;
+
+  cursor: pointer;
+}
+
+.subtitle-row:hover {
+  background: #2a2a2a;
+}
+
+.subtitle-row.selected {
+  background: #344534;
+}
+
+.subtitle-row-time {
+  color: #999;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subtitle-row-text {
+  width: 100%;
+
+  padding: 6px 4px;
+
+  background: transparent;
+  color: white;
+
+  border: none;
+  outline: none;
+
+  font-size: 14px;
+}
+
+.subtitle-row.selected .subtitle-row-text {
+  color: white;
+}
+
+.subtitle-empty {
+  padding: 14px;
+  color: #888;
+}
+
+.subtitle-row.active {
+  background: #2f3a2f;
+}
+
+.subtitle-row.active.selected {
+  background: #3d513d;
+}
+
+.subtitle-clip {
+  user-select: none;
+}
+
+.subtitle-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 5;
+}
+
+.subtitle-resize-handle.right {
+  right: 0;
+}
+
+.subtitle-resize-handle.left {
+  left: 0;
+}
+
+.subtitle-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 28px;
+  align-items: center;
+  min-height: 38px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.subtitle-delete {
+  border: none;
+  background: transparent;
+  color: #999;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+}
+
+.subtitle-delete:hover {
+  color: white;
+}

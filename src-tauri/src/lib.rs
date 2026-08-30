@@ -66,10 +66,7 @@ fn extract_waveform(video_path: String, points: usize) -> Result<Vec<f32>, Strin
         waveform.push(rms);
     }
 
-    let max_amplitude = waveform
-        .iter()
-        .copied()
-        .fold(0.0_f32, f32::max);
+    let max_amplitude = waveform.iter().copied().fold(0.0_f32, f32::max);
 
     if max_amplitude > 0.0 {
         for value in &mut waveform {
@@ -83,10 +80,9 @@ fn extract_waveform(video_path: String, points: usize) -> Result<Vec<f32>, Strin
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            extract_waveform
-        ])
+        .invoke_handler(tauri::generate_handler![extract_waveform])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,12 +1,26 @@
 import { useEffect, useRef } from "react";
+import type { Subtitle } from "../types/subtitle";
 
 type TimelineProps = {
   duration: number;
   currentTime: number;
   videoName: string | null;
+  
+  // Waveform
   waveform: number[];
   zoom: number;
   onSeek?: (time: number) => void;
+
+  // Subtitles
+  subtitles: Subtitle[];
+  selectedSubtitleId: string | null;
+  onSubtitleSelect?: (id: string) => void;
+  onSubtitleMove?: (id: string, newStartTime: number) => void; 
+  onSubtitleResize?: (
+    id: string,
+    newStartTime: number,
+    newEndTime: number
+  ) => void; 
 };
 
 function Timeline({
@@ -16,6 +30,11 @@ function Timeline({
   videoName,
   waveform,
   zoom,
+  subtitles,
+  selectedSubtitleId,
+  onSubtitleSelect,
+  onSubtitleMove,
+  onSubtitleResize,
 }: TimelineProps) {
   const getMarkerInterval = () => {
     if (zoom >= 6) return 0.5;
@@ -141,6 +160,168 @@ function Timeline({
               left: `${playheadPosition}%`,
             }}
           />
+        </div>
+
+        <div className="subtitle-track">
+          {subtitles.map((subtitle) => {
+            const left =
+              duration > 0 ? (subtitle.startTime / duration) * 100 : 0;
+
+            const width =
+              duration > 0
+                ? ((subtitle.endTime - subtitle.startTime) / duration) * 100
+                : 0;
+
+            return (
+              <div
+                key={subtitle.id}
+                className={`subtitle-clip ${
+                  selectedSubtitleId === subtitle.id ? "selected" : ""
+                }`}
+                style={{
+                  left: `${left}%`,
+                  width: `${width}%`,
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSubtitleSelect?.(subtitle.id);
+                  onSeek?.(subtitle.startTime);
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+
+                  const startX = event.clientX;
+                  const originalStart = subtitle.startTime;
+                  const originalDuration = subtitle.endTime - subtitle.startTime;
+
+                  const timelineElement = event.currentTarget.parentElement;
+
+                  if (!timelineElement || duration <= 0) return;
+
+                  const timelineWidth =
+                    timelineElement.getBoundingClientRect().width;
+
+                  const handleMouseMove = (moveEvent: MouseEvent) => {
+                    const deltaX = moveEvent.clientX - startX;
+
+                    const deltaTime =
+                      (deltaX / timelineWidth) * duration;
+
+                    const newStart = Math.max(
+                      0,
+                      Math.min(
+                        duration - originalDuration,
+                        originalStart + deltaTime
+                      )
+                    );
+
+                    onSubtitleMove?.(subtitle.id, newStart);
+                  };
+
+                  const handleMouseUp = () => {
+                    window.removeEventListener("mousemove", handleMouseMove);
+                    window.removeEventListener("mouseup", handleMouseUp);
+                  };
+
+                  window.addEventListener("mousemove", handleMouseMove);
+                  window.addEventListener("mouseup", handleMouseUp);
+                }}
+              >
+
+                <div
+                  className="subtitle-resize-handle left"
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+
+                    const startX = event.clientX;
+                    const originalStart = subtitle.startTime;
+
+                    const timelineElement =
+                      event.currentTarget.parentElement?.parentElement;
+
+                    if (!timelineElement || duration <= 0) return;
+
+                    const timelineWidth =
+                      timelineElement.getBoundingClientRect().width;
+
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
+                      const deltaX = moveEvent.clientX - startX;
+
+                      const deltaTime =
+                        (deltaX / timelineWidth) * duration;
+
+                      const newStart = Math.max(
+                        0,
+                        Math.min(
+                          subtitle.endTime - 0.1,
+                          originalStart + deltaTime
+                        )
+                      );
+
+                      onSubtitleResize?.(
+                        subtitle.id,
+                        newStart,
+                        subtitle.endTime
+                      );
+                    };
+
+                    const handleMouseUp = () => {
+                      window.removeEventListener("mousemove", handleMouseMove);
+                      window.removeEventListener("mouseup", handleMouseUp);
+                    };
+
+                    window.addEventListener("mousemove", handleMouseMove);
+                    window.addEventListener("mouseup", handleMouseUp);
+                  }}
+                />
+                
+                {subtitle.text}
+
+                <div
+                  className="subtitle-resize-handle right"
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+
+                    const startX = event.clientX;
+                    const originalEnd = subtitle.endTime;
+
+                    const timelineElement =
+                      event.currentTarget.parentElement?.parentElement;
+
+                    if (!timelineElement || duration <= 0) return;
+
+                    const timelineWidth =
+                      timelineElement.getBoundingClientRect().width;
+
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
+                      const deltaX = moveEvent.clientX - startX;
+                      const deltaTime =
+                        (deltaX / timelineWidth) * duration;
+
+                      const newEnd = Math.max(
+                        subtitle.startTime + 0.1,
+                        Math.min(duration, originalEnd + deltaTime)
+                      );
+
+                      onSubtitleResize?.(
+                        subtitle.id,
+                        subtitle.startTime,
+                        newEnd
+                      );
+                    };
+
+                    const handleMouseUp = () => {
+                      window.removeEventListener("mousemove", handleMouseMove);
+                      window.removeEventListener("mouseup", handleMouseUp);
+                    };
+
+                    window.addEventListener("mousemove", handleMouseMove);
+                    window.addEventListener("mouseup", handleMouseUp);
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
