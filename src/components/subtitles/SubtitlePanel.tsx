@@ -4,7 +4,11 @@ import type { Subtitle } from "../../types/subtitle";
 import { formatSubtitleTime } from "../../utils/time";
 import "./SubtitlePanel.css";
 
-import type { WhisperModel } from "../../services/transcriptionService";
+import type {
+  TranscriptionEngine,
+  WhisperModel,
+} from "../../services/transcriptionService";
+
 
 type SubtitlePanelProps = {
   subtitles: Subtitle[];
@@ -28,6 +32,11 @@ type SubtitlePanelProps = {
 
   whisperModel: WhisperModel;
   onWhisperModelChange: (model: WhisperModel) => void;
+  
+  transcriptionEngine: TranscriptionEngine;
+  onTranscriptionEngineChange: (engine: TranscriptionEngine) => void;
+
+  generationError: string;
 };
 
 function SubtitlePanel({
@@ -49,6 +58,9 @@ function SubtitlePanel({
   modelDownloadPercent,
   whisperModel,
   onWhisperModelChange,
+  transcriptionEngine,
+  onTranscriptionEngineChange,
+  generationError,
 }: SubtitlePanelProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -67,6 +79,16 @@ function SubtitlePanel({
     }
   }, [activeSubtitleId]);
 
+  const isDownloading = generationStatus.startsWith("Downloading");
+
+  const isTranscribing = generationStatus === "Transcribing...";
+
+  const isDeterminate = isDownloading || isTranscribing;
+
+  const displayedPercent = isDownloading
+    ? modelDownloadPercent
+    : generationPercent;  
+
   return (
     <aside className="subtitle-panel">
       <div className="subtitle-panel-header">
@@ -74,22 +96,43 @@ function SubtitlePanel({
 
         <div className="subtitle-actions">
           <select
-            value={whisperModel}
+            value={transcriptionEngine}
             onChange={(event) =>
-              onWhisperModelChange(
-                event.target.value as WhisperModel
+              onTranscriptionEngineChange(
+                event.target.value as TranscriptionEngine
               )
             }
             disabled={isGenerating}
           >
-            <option value="base">
-              Base - Fast
+            <option value="whisper">
+              Whisper
             </option>
 
-            <option value="small">
-              Small - More Accurate
+            <option value="sensevoice">
+              SenseVoice — Cantonese / Chinese
             </option>
           </select>
+
+          {transcriptionEngine === "whisper" && (
+            <select
+              value={whisperModel}
+              onChange={(event) =>
+                onWhisperModelChange(
+                  event.target.value as WhisperModel
+                )
+              }
+              disabled={isGenerating}
+            >
+              <option value="base">
+                Base - Fast
+              </option>
+
+              <option value="small">
+                Small - More Accurate
+              </option>
+            </select>
+          )}
+
           <button onClick={onAdd}>Add</button>
           <button
             onClick={() => void onGenerate()}
@@ -99,6 +142,11 @@ function SubtitlePanel({
               ? generationStatus || "Generating..."
               : "Generate"}
           </button>
+          {generationError && (
+            <div className="subtitle-generation-error">
+              {generationError}
+            </div>
+          )}
           <button onClick={() => void onImport()}>Import SRT</button>
           <button onClick={() => void onExport()}>Export SRT</button>
         </div>
@@ -108,25 +156,26 @@ function SubtitlePanel({
             <div className="subtitle-generation-status">
               <span>{generationStatus || "Generating..."}</span>
 
-              {generationStatus === "Downloading model..." && (
-                <span>{modelDownloadPercent}%</span>
-              )}
-
-              {generationStatus === "Transcribing..." && (
-                <span>{generationPercent}%</span>
+              {isDeterminate && (
+                <span>{displayedPercent}%</span>
               )}
             </div>
 
-            <div className="subtitle-progress-track">
+            <div
+              className={[
+                "subtitle-progress-track",
+                !isDeterminate ? "indeterminate" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <div
                 className="subtitle-progress-fill"
-                style={{
-                  width: `${
-                    generationStatus === "Downloading model..."
-                      ? modelDownloadPercent
-                      : generationPercent
-                  }%`,
-                }}
+                style={
+                  isDeterminate
+                    ? { width: `${displayedPercent}%` }
+                    : undefined
+                }
               />
             </div>
           </div>

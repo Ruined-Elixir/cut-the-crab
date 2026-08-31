@@ -88,9 +88,11 @@ pub fn transcribe_with_sensevoice(
     let converted_segments = parse_srt_output(&stdout)?
         .into_iter()
         .map(|mut segment| {
-            segment.text = converter
+            let converted = converter
                 .convert(&segment.text)
                 .map_err(|e| format!("Failed to convert SenseVoice text: {e}"))?;
+
+            segment.text = clean_subtitle_punctuation(&converted);
 
             Ok(segment)
         })
@@ -288,4 +290,30 @@ fn parse_srt_time(value: &str) -> Result<f64, String> {
         .map_err(|_| format!("Invalid milliseconds in timestamp: {value}"))?;
 
     Ok(hours * 3600.0 + minutes * 60.0 + seconds + milliseconds / 1000.0)
+}
+
+fn clean_subtitle_punctuation(text: &str) -> String {
+    let cleaned = text
+        .chars()
+        .map(|ch| {
+            if matches!(
+                ch,
+                '。' | '，' | '、' | '；' | '：'
+                    | '！' | '？'
+                    | '.' | ',' | ';' | ':'
+                    | '!' | '?'
+            ) {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .collect::<String>();
+
+    cleaned
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
 }

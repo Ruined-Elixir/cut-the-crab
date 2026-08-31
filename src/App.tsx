@@ -13,9 +13,12 @@ import { exportSrtFile, importSrtFile } from "./services/srtFiles";
 import {
   transcribeVideo,
   type WhisperModel,
+  type TranscriptionEngine,
 } from "./services/transcriptionService";
 
 import { listen } from "@tauri-apps/api/event";
+
+
 
 
 
@@ -39,6 +42,11 @@ function App() {
   const [modelDownloadPercent, setModelDownloadPercent] = useState(0);
   const [whisperModel, setWhisperModel] =
   useState<WhisperModel>("base");
+
+  const [transcriptionEngine, setTranscriptionEngine] =
+  useState<TranscriptionEngine>("whisper");
+
+  const [generationError, setGenerationError] = useState("");
 
   const {
     subtitles,
@@ -76,28 +84,43 @@ function App() {
     await exportSrtFile(subtitles);
   };
 
-  const generateSubtitles = async () => {
-    if (!videoPath || isGeneratingSubtitles) return;
+  async function generateSubtitles() {
+    if (!videoPath) {
+      setGenerationError("Please choose a video first.");
+      return;
+    }
+
+    setIsGeneratingSubtitles(true);
+    setGenerationError("");
+    setTranscriptionStatus("Checking models...");
+    setTranscriptionPercent(0);
+    setModelDownloadPercent(0);
 
     try {
-
-      setIsGeneratingSubtitles(true);
-      setTranscriptionStatus("Starting...");
-      setTranscriptionPercent(0);
-      setModelDownloadPercent(0);
-
-      const result = await transcribeVideo(videoPath, whisperModel);
+      const result = await transcribeVideo(
+        videoPath,
+        transcriptionEngine,
+        whisperModel
+      );
 
       replaceWithGeneratedSubtitles(result.segments);
 
-      console.log("Detected language:", result.language);
+      setTranscriptionStatus("Finished");
+      setTranscriptionPercent(100);
     } catch (error) {
-      console.error("Subtitle generation failed:", error);
+      console.error("Failed to generate subtitles:", error);
+
       setTranscriptionStatus("Failed");
+
+      setGenerationError(
+        error instanceof Error
+          ? error.message
+          : String(error)
+      );
     } finally {
       setIsGeneratingSubtitles(false);
     }
-  };
+  }
 
   useEffect(() => {
     const unlistenStatusPromise = listen<string>(
@@ -170,6 +193,9 @@ function App() {
           modelDownloadPercent={modelDownloadPercent}
           whisperModel={whisperModel}
           onWhisperModelChange={setWhisperModel}
+          transcriptionEngine={transcriptionEngine}
+          onTranscriptionEngineChange={setTranscriptionEngine}
+          generationError={generationError}
         />
       </div>
 

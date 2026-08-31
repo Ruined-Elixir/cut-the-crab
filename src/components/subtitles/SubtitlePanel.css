@@ -130,3 +130,32 @@
   border-radius: inherit;
   transition: width 0.15s ease;
 }
+
+.subtitle-generation-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #ff6b6b;
+}
+
+.subtitle-progress-track.indeterminate {
+  overflow: hidden;
+}
+
+.subtitle-progress-track.indeterminate .subtitle-progress-fill {
+  width: 35%;
+  animation: subtitle-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes subtitle-progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  50% {
+    transform: translateX(120%);
+  }
+
+  100% {
+    transform: translateX(320%);
+  }
+}
