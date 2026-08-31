@@ -1,0 +1,183 @@
+.timeline-panel {
+  height: 240px;
+  padding: 16px 20px;
+  border-top: 1px solid #333;
+  background: #202020;
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.timeline-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-controls span {
+  min-width: 52px;
+  text-align: center;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.timeline-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline-content {
+  min-width: 100%;
+  transition: width 250ms ease-in-out;
+}
+
+.timeline-ruler {
+  position: relative;
+  width: 100%;
+  height: 35px;
+  border-bottom: 1px solid #444;
+}
+
+.timeline-marker {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.timeline-marker:first-child {
+  transform: translateX(0);
+}
+
+.timeline-marker:last-child {
+  transform: translateX(-100%);
+}
+
+.timeline-tick {
+  width: 1px;
+  height: 10px;
+  margin-top: 4px;
+  background: #777;
+}
+
+.timeline-track {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  margin-top: 12px;
+  padding: 0;
+  overflow: hidden;
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.timeline-video-clip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #343434;
+  border-radius: 3px;
+}
+
+.timeline-video-name {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  z-index: 2;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.waveform-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: white;
+  transform: translateX(-1px);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.subtitle-track {
+  position: relative;
+  width: 100%;
+  height: 42px;
+  margin-top: 8px;
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.subtitle-clip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  padding: 6px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: none;
+  background: #4a4a4a;
+  border: 1px solid #666;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: grab;
+}
+
+.subtitle-clip:active {
+  cursor: grabbing;
+}
+
+.subtitle-clip.selected {
+  outline: 2px solid white;
+}
+
+.subtitle-clip-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 5;
+}
+
+.subtitle-resize-handle.left {
+  left: 0;
+}
+
+.subtitle-resize-handle.right {
+  right: 0;
+}

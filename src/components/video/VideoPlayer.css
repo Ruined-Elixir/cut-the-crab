@@ -1,0 +1,47 @@
+.video-player {
+  width: 100%;
+}
+
+.video-player-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.video-name {
+  color: #aaa;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-preview {
+  display: block;
+  width: 800px;
+  max-width: 100%;
+  margin-top: 20px;
+}
+
+.video-controls {
+  width: 800px;
+  max-width: 100%;
+  margin-top: 10px;
+}
+
+.video-control-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.video-time {
+  display: block;
+  margin: 8px 0;
+  color: #bbb;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-seek {
+  width: 100%;
+}

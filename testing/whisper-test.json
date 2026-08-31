@@ -1,0 +1,4234 @@
+{
+	"systeminfo": "WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | MTL : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | REPACK = 1 | ",
+	"model": {
+		"type": "base",
+		"multilingual": true,
+		"vocab": 51865,
+		"audio": {
+			"ctx": 1500,
+			"state": 512,
+			"head": 8,
+			"layer": 6
+		},
+		"text": {
+			"ctx": 448,
+			"state": 512,
+			"head": 8,
+			"layer": 6
+		},
+		"mels": 80,
+		"ftype": 1
+	},
+	"params": {
+		"model": "models/ggml-base.bin",
+		"language": "auto",
+		"translate": false
+	},
+	"result": {
+		"language": "en"
+	},
+	"transcription": [
+		{
+			"timestamps": {
+				"from": "00:00:00,290",
+				"to": "00:00:02,670"
+			},
+			"offsets": {
+				"from": 290,
+				"to": 2670
+			},
+			"text": " You know what separated humans from the robots?"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:02,670",
+				"to": "00:00:04,570"
+			},
+			"offsets": {
+				"from": 2670,
+				"to": 4570
+			},
+			"text": " Breathing, not anymore."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:04,570",
+				"to": "00:00:05,770"
+			},
+			"offsets": {
+				"from": 4570,
+				"to": 5770
+			},
+			"text": " This mouse breathes."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:05,770",
+				"to": "00:00:09,670"
+			},
+			"offsets": {
+				"from": 5770,
+				"to": 9670
+			},
+			"text": " Okay, okay, it's not like aspirating and expirating."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:09,670",
+				"to": "00:00:12,550"
+			},
+			"offsets": {
+				"from": 9670,
+				"to": 12550
+			},
+			"text": " It's blowing air on your hands."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:12,550",
+				"to": "00:00:13,630"
+			},
+			"offsets": {
+				"from": 12550,
+				"to": 13630
+			},
+			"text": " That's right."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:13,630",
+				"to": "00:00:18,690"
+			},
+			"offsets": {
+				"from": 13630,
+				"to": 18690
+			},
+			"text": " The knock to a Feynman FO1 mouse is a mouse with a fan in it."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:19,490",
+				"to": "00:00:22,130"
+			},
+			"offsets": {
+				"from": 19490,
+				"to": 22130
+			},
+			"text": " And the fun part is, it's actually a good fan this time."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:22,130",
+				"to": "00:00:23,330"
+			},
+			"offsets": {
+				"from": 22130,
+				"to": 23330
+			},
+			"text": " It's made by an octo."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:23,330",
+				"to": "00:00:25,370"
+			},
+			"offsets": {
+				"from": 23330,
+				"to": 25370
+			},
+			"text": " Look, look at that, look at that guy."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:25,370",
+				"to": "00:00:26,970"
+			},
+			"offsets": {
+				"from": 25370,
+				"to": 26970
+			},
+			"text": " It's a freaking fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:26,970",
+				"to": "00:00:31,240"
+			},
+			"offsets": {
+				"from": 26970,
+				"to": 31240
+			},
+			"text": " The idea is for sweaty gamers whose palms get sweaty."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:31,240",
+				"to": "00:00:34,050"
+			},
+			"offsets": {
+				"from": 31240,
+				"to": 34050
+			},
+			"text": " When they game, and it should cool you down,"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:34,050",
+				"to": "00:00:36,650"
+			},
+			"offsets": {
+				"from": 34050,
+				"to": 36650
+			},
+			"text": " keep you in the game longer, click in heads,"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:36,650",
+				"to": "00:00:39,920"
+			},
+			"offsets": {
+				"from": 36650,
+				"to": 39920
+			},
+			"text": " doing all that stuff, but the question remains,"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:39,920",
+				"to": "00:00:42,080"
+			},
+			"offsets": {
+				"from": 39920,
+				"to": 42080
+			},
+			"text": " is it a good mouse on top of its fan?"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:42,080",
+				"to": "00:00:43,000"
+			},
+			"offsets": {
+				"from": 42080,
+				"to": 43000
+			},
+			"text": " Let's find out."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:43,000",
+				"to": "00:00:47,100"
+			},
+			"offsets": {
+				"from": 43000,
+				"to": 47100
+			},
+			"text": " Inside our box, we have actually the thing"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:47,100",
+				"to": "00:00:49,000"
+			},
+			"offsets": {
+				"from": 47100,
+				"to": 49000
+			},
+			"text": " I might be most excited about."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:49,000",
+				"to": "00:00:52,710"
+			},
+			"offsets": {
+				"from": 49000,
+				"to": 52710
+			},
+			"text": " This dongle, we'll come back to this later."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:52,710",
+				"to": "00:00:58,040"
+			},
+			"offsets": {
+				"from": 52710,
+				"to": 58040
+			},
+			"text": " We have, looks like a six-foot paracord cable."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:58,040",
+				"to": "00:01:00,390"
+			},
+			"offsets": {
+				"from": 58040,
+				"to": 60390
+			},
+			"text": " This is a really nice cable."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:00,390",
+				"to": "00:01:01,870"
+			},
+			"offsets": {
+				"from": 60390,
+				"to": 61870
+			},
+			"text": " If you haven't noticed already,"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:01,870",
+				"to": "00:01:04,350"
+			},
+			"offsets": {
+				"from": 61870,
+				"to": 64350
+			},
+			"text": " everything is in the knock to a Bayesian brown."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:04,350",
+				"to": "00:01:06,110"
+			},
+			"offsets": {
+				"from": 64350,
+				"to": 66110
+			},
+			"text": " POSR makes the regular Feynman,"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:06,110",
+				"to": "00:01:08,630"
+			},
+			"offsets": {
+				"from": 66110,
+				"to": 68630
+			},
+			"text": " which is another hollow body mouse in the same shape"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:08,630",
+				"to": "00:01:09,870"
+			},
+			"offsets": {
+				"from": 68630,
+				"to": 69870
+			},
+			"text": " that doesn't have the fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:09,870",
+				"to": "00:01:11,430"
+			},
+			"offsets": {
+				"from": 69870,
+				"to": 71430
+			},
+			"text": " And it's a good mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:11,430",
+				"to": "00:01:13,390"
+			},
+			"offsets": {
+				"from": 71430,
+				"to": 73390
+			},
+			"text": " Oh, this is longer than six feet."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:13,390",
+				"to": "00:01:18,940"
+			},
+			"offsets": {
+				"from": 73390,
+				"to": 78940
+			},
+			"text": " That's like a full two meters."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:18,940",
+				"to": "00:01:21,490"
+			},
+			"offsets": {
+				"from": 78940,
+				"to": 81490
+			},
+			"text": " I don't want to do it too tight."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:21,490",
+				"to": "00:01:22,780"
+			},
+			"offsets": {
+				"from": 81490,
+				"to": 82780
+			},
+			"text": " I don't want to measure this."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:22,780",
+				"to": "00:01:24,180"
+			},
+			"offsets": {
+				"from": 82780,
+				"to": 84180
+			},
+			"text": " Don't make me measure this, Brad."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:24,180",
+				"to": "00:01:25,020"
+			},
+			"offsets": {
+				"from": 84180,
+				"to": 85020
+			},
+			"text": " Why are you making me measure this?"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:25,020",
+				"to": "00:01:25,620"
+			},
+			"offsets": {
+				"from": 85020,
+				"to": 85620
+			},
+			"text": " I'm not, I'm not making it."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:25,620",
+				"to": "00:01:27,410"
+			},
+			"offsets": {
+				"from": 85620,
+				"to": 87410
+			},
+			"text": " Brad, stop!"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:27,410",
+				"to": "00:01:28,770"
+			},
+			"offsets": {
+				"from": 87410,
+				"to": 88770
+			},
+			"text": " Get that shit down to the millimeter."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:28,770",
+				"to": "00:01:30,890"
+			},
+			"offsets": {
+				"from": 88770,
+				"to": 90890
+			},
+			"text": " This is, yeah, that's two meters."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:30,890",
+				"to": "00:01:32,130"
+			},
+			"offsets": {
+				"from": 90890,
+				"to": 92130
+			},
+			"text": " I don't know if it's on purpose,"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:32,130",
+				"to": "00:01:37,130"
+			},
+			"offsets": {
+				"from": 92130,
+				"to": 97130
+			},
+			"text": " but the Type-C end of the cable actually has a slight angle to it."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:38,060",
+				"to": "00:01:40,780"
+			},
+			"offsets": {
+				"from": 98060,
+				"to": 100780
+			},
+			"text": " I don't hate that."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:40,780",
+				"to": "00:01:43,590"
+			},
+			"offsets": {
+				"from": 100780,
+				"to": 103590
+			},
+			"text": " I guess it's to reduce drag of the cable"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:43,590",
+				"to": "00:01:46,070"
+			},
+			"offsets": {
+				"from": 103590,
+				"to": 106070
+			},
+			"text": " because it's lifting the cable enough."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:46,070",
+				"to": "00:01:51,490"
+			},
+			"offsets": {
+				"from": 106070,
+				"to": 111490
+			},
+			"text": " And it's stiff enough that it's not gonna drag on the thing."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:51,490",
+				"to": "00:01:53,130"
+			},
+			"offsets": {
+				"from": 111490,
+				"to": 113130
+			},
+			"text": " That's kind of neat."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:53,130",
+				"to": "00:01:55,450"
+			},
+			"offsets": {
+				"from": 113130,
+				"to": 115450
+			},
+			"text": " It's really nice when companies think of little details"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:55,450",
+				"to": "00:01:57,690"
+			},
+			"offsets": {
+				"from": 115450,
+				"to": 117690
+			},
+			"text": " to iterate on because that bodes very well"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:57,690",
+				"to": "00:01:59,810"
+			},
+			"offsets": {
+				"from": 117690,
+				"to": 119810
+			},
+			"text": " for the thoughtfulness of this entire product."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:59,810",
+				"to": "00:02:02,130"
+			},
+			"offsets": {
+				"from": 119810,
+				"to": 122130
+			},
+			"text": " It's got a pretty top end sensor, the XS-2,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:02,130",
+				"to": "00:02:06,570"
+			},
+			"offsets": {
+				"from": 122130,
+				"to": 126570
+			},
+			"text": " which is a custom version of the PW3955,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:06,570",
+				"to": "00:02:08,250"
+			},
+			"offsets": {
+				"from": 126570,
+				"to": 128250
+			},
+			"text": " which is a flawless sensor,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:08,250",
+				"to": "00:02:13,250"
+			},
+			"offsets": {
+				"from": 128250,
+				"to": 133250
+			},
+			"text": " which is good for 42,000 DPI, 800 IPS, and 70 Gs,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:13,370",
+				"to": "00:02:18,090"
+			},
+			"offsets": {
+				"from": 133370,
+				"to": 138090
+			},
+			"text": " well above what your human body is capable of."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:18,090",
+				"to": "00:02:20,610"
+			},
+			"offsets": {
+				"from": 138090,
+				"to": 140610
+			},
+			"text": " Also in the box, we have our quick start guide."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:20,610",
+				"to": "00:02:23,730"
+			},
+			"offsets": {
+				"from": 140610,
+				"to": 143730
+			},
+			"text": " Notably absent from the knock to a version of the Feynman"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:23,730",
+				"to": "00:02:25,830"
+			},
+			"offsets": {
+				"from": 143730,
+				"to": 145830
+			},
+			"text": " is grip tape that makes sense."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:25,830",
+				"to": "00:02:27,470"
+			},
+			"offsets": {
+				"from": 145830,
+				"to": 147470
+			},
+			"text": " Why would you want to cover the airflow?"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:27,470",
+				"to": "00:02:29,830"
+			},
+			"offsets": {
+				"from": 147470,
+				"to": 149830
+			},
+			"text": " And the dock that the mouse would charge on,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:29,830",
+				"to": "00:02:33,680"
+			},
+			"offsets": {
+				"from": 149830,
+				"to": 153680
+			},
+			"text": " instead we have this very cool dongle."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:33,680",
+				"to": "00:02:37,100"
+			},
+			"offsets": {
+				"from": 153680,
+				"to": 157100
+			},
+			"text": " Instead of having my DPI button on my mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:37,100",
+				"to": "00:02:40,180"
+			},
+			"offsets": {
+				"from": 157100,
+				"to": 160180
+			},
+			"text": " or other functions adding weights or inconvenience"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:40,180",
+				"to": "00:02:42,500"
+			},
+			"offsets": {
+				"from": 160180,
+				"to": 162500
+			},
+			"text": " to my mouse, why not just have it on my dongle?"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:42,500",
+				"to": "00:02:44,740"
+			},
+			"offsets": {
+				"from": 162500,
+				"to": 164740
+			},
+			"text": " I don't need to switch my DPI that often."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:44,740",
+				"to": "00:02:48,140"
+			},
+			"offsets": {
+				"from": 164740,
+				"to": 168140
+			},
+			"text": " So instead of freaking flipping mouse over a hitting a button"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:48,140",
+				"to": "00:02:50,340"
+			},
+			"offsets": {
+				"from": 168140,
+				"to": 170340
+			},
+			"text": " or a weird button combination in the middle of the game,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:50,340",
+				"to": "00:02:53,380"
+			},
+			"offsets": {
+				"from": 170340,
+				"to": 173380
+			},
+			"text": " I can assign one multifunction to this button"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:53,380",
+				"to": "00:02:56,460"
+			},
+			"offsets": {
+				"from": 173380,
+				"to": 176460
+			},
+			"text": " or my DPI switched to this."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:56,460",
+				"to": "00:02:58,220"
+			},
+			"offsets": {
+				"from": 176460,
+				"to": 178220
+			},
+			"text": " That's freaking, that's freaking brilliant man."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:58,220",
+				"to": "00:02:59,710"
+			},
+			"offsets": {
+				"from": 178220,
+				"to": 179710
+			},
+			"text": " It's freaking so smart."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:59,710",
+				"to": "00:03:00,580"
+			},
+			"offsets": {
+				"from": 179710,
+				"to": 180580
+			},
+			"text": " How smart is it?"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:00,580",
+				"to": "00:03:02,930"
+			},
+			"offsets": {
+				"from": 180580,
+				"to": 182930
+			},
+			"text": " So it's so smart."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:02,930",
+				"to": "00:03:06,170"
+			},
+			"offsets": {
+				"from": 182930,
+				"to": 186170
+			},
+			"text": " One thing I'm really curious versus the regular Feynman"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:06,170",
+				"to": "00:03:08,700"
+			},
+			"offsets": {
+				"from": 186170,
+				"to": 188700
+			},
+			"text": " is actually the weight of this mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:08,700",
+				"to": "00:03:12,940"
+			},
+			"offsets": {
+				"from": 188700,
+				"to": 192940
+			},
+			"text": " Considering it has a whole ass 40 millimeter fan in it,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:12,940",
+				"to": "00:03:15,100"
+			},
+			"offsets": {
+				"from": 192940,
+				"to": 195100
+			},
+			"text": " I can't imagine that this is anywhere close"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:15,100",
+				"to": "00:03:18,010"
+			},
+			"offsets": {
+				"from": 195100,
+				"to": 198010
+			},
+			"text": " to the 46 grams of the original,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:18,010",
+				"to": "00:03:19,760"
+			},
+			"offsets": {
+				"from": 198010,
+				"to": 199760
+			},
+			"text": " but there's only one way to find out."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:19,760",
+				"to": "00:03:21,880"
+			},
+			"offsets": {
+				"from": 199760,
+				"to": 201880
+			},
+			"text": " And that's for me to very slowly remove the protectors"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:21,880",
+				"to": "00:03:28,610"
+			},
+			"offsets": {
+				"from": 201880,
+				"to": 208610
+			},
+			"text": " from the glide skates and then 73 grams."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:28,610",
+				"to": "00:03:32,100"
+			},
+			"offsets": {
+				"from": 208610,
+				"to": 212100
+			},
+			"text": " That is nearly 30 grams heavier than the original."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:32,100",
+				"to": "00:03:36,040"
+			},
+			"offsets": {
+				"from": 212100,
+				"to": 216040
+			},
+			"text": " All right, that's the first downside of extra cool"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:36,040",
+				"to": "00:03:38,160"
+			},
+			"offsets": {
+				"from": 216040,
+				"to": 218160
+			},
+			"text": " miss in your mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:38,160",
+				"to": "00:03:40,080"
+			},
+			"offsets": {
+				"from": 218160,
+				"to": 220080
+			},
+			"text": " And so that's gonna be the first consideration"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:40,080",
+				"to": "00:03:41,560"
+			},
+			"offsets": {
+				"from": 220080,
+				"to": 221560
+			},
+			"text": " if you're considering this mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:41,560",
+				"to": "00:03:43,880"
+			},
+			"offsets": {
+				"from": 221560,
+				"to": 223880
+			},
+			"text": " The next consideration will be durability."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:43,880",
+				"to": "00:03:45,720"
+			},
+			"offsets": {
+				"from": 223880,
+				"to": 225720
+			},
+			"text": " These switches are optical switches"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:45,720",
+				"to": "00:03:47,200"
+			},
+			"offsets": {
+				"from": 225720,
+				"to": 227200
+			},
+			"text": " rated for a hundred million clicks."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:47,200",
+				"to": "00:03:48,280"
+			},
+			"offsets": {
+				"from": 227200,
+				"to": 228280
+			},
+			"text": " That's a lot of clicks"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:48,280",
+				"to": "00:03:50,440"
+			},
+			"offsets": {
+				"from": 228280,
+				"to": 230440
+			},
+			"text": " unless you're a professional Diablo player."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:50,440",
+				"to": "00:03:51,920"
+			},
+			"offsets": {
+				"from": 230440,
+				"to": 231920
+			},
+			"text": " If you know what I mean."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:51,920",
+				"to": "00:03:54,840"
+			},
+			"offsets": {
+				"from": 231920,
+				"to": 234840
+			},
+			"text": " - Welcome to my unboxing of the Diablo 3 mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:54,840",
+				"to": "00:03:58,630"
+			},
+			"offsets": {
+				"from": 234840,
+				"to": 238630
+			},
+			"text": " - We also have our alloy scroll wheel on the top."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:58,630",
+				"to": "00:04:00,870"
+			},
+			"offsets": {
+				"from": 238630,
+				"to": 240870
+			},
+			"text": " They don't really tell you what the alloys are,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:00,870",
+				"to": "00:04:02,900"
+			},
+			"offsets": {
+				"from": 240870,
+				"to": 242900
+			},
+			"text": " but it's a metal scroll wheel."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:02,900",
+				"to": "00:04:04,740"
+			},
+			"offsets": {
+				"from": 242900,
+				"to": 244740
+			},
+			"text": " It doesn't feel like cold or metal,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:04,740",
+				"to": "00:04:05,860"
+			},
+			"offsets": {
+				"from": 244740,
+				"to": 245860
+			},
+			"text": " which is interesting."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:05,860",
+				"to": "00:04:08,140"
+			},
+			"offsets": {
+				"from": 245860,
+				"to": 248140
+			},
+			"text": " I can feel the softness of it."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:08,140",
+				"to": "00:04:10,740"
+			},
+			"offsets": {
+				"from": 248140,
+				"to": 250740
+			},
+			"text": " It doesn't feel like metal graturing against metal."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:10,740",
+				"to": "00:04:12,540"
+			},
+			"offsets": {
+				"from": 250740,
+				"to": 252540
+			},
+			"text": " I really like this wheel."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:12,540",
+				"to": "00:04:13,900"
+			},
+			"offsets": {
+				"from": 252540,
+				"to": 253900
+			},
+			"text": " It's tactile in the way I want."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:13,900",
+				"to": "00:04:14,860"
+			},
+			"offsets": {
+				"from": 253900,
+				"to": 254860
+			},
+			"text": " It's got enough resistance"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:14,860",
+				"to": "00:04:17,980"
+			},
+			"offsets": {
+				"from": 254860,
+				"to": 257980
+			},
+			"text": " that I don't think I would accidentally switch it around."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:17,980",
+				"to": "00:04:19,530"
+			},
+			"offsets": {
+				"from": 257980,
+				"to": 259530
+			},
+			"text": " The click feels good."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:19,530",
+				"to": "00:04:21,170"
+			},
+			"offsets": {
+				"from": 259530,
+				"to": 261170
+			},
+			"text": " Although when I click I can feel the wheel"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:21,170",
+				"to": "00:04:22,730"
+			},
+			"offsets": {
+				"from": 261170,
+				"to": 262730
+			},
+			"text": " wanting to spin a little bit."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:22,730",
+				"to": "00:04:25,490"
+			},
+			"offsets": {
+				"from": 262730,
+				"to": 265490
+			},
+			"text": " So pretty impressive, not perfect."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:25,490",
+				"to": "00:04:27,050"
+			},
+			"offsets": {
+				"from": 265490,
+				"to": 267050
+			},
+			"text": " I'll give it a name minus."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:27,050",
+				"to": "00:04:29,410"
+			},
+			"offsets": {
+				"from": 267050,
+				"to": 269410
+			},
+			"text": " I really like the shape of it as well."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:29,410",
+				"to": "00:04:34,290"
+			},
+			"offsets": {
+				"from": 269410,
+				"to": 274290
+			},
+			"text": " These clicks pretty darn satisfying,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:34,290",
+				"to": "00:04:38,050"
+			},
+			"offsets": {
+				"from": 274290,
+				"to": 278050
+			},
+			"text": " pretty equivalent across the whole body of it."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:38,050",
+				"to": "00:04:41,530"
+			},
+			"offsets": {
+				"from": 278050,
+				"to": 281530
+			},
+			"text": " Not too much travel, although I've seen shorter mouse travel"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:41,530",
+				"to": "00:04:45,560"
+			},
+			"offsets": {
+				"from": 281530,
+				"to": 285560
+			},
+			"text": " before, but I'm about to see if I can get"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:45,560",
+				"to": "00:04:48,000"
+			},
+			"offsets": {
+				"from": 285560,
+				"to": 288000
+			},
+			"text": " to 100 million in this video."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:48,000",
+				"to": "00:04:52,170"
+			},
+			"offsets": {
+				"from": 288000,
+				"to": 292170
+			},
+			"text": " We can do it."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:52,170",
+				"to": "00:04:54,810"
+			},
+			"offsets": {
+				"from": 292170,
+				"to": 294810
+			},
+			"text": " The great thing about if you're a super fast mouse clicker"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:54,810",
+				"to": "00:04:58,020"
+			},
+			"offsets": {
+				"from": 294810,
+				"to": 298020
+			},
+			"text": " is that this mouse has an 8,000 hertz polling rate,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:58,020",
+				"to": "00:04:59,940"
+			},
+			"offsets": {
+				"from": 298020,
+				"to": 299940
+			},
+			"text": " which means that there's just less time"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:59,940",
+				"to": "00:05:02,710"
+			},
+			"offsets": {
+				"from": 299940,
+				"to": 302710
+			},
+			"text": " in between what you're doing here and what you're doing there."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:02,710",
+				"to": "00:05:04,830"
+			},
+			"offsets": {
+				"from": 302710,
+				"to": 304830
+			},
+			"text": " I haven't noticed a huge performance difference,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:04,830",
+				"to": "00:05:08,030"
+			},
+			"offsets": {
+				"from": 304830,
+				"to": 308030
+			},
+			"text": " but when we measured input latency affecting gaming performance,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:08,030",
+				"to": "00:05:10,930"
+			},
+			"offsets": {
+				"from": 308030,
+				"to": 310930
+			},
+			"text": " we noticed that as small as we measured,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:10,930",
+				"to": "00:05:12,970"
+			},
+			"offsets": {
+				"from": 310930,
+				"to": 312970
+			},
+			"text": " there was an impact on gaming performance."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:12,970",
+				"to": "00:05:15,330"
+			},
+			"offsets": {
+				"from": 312970,
+				"to": 315330
+			},
+			"text": " And so it's good to know that this is not compromising"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:15,330",
+				"to": "00:05:17,250"
+			},
+			"offsets": {
+				"from": 315330,
+				"to": 317250
+			},
+			"text": " on anything even to give you the gimmick."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:17,250",
+				"to": "00:05:19,290"
+			},
+			"offsets": {
+				"from": 317250,
+				"to": 319290
+			},
+			"text": " We have our two buttons on top, our mouse click button."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:19,290",
+				"to": "00:05:20,530"
+			},
+			"offsets": {
+				"from": 319290,
+				"to": 320530
+			},
+			"text": " We have our two side buttons"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:20,530",
+				"to": "00:05:23,860"
+			},
+			"offsets": {
+				"from": 320530,
+				"to": 323860
+			},
+			"text": " that we will press to activate our fricking fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:23,860",
+				"to": "00:05:27,420"
+			},
+			"offsets": {
+				"from": 323860,
+				"to": 327420
+			},
+			"text": " On the bottom, we have our fairly large PTFE glide skates"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:27,420",
+				"to": "00:05:28,660"
+			},
+			"offsets": {
+				"from": 327420,
+				"to": 328660
+			},
+			"text": " as well as our button."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:28,660",
+				"to": "00:05:32,660"
+			},
+			"offsets": {
+				"from": 328660,
+				"to": 332660
+			},
+			"text": " I would assume this is DPI, although we have our DPI here."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:32,660",
+				"to": "00:05:33,860"
+			},
+			"offsets": {
+				"from": 332660,
+				"to": 333860
+			},
+			"text": " So I guess we're gonna have to plug it"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:33,860",
+				"to": "00:05:35,420"
+			},
+			"offsets": {
+				"from": 333860,
+				"to": 335420
+			},
+			"text": " in to find out what that is."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:35,420",
+				"to": "00:05:38,500"
+			},
+			"offsets": {
+				"from": 335420,
+				"to": 338500
+			},
+			"text": " Other than that, it is a pretty standard gaming mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:38,500",
+				"to": "00:05:41,510"
+			},
+			"offsets": {
+				"from": 338500,
+				"to": 341510
+			},
+			"text": " other than the perforations that allow you to see the fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:41,510",
+				"to": "00:05:43,350"
+			},
+			"offsets": {
+				"from": 341510,
+				"to": 343350
+			},
+			"text": " Most of the electronics are at the front of the mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:43,350",
+				"to": "00:05:46,250"
+			},
+			"offsets": {
+				"from": 343350,
+				"to": 346250
+			},
+			"text": " to have the weight feel more front heavy."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:46,250",
+				"to": "00:05:47,130"
+			},
+			"offsets": {
+				"from": 346250,
+				"to": 347130
+			},
+			"text": " I think that's a good choice."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:47,130",
+				"to": "00:05:48,960"
+			},
+			"offsets": {
+				"from": 347130,
+				"to": 348960
+			},
+			"text": " This actually feels quite balanced."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:48,960",
+				"to": "00:05:50,240"
+			},
+			"offsets": {
+				"from": 348960,
+				"to": 350240
+			},
+			"text": " And I really like this shape."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:50,240",
+				"to": "00:05:52,860"
+			},
+			"offsets": {
+				"from": 350240,
+				"to": 352860
+			},
+			"text": " I like right-handed shaped mice."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:52,860",
+				"to": "00:05:54,370"
+			},
+			"offsets": {
+				"from": 352860,
+				"to": 354370
+			},
+			"text": " My hand fits comfortably on it."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:54,370",
+				"to": "00:05:57,210"
+			},
+			"offsets": {
+				"from": 354370,
+				"to": 357210
+			},
+			"text": " My fingers have a comfortable resting place to go,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:57,210",
+				"to": "00:06:00,010"
+			},
+			"offsets": {
+				"from": 357210,
+				"to": 360010
+			},
+			"text": " but my thumb has easy access to these side buttons."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:00,010",
+				"to": "00:06:03,460"
+			},
+			"offsets": {
+				"from": 360010,
+				"to": 363460
+			},
+			"text": " I don't like that sound."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:03,460",
+				"to": "00:06:07,270"
+			},
+			"offsets": {
+				"from": 363460,
+				"to": 367270
+			},
+			"text": " That sounds less good than that's nice."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:07,270",
+				"to": "00:06:12,140"
+			},
+			"offsets": {
+				"from": 367270,
+				"to": 372140
+			},
+			"text": " That sounds too like thingy."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:12,140",
+				"to": "00:06:14,870"
+			},
+			"offsets": {
+				"from": 372140,
+				"to": 374870
+			},
+			"text": " Such a minor issue, I'm not gonna notice that with headphones."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:14,870",
+				"to": "00:06:17,550"
+			},
+			"offsets": {
+				"from": 374870,
+				"to": 377550
+			},
+			"text": " It feels very premium to the touch."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:17,550",
+				"to": "00:06:19,350"
+			},
+			"offsets": {
+				"from": 377550,
+				"to": 379350
+			},
+			"text": " Silky, smooth, but not the kind"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:19,350",
+				"to": "00:06:22,500"
+			},
+			"offsets": {
+				"from": 379350,
+				"to": 382500
+			},
+			"text": " that's gonna sort of degrade over the long period."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:22,500",
+				"to": "00:06:23,860"
+			},
+			"offsets": {
+				"from": 382500,
+				"to": 383860
+			},
+			"text": " Yeah, you can see this line."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:23,860",
+				"to": "00:06:26,960"
+			},
+			"offsets": {
+				"from": 383860,
+				"to": 386960
+			},
+			"text": " I'm not sure if that's in their manufacturing"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:26,960",
+				"to": "00:06:29,090"
+			},
+			"offsets": {
+				"from": 386960,
+				"to": 389090
+			},
+			"text": " or sort of for the grip tape."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:29,090",
+				"to": "00:06:30,250"
+			},
+			"offsets": {
+				"from": 389090,
+				"to": 390250
+			},
+			"text": " Or if that's one of the challenges"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:30,250",
+				"to": "00:06:33,120"
+			},
+			"offsets": {
+				"from": 390250,
+				"to": 393120
+			},
+			"text": " of working with a carbon composite shell,"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:33,120",
+				"to": "00:06:36,350"
+			},
+			"offsets": {
+				"from": 393120,
+				"to": 396350
+			},
+			"text": " that's like a metal, which means that it is really rigid"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:36,350",
+				"to": "00:06:37,550"
+			},
+			"offsets": {
+				"from": 396350,
+				"to": 397550
+			},
+			"text": " even with all these perforations."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:37,550",
+				"to": "00:06:39,950"
+			},
+			"offsets": {
+				"from": 397550,
+				"to": 399950
+			},
+			"text": " And you can see these are quite wide perforations"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:39,950",
+				"to": "00:06:41,390"
+			},
+			"offsets": {
+				"from": 399950,
+				"to": 401390
+			},
+			"text": " for this style of mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:41,390",
+				"to": "00:06:43,390"
+			},
+			"offsets": {
+				"from": 401390,
+				"to": 403390
+			},
+			"text": " There is very little flex."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:43,390",
+				"to": "00:06:45,950"
+			},
+			"offsets": {
+				"from": 403390,
+				"to": 405950
+			},
+			"text": " Like you can see maybe a little bit there,"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:45,950",
+				"to": "00:06:49,590"
+			},
+			"offsets": {
+				"from": 405950,
+				"to": 409590
+			},
+			"text": " but my finger pads are flexing more than the actual mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:49,590",
+				"to": "00:06:53,060"
+			},
+			"offsets": {
+				"from": 409590,
+				"to": 413060
+			},
+			"text": " This is more than sufficiently rigid."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:53,060",
+				"to": "00:06:56,240"
+			},
+			"offsets": {
+				"from": 413060,
+				"to": 416240
+			},
+			"text": " I like this a lot more than I thought I would."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:56,240",
+				"to": "00:06:59,440"
+			},
+			"offsets": {
+				"from": 416240,
+				"to": 419440
+			},
+			"text": " This is a good sign, and I can't wait to plug it in"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:59,440",
+				"to": "00:07:00,640"
+			},
+			"offsets": {
+				"from": 419440,
+				"to": 420640
+			},
+			"text": " after I tell you about our sponsor."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:00,640",
+				"to": "00:07:03,520"
+			},
+			"offsets": {
+				"from": 420640,
+				"to": 423520
+			},
+			"text": " I'm always here in Americans talk about how they wish"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:03,520",
+				"to": "00:07:07,480"
+			},
+			"offsets": {
+				"from": 423520,
+				"to": 427480
+			},
+			"text": " they could watch the Canadian classic series Murdoch Mysteries,"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:07,480",
+				"to": "00:07:10,160"
+			},
+			"offsets": {
+				"from": 427480,
+				"to": 430160
+			},
+			"text": " but they're bound by the restraints of their IP address."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:10,160",
+				"to": "00:07:12,280"
+			},
+			"offsets": {
+				"from": 430160,
+				"to": 432280
+			},
+			"text": " Well, with private internet access,"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:12,280",
+				"to": "00:07:14,960"
+			},
+			"offsets": {
+				"from": 432280,
+				"to": 434960
+			},
+			"text": " you can mask your IP from your internet service provider"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:14,960",
+				"to": "00:07:18,410"
+			},
+			"offsets": {
+				"from": 434960,
+				"to": 438410
+			},
+			"text": " with a VPN, opening up your world to more media."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:18,410",
+				"to": "00:07:20,370"
+			},
+			"offsets": {
+				"from": 438410,
+				"to": 440370
+			},
+			"text": " It can also help keep your data out of reach"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:20,370",
+				"to": "00:07:21,610"
+			},
+			"offsets": {
+				"from": 440370,
+				"to": 441610
+			},
+			"text": " from third parties."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:21,610",
+				"to": "00:07:23,770"
+			},
+			"offsets": {
+				"from": 441610,
+				"to": 443770
+			},
+			"text": " Their network spans over 91 countries,"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:23,770",
+				"to": "00:07:26,770"
+			},
+			"offsets": {
+				"from": 443770,
+				"to": 446770
+			},
+			"text": " and a single subscription gives you unlimited connections."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:26,770",
+				"to": "00:07:30,570"
+			},
+			"offsets": {
+				"from": 446770,
+				"to": 450570
+			},
+			"text": " So go check it out at pivvpn.com/shortcircuit"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:30,570",
+				"to": "00:07:32,330"
+			},
+			"offsets": {
+				"from": 450570,
+				"to": 452330
+			},
+			"text": " or by using our link in the description"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:32,330",
+				"to": "00:07:35,690"
+			},
+			"offsets": {
+				"from": 452330,
+				"to": 455690
+			},
+			"text": " for a special exclusive deal with a risk 330 day"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:35,690",
+				"to": "00:07:36,930"
+			},
+			"offsets": {
+				"from": 455690,
+				"to": 456930
+			},
+			"text": " money-back guarantee."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:36,930",
+				"to": "00:07:39,130"
+			},
+			"offsets": {
+				"from": 456930,
+				"to": 459130
+			},
+			"text": " We have our dongle plugged in, we got our mouse connected,"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:39,130",
+				"to": "00:07:42,110"
+			},
+			"offsets": {
+				"from": 459130,
+				"to": 462110
+			},
+			"text": " and we are in the BBMBAF web software."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:42,110",
+				"to": "00:07:43,230"
+			},
+			"offsets": {
+				"from": 462110,
+				"to": 463230
+			},
+			"text": " I think this might be the cutest"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:43,230",
+				"to": "00:07:45,340"
+			},
+			"offsets": {
+				"from": 463230,
+				"to": 465340
+			},
+			"text": " slashfreen I've ever seen."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:45,340",
+				"to": "00:07:46,420"
+			},
+			"offsets": {
+				"from": 465340,
+				"to": 466420
+			},
+			"text": " Seems pretty easy."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:46,420",
+				"to": "00:07:48,740"
+			},
+			"offsets": {
+				"from": 466420,
+				"to": 468740
+			},
+			"text": " I'm a huge fan of freaking web apps"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:48,740",
+				"to": "00:07:51,180"
+			},
+			"offsets": {
+				"from": 468740,
+				"to": 471180
+			},
+			"text": " because I don't want to download software to my computer."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:51,180",
+				"to": "00:07:53,050"
+			},
+			"offsets": {
+				"from": 471180,
+				"to": 473050
+			},
+			"text": " It's not freaking malware at this point."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:53,050",
+				"to": "00:07:54,490"
+			},
+			"offsets": {
+				"from": 473050,
+				"to": 474490
+			},
+			"text": " On page one, we kind of get our statuses,"
+		},
+		{
+			"timestamps": {
+				"from": "00:07:54,490",
+				"to": "00:07:56,680"
+			},
+			"offsets": {
+				"from": 474490,
+				"to": 476680
+			},
+			"text": " our DPI polling rate, what not."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:56,680",
+				"to": "00:07:57,680"
+			},
+			"offsets": {
+				"from": 476680,
+				"to": 477680
+			},
+			"text": " None of this is changeable."
+		},
+		{
+			"timestamps": {
+				"from": "00:07:57,680",
+				"to": "00:08:00,190"
+			},
+			"offsets": {
+				"from": 477680,
+				"to": 480190
+			},
+			"text": " So let's go right to customize."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:00,190",
+				"to": "00:08:02,550"
+			},
+			"offsets": {
+				"from": 480190,
+				"to": 482550
+			},
+			"text": " We can change our button assignment."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:02,550",
+				"to": "00:08:05,890"
+			},
+			"offsets": {
+				"from": 482550,
+				"to": 485890
+			},
+			"text": " I never do this because I'm so afraid of resigning left click"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:05,890",
+				"to": "00:08:08,420"
+			},
+			"offsets": {
+				"from": 485890,
+				"to": 488420
+			},
+			"text": " and then having trouble is a bad time."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:08,420",
+				"to": "00:08:10,820"
+			},
+			"offsets": {
+				"from": 488420,
+				"to": 490820
+			},
+			"text": " We can go to performance, which I'm more interested in."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:10,820",
+				"to": "00:08:12,700"
+			},
+			"offsets": {
+				"from": 490820,
+				"to": 492700
+			},
+			"text": " By default, we have six stages."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:12,700",
+				"to": "00:08:14,620"
+			},
+			"offsets": {
+				"from": 492700,
+				"to": 494620
+			},
+			"text": " We can go down to the one that I need,"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:14,620",
+				"to": "00:08:17,140"
+			},
+			"offsets": {
+				"from": 494620,
+				"to": 497140
+			},
+			"text": " which it will reduce the amount of stages,"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:17,140",
+				"to": "00:08:20,620"
+			},
+			"offsets": {
+				"from": 497140,
+				"to": 500620
+			},
+			"text": " but not to the one that you've selected, just to the left."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:20,620",
+				"to": "00:08:22,390"
+			},
+			"offsets": {
+				"from": 500620,
+				"to": 502390
+			},
+			"text": " So we're gonna go back to two stages"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:22,390",
+				"to": "00:08:24,650"
+			},
+			"offsets": {
+				"from": 502390,
+				"to": 504650
+			},
+			"text": " and we'll select the second stage."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:24,650",
+				"to": "00:08:25,970"
+			},
+			"offsets": {
+				"from": 504650,
+				"to": 505970
+			},
+			"text": " Here we have our DPI effect."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:25,970",
+				"to": "00:08:29,220"
+			},
+			"offsets": {
+				"from": 505970,
+				"to": 509220
+			},
+			"text": " We can change the light that appears on the actual mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:29,220",
+				"to": "00:08:31,280"
+			},
+			"offsets": {
+				"from": 509220,
+				"to": 511280
+			},
+			"text": " because I'm trying to maximize battery life."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:31,280",
+				"to": "00:08:33,480"
+			},
+			"offsets": {
+				"from": 511280,
+				"to": 513480
+			},
+			"text": " This is only 500 milliamp hour battery."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:33,480",
+				"to": "00:08:35,670"
+			},
+			"offsets": {
+				"from": 513480,
+				"to": 515670
+			},
+			"text": " I think I want it to off."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:35,670",
+				"to": "00:08:37,080"
+			},
+			"offsets": {
+				"from": 515670,
+				"to": 517080
+			},
+			"text": " Next we have our polling rate."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:37,080",
+				"to": "00:08:38,480"
+			},
+			"offsets": {
+				"from": 517080,
+				"to": 518480
+			},
+			"text": " By default, it's 1,000,"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:38,480",
+				"to": "00:08:39,680"
+			},
+			"offsets": {
+				"from": 518480,
+				"to": 519680
+			},
+			"text": " but we're gonna go to 8,000"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:39,680",
+				"to": "00:08:41,560"
+			},
+			"offsets": {
+				"from": 519680,
+				"to": 521560
+			},
+			"text": " because we're testing the performance of this bamboo."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:41,560",
+				"to": "00:08:42,920"
+			},
+			"offsets": {
+				"from": 521560,
+				"to": 522920
+			},
+			"text": " You know, that's pretty sweet."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:42,920",
+				"to": "00:08:44,400"
+			},
+			"offsets": {
+				"from": 522920,
+				"to": 524400
+			},
+			"text": " Next we have our mouse rotation."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:44,400",
+				"to": "00:08:45,240"
+			},
+			"offsets": {
+				"from": 524400,
+				"to": 525240
+			},
+			"text": " That's really nice."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:45,240",
+				"to": "00:08:46,880"
+			},
+			"offsets": {
+				"from": 525240,
+				"to": 526880
+			},
+			"text": " I've noticed that I have my mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:46,880",
+				"to": "00:08:49,640"
+			},
+			"offsets": {
+				"from": 526880,
+				"to": 529640
+			},
+			"text": " at about a nine degree angle when I'm actually gaming."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:49,640",
+				"to": "00:08:51,680"
+			},
+			"offsets": {
+				"from": 529640,
+				"to": 531680
+			},
+			"text": " And so I'm gonna set it there."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:51,680",
+				"to": "00:08:53,800"
+			},
+			"offsets": {
+				"from": 531680,
+				"to": 533800
+			},
+			"text": " Next we have motion sync ripple control angle snap"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:53,800",
+				"to": "00:08:54,590"
+			},
+			"offsets": {
+				"from": 533800,
+				"to": 534590
+			},
+			"text": " in turbo mode."
+		},
+		{
+			"timestamps": {
+				"from": "00:08:56,140",
+				"to": "00:08:57,940"
+			},
+			"offsets": {
+				"from": 536140,
+				"to": 537940
+			},
+			"text": " Most of these are settings you don't really want"
+		},
+		{
+			"timestamps": {
+				"from": "00:08:57,940",
+				"to": "00:09:00,940"
+			},
+			"offsets": {
+				"from": 537940,
+				"to": 540940
+			},
+			"text": " if you're gaming, but turbo mode,"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:00,940",
+				"to": "00:09:03,780"
+			},
+			"offsets": {
+				"from": 540940,
+				"to": 543780
+			},
+			"text": " where it scans 20,000 times per second"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:03,780",
+				"to": "00:09:05,580"
+			},
+			"offsets": {
+				"from": 543780,
+				"to": 545580
+			},
+			"text": " to reduce fine response delay between movements."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:05,580",
+				"to": "00:09:07,560"
+			},
+			"offsets": {
+				"from": 545580,
+				"to": 547560
+			},
+			"text": " That sounds pretty turbo."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:07,560",
+				"to": "00:09:09,320"
+			},
+			"offsets": {
+				"from": 547560,
+				"to": 549320
+			},
+			"text": " It's both on."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:09,320",
+				"to": "00:09:11,160"
+			},
+			"offsets": {
+				"from": 549320,
+				"to": 551160
+			},
+			"text": " We can also change our lift off distance."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:11,160",
+				"to": "00:09:12,120"
+			},
+			"offsets": {
+				"from": 551160,
+				"to": 552120
+			},
+			"text": " The default was one."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:12,120",
+				"to": "00:09:13,160"
+			},
+			"offsets": {
+				"from": 552120,
+				"to": 553160
+			},
+			"text": " We're gonna leave it there."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:13,160",
+				"to": "00:09:14,800"
+			},
+			"offsets": {
+				"from": 553160,
+				"to": 554800
+			},
+			"text": " This is one of those settings that in my experience,"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:14,800",
+				"to": "00:09:16,720"
+			},
+			"offsets": {
+				"from": 554800,
+				"to": 556720
+			},
+			"text": " you basically just want to go as low as you can go"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:16,720",
+				"to": "00:09:19,260"
+			},
+			"offsets": {
+				"from": 556720,
+				"to": 559260
+			},
+			"text": " without having issues."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:19,260",
+				"to": "00:09:21,060"
+			},
+			"offsets": {
+				"from": 559260,
+				"to": 561060
+			},
+			"text": " One millimeter is pretty low."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:21,060",
+				"to": "00:09:22,140"
+			},
+			"offsets": {
+				"from": 561060,
+				"to": 562140
+			},
+			"text": " So I'm gonna keep it there."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:22,140",
+				"to": "00:09:23,820"
+			},
+			"offsets": {
+				"from": 562140,
+				"to": 563820
+			},
+			"text": " We have our debounce time to reduce double clicks"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:23,820",
+				"to": "00:09:25,740"
+			},
+			"offsets": {
+				"from": 563820,
+				"to": 565740
+			},
+			"text": " and then our fan speed time."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:25,740",
+				"to": "00:09:27,500"
+			},
+			"offsets": {
+				"from": 565740,
+				"to": 567500
+			},
+			"text": " That's the whole reason we're talking about this mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:27,500",
+				"to": "00:09:28,340"
+			},
+			"offsets": {
+				"from": 567500,
+				"to": 568340
+			},
+			"text": " is a freaking fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:28,340",
+				"to": "00:09:29,750"
+			},
+			"offsets": {
+				"from": 568340,
+				"to": 569750
+			},
+			"text": " Let's trust it out."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:29,750",
+				"to": "00:09:31,960"
+			},
+			"offsets": {
+				"from": 569750,
+				"to": 571960
+			},
+			"text": " One, it works."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:31,960",
+				"to": "00:09:33,110"
+			},
+			"offsets": {
+				"from": 571960,
+				"to": 573110
+			},
+			"text": " It freaking works."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:33,110",
+				"to": "00:09:35,620"
+			},
+			"offsets": {
+				"from": 573110,
+				"to": 575620
+			},
+			"text": " Two, faster."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:35,620",
+				"to": "00:09:36,890"
+			},
+			"offsets": {
+				"from": 575620,
+				"to": 576890
+			},
+			"text": " Is three faster?"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:36,890",
+				"to": "00:09:38,050"
+			},
+			"offsets": {
+				"from": 576890,
+				"to": 578050
+			},
+			"text": " I'd seem faster."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:38,050",
+				"to": "00:09:39,000"
+			},
+			"offsets": {
+				"from": 578050,
+				"to": 579000
+			},
+			"text": " What do I have four?"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:39,000",
+				"to": "00:09:40,880"
+			},
+			"offsets": {
+				"from": 579000,
+				"to": 580880
+			},
+			"text": " Four, it's the fastest."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:40,880",
+				"to": "00:09:42,420"
+			},
+			"offsets": {
+				"from": 580880,
+				"to": 582420
+			},
+			"text": " Holy smokes."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:42,420",
+				"to": "00:09:47,080"
+			},
+			"offsets": {
+				"from": 582420,
+				"to": 587080
+			},
+			"text": " That's actually a pretty solid amount of air being pushed."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:47,080",
+				"to": "00:09:49,070"
+			},
+			"offsets": {
+				"from": 587080,
+				"to": 589070
+			},
+			"text": " I can actually feel the difference immediately"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:49,070",
+				"to": "00:09:51,680"
+			},
+			"offsets": {
+				"from": 589070,
+				"to": 591680
+			},
+			"text": " on my palm."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:51,680",
+				"to": "00:09:54,250"
+			},
+			"offsets": {
+				"from": 591680,
+				"to": 594250
+			},
+			"text": " Quite enjoy that more than I thought it would."
+		},
+		{
+			"timestamps": {
+				"from": "00:09:54,250",
+				"to": "00:09:57,230"
+			},
+			"offsets": {
+				"from": 594250,
+				"to": 597230
+			},
+			"text": " I've done a mouse with a fan in it before,"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:57,230",
+				"to": "00:09:59,760"
+			},
+			"offsets": {
+				"from": 597230,
+				"to": 599760
+			},
+			"text": " but it was such a low quality mouse"
+		},
+		{
+			"timestamps": {
+				"from": "00:09:59,760",
+				"to": "00:10:02,010"
+			},
+			"offsets": {
+				"from": 599760,
+				"to": 602010
+			},
+			"text": " that the fan was just a gimmick."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:02,010",
+				"to": "00:10:04,770"
+			},
+			"offsets": {
+				"from": 602010,
+				"to": 604770
+			},
+			"text": " But this so far feels like a really premium mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:04,770",
+				"to": "00:10:05,850"
+			},
+			"offsets": {
+				"from": 604770,
+				"to": 605850
+			},
+			"text": " Really nice construction."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:05,850",
+				"to": "00:10:08,840"
+			},
+			"offsets": {
+				"from": 605850,
+				"to": 608840
+			},
+			"text": " I like the look, the feel, the shape."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:08,840",
+				"to": "00:10:11,880"
+			},
+			"offsets": {
+				"from": 608840,
+				"to": 611880
+			},
+			"text": " And so now having it have the extra feature of the cooling,"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:11,880",
+				"to": "00:10:14,620"
+			},
+			"offsets": {
+				"from": 611880,
+				"to": 614620
+			},
+			"text": " this might be a little bit cooler than I expected."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:14,620",
+				"to": "00:10:15,920"
+			},
+			"offsets": {
+				"from": 614620,
+				"to": 615920
+			},
+			"text": " Next, we can assign macros."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:15,920",
+				"to": "00:10:17,560"
+			},
+			"offsets": {
+				"from": 615920,
+				"to": 617560
+			},
+			"text": " The only macerat care about is how much protein"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:17,560",
+				"to": "00:10:18,400"
+			},
+			"offsets": {
+				"from": 617560,
+				"to": 618400
+			},
+			"text": " I'm getting in a day."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:18,400",
+				"to": "00:10:19,440"
+			},
+			"offsets": {
+				"from": 618400,
+				"to": 619440
+			},
+			"text": " Am I right?"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:20,600",
+				"to": "00:10:21,760"
+			},
+			"offsets": {
+				"from": 620600,
+				"to": 621760
+			},
+			"text": " Then we change our low power mode."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:21,760",
+				"to": "00:10:23,820"
+			},
+			"offsets": {
+				"from": 621760,
+				"to": 623820
+			},
+			"text": " So it'll change modes depending"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:23,820",
+				"to": "00:10:25,420"
+			},
+			"offsets": {
+				"from": 623820,
+				"to": 625420
+			},
+			"text": " on how much battery life there is."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:25,420",
+				"to": "00:10:28,230"
+			},
+			"offsets": {
+				"from": 625420,
+				"to": 628230
+			},
+			"text": " The auto-sleep, we can turn on long distance mode."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:28,230",
+				"to": "00:10:29,430"
+			},
+			"offsets": {
+				"from": 628230,
+				"to": 629430
+			},
+			"text": " We're pretty close to our dongle."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:29,430",
+				"to": "00:10:30,310"
+			},
+			"offsets": {
+				"from": 629430,
+				"to": 630310
+			},
+			"text": " So we should be good."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:30,310",
+				"to": "00:10:33,310"
+			},
+			"offsets": {
+				"from": 630310,
+				"to": 633310
+			},
+			"text": " And then we can change what our dongle's extra button does."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:33,310",
+				"to": "00:10:35,850"
+			},
+			"offsets": {
+				"from": 633310,
+				"to": 635850
+			},
+			"text": " There's one button that is fixed for the DPI."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:35,850",
+				"to": "00:10:38,630"
+			},
+			"offsets": {
+				"from": 635850,
+				"to": 638630
+			},
+			"text": " I actually don't love that because I'm not someone"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:38,630",
+				"to": "00:10:41,050"
+			},
+			"offsets": {
+				"from": 638630,
+				"to": 641050
+			},
+			"text": " who constantly switches DPI switches on the go."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:41,050",
+				"to": "00:10:43,270"
+			},
+			"offsets": {
+				"from": 641050,
+				"to": 643270
+			},
+			"text": " So I'd like to have both buttons be assignable."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:43,270",
+				"to": "00:10:45,390"
+			},
+			"offsets": {
+				"from": 643270,
+				"to": 645390
+			},
+			"text": " But the one that is assignable, you can turn it off."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:45,390",
+				"to": "00:10:46,950"
+			},
+			"offsets": {
+				"from": 645390,
+				"to": 646950
+			},
+			"text": " You can change your profile, change your polling rate,"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:46,950",
+				"to": "00:10:49,270"
+			},
+			"offsets": {
+				"from": 646950,
+				"to": 649270
+			},
+			"text": " change your lift off distance, your debounce time,"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:49,270",
+				"to": "00:10:52,040"
+			},
+			"offsets": {
+				"from": 649270,
+				"to": 652040
+			},
+			"text": " your motion sync, your turbo mode, your fan mode."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:52,040",
+				"to": "00:10:53,560"
+			},
+			"offsets": {
+				"from": 652040,
+				"to": 653560
+			},
+			"text": " And because this is actually the second time"
+		},
+		{
+			"timestamps": {
+				"from": "00:10:53,560",
+				"to": "00:10:56,200"
+			},
+			"offsets": {
+				"from": 653560,
+				"to": 656200
+			},
+			"text": " we're shooting this, I've already set it to the fan mode."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:56,200",
+				"to": "00:10:58,070"
+			},
+			"offsets": {
+				"from": 656200,
+				"to": 658070
+			},
+			"text": " And so basically you can hit this."
+		},
+		{
+			"timestamps": {
+				"from": "00:10:58,070",
+				"to": "00:11:00,490"
+			},
+			"offsets": {
+				"from": 658070,
+				"to": 660490
+			},
+			"text": " It'll turn your fan on and off."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:00,490",
+				"to": "00:11:02,950"
+			},
+			"offsets": {
+				"from": 660490,
+				"to": 662950
+			},
+			"text": " I'm actually into this because I think during the winter"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:02,950",
+				"to": "00:11:04,220"
+			},
+			"offsets": {
+				"from": 662950,
+				"to": 664220
+			},
+			"text": " I don't want any fan."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:04,220",
+				"to": "00:11:07,810"
+			},
+			"offsets": {
+				"from": 664220,
+				"to": 667810
+			},
+			"text": " Sometimes here in Vancouver, the mornings are really cold,"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:07,810",
+				"to": "00:11:10,790"
+			},
+			"offsets": {
+				"from": 667810,
+				"to": 670790
+			},
+			"text": " but the days are hot and then the nights get cold again."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:10,790",
+				"to": "00:11:12,790"
+			},
+			"offsets": {
+				"from": 670790,
+				"to": 672790
+			},
+			"text": " And so it'd be nice throughout the day of gaming."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:12,790",
+				"to": "00:11:14,190"
+			},
+			"offsets": {
+				"from": 672790,
+				"to": 674190
+			},
+			"text": " If I'm gaming for 20 hours straight,"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:14,190",
+				"to": "00:11:18,240"
+			},
+			"offsets": {
+				"from": 674190,
+				"to": 678240
+			},
+			"text": " I can just hit this button, change my fan speed,"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:18,240",
+				"to": "00:11:19,510"
+			},
+			"offsets": {
+				"from": 678240,
+				"to": 679510
+			},
+			"text": " like a friggin' pro."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:19,510",
+				"to": "00:11:22,660"
+			},
+			"offsets": {
+				"from": 679510,
+				"to": 682660
+			},
+			"text": " We have our settings of our settings,"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:22,660",
+				"to": "00:11:24,220"
+			},
+			"offsets": {
+				"from": 682660,
+				"to": 684220
+			},
+			"text": " shows our web driver version."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:24,220",
+				"to": "00:11:25,860"
+			},
+			"offsets": {
+				"from": 684220,
+				"to": 685860
+			},
+			"text": " We can update the mouse firmware in dongle."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:25,860",
+				"to": "00:11:27,810"
+			},
+			"offsets": {
+				"from": 685860,
+				"to": 687810
+			},
+			"text": " We've already updated it, so we don't do that."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:27,810",
+				"to": "00:11:30,810"
+			},
+			"offsets": {
+				"from": 687810,
+				"to": 690810
+			},
+			"text": " We have our information, our driver history, our guide,"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:30,810",
+				"to": "00:11:33,180"
+			},
+			"offsets": {
+				"from": 690810,
+				"to": 693180
+			},
+			"text": " and then our general, which will allow us to repair"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:33,180",
+				"to": "00:11:34,740"
+			},
+			"offsets": {
+				"from": 693180,
+				"to": 694740
+			},
+			"text": " if we're having an issue, although I think it'd be"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:34,740",
+				"to": "00:11:37,950"
+			},
+			"offsets": {
+				"from": 694740,
+				"to": 697950
+			},
+			"text": " hard to get into this software if that was the case."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:37,950",
+				"to": "00:11:41,180"
+			},
+			"offsets": {
+				"from": 697950,
+				"to": 701180
+			},
+			"text": " Or a full reset of the mouse to default settings."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:41,180",
+				"to": "00:11:43,460"
+			},
+			"offsets": {
+				"from": 701180,
+				"to": 703460
+			},
+			"text": " I like the settings I got, so I'm gonna leave them as is"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:43,460",
+				"to": "00:11:46,970"
+			},
+			"offsets": {
+				"from": 703460,
+				"to": 706970
+			},
+			"text": " and play some games, starting with resident evil"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:46,970",
+				"to": "00:11:51,150"
+			},
+			"offsets": {
+				"from": 706970,
+				"to": 711150
+			},
+			"text": " for one of the best gosh darn games ever made."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:51,150",
+				"to": "00:11:52,780"
+			},
+			"offsets": {
+				"from": 711150,
+				"to": 712780
+			},
+			"text": " This is the remake, still great."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:52,780",
+				"to": "00:11:55,780"
+			},
+			"offsets": {
+				"from": 712780,
+				"to": 715780
+			},
+			"text": " I will admit this is usually a controller game for me."
+		},
+		{
+			"timestamps": {
+				"from": "00:11:55,780",
+				"to": "00:11:59,120"
+			},
+			"offsets": {
+				"from": 715780,
+				"to": 719120
+			},
+			"text": " I find, cause I'm console-brained when it comes"
+		},
+		{
+			"timestamps": {
+				"from": "00:11:59,120",
+				"to": "00:12:01,690"
+			},
+			"offsets": {
+				"from": 719120,
+				"to": 721690
+			},
+			"text": " to resident evil, I still play with a controller."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:01,690",
+				"to": "00:12:03,170"
+			},
+			"offsets": {
+				"from": 721690,
+				"to": 723170
+			},
+			"text": " So actually will not do super well,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:03,170",
+				"to": "00:12:05,090"
+			},
+			"offsets": {
+				"from": 723170,
+				"to": 725090
+			},
+			"text": " but it'll give us a good initial impression"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:05,090",
+				"to": "00:12:06,950"
+			},
+			"offsets": {
+				"from": 725090,
+				"to": 726950
+			},
+			"text": " of how this mouse is."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:06,950",
+				"to": "00:12:08,830"
+			},
+			"offsets": {
+				"from": 726950,
+				"to": 728830
+			},
+			"text": " I gotta say, this feels like a very premium mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:08,830",
+				"to": "00:12:10,750"
+			},
+			"offsets": {
+				"from": 728830,
+				"to": 730750
+			},
+			"text": " I'm not the biggest fan of the perforations,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:10,750",
+				"to": "00:12:13,490"
+			},
+			"offsets": {
+				"from": 730750,
+				"to": 733490
+			},
+			"text": " but for the purpose of this, oh god,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:13,490",
+				"to": "00:12:16,310"
+			},
+			"offsets": {
+				"from": 733490,
+				"to": 736310
+			},
+			"text": " I don't, how do I freaking parry?"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:16,310",
+				"to": "00:12:17,150"
+			},
+			"offsets": {
+				"from": 736310,
+				"to": 737150
+			},
+			"text": " Nope, not like that."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:17,150",
+				"to": "00:12:19,260"
+			},
+			"offsets": {
+				"from": 737150,
+				"to": 739260
+			},
+			"text": " How do I, how do I parry on the keyboard?"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:19,260",
+				"to": "00:12:21,380"
+			},
+			"offsets": {
+				"from": 739260,
+				"to": 741380
+			},
+			"text": " Oh god, oh god, how do I (bleep) parry?"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:21,380",
+				"to": "00:12:24,300"
+			},
+			"offsets": {
+				"from": 741380,
+				"to": 744300
+			},
+			"text": " Oh god, oh god, no, no, no, no."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:26,230",
+				"to": "00:12:27,910"
+			},
+			"offsets": {
+				"from": 746230,
+				"to": 747910
+			},
+			"text": " You might have noticed I switched out of resident evil"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:27,910",
+				"to": "00:12:29,230"
+			},
+			"offsets": {
+				"from": 747910,
+				"to": 749230
+			},
+			"text": " for that was a part of the game"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:29,230",
+				"to": "00:12:31,140"
+			},
+			"offsets": {
+				"from": 749230,
+				"to": 751140
+			},
+			"text": " where your equipment is taken away from you,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:31,140",
+				"to": "00:12:34,900"
+			},
+			"offsets": {
+				"from": 751140,
+				"to": 754900
+			},
+			"text": " so you don't really need to know what a mouse does in that game."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:34,900",
+				"to": "00:12:37,870"
+			},
+			"offsets": {
+				"from": 754900,
+				"to": 757870
+			},
+			"text": " What you need to know is how it does in a game like CS2."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:37,870",
+				"to": "00:12:40,430"
+			},
+			"offsets": {
+				"from": 757870,
+				"to": 760430
+			},
+			"text": " And let me tell you, this feels real good."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:40,430",
+				"to": "00:12:42,230"
+			},
+			"offsets": {
+				"from": 760430,
+				"to": 762230
+			},
+			"text": " This feels real connected to me."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:42,230",
+				"to": "00:12:44,590"
+			},
+			"offsets": {
+				"from": 762230,
+				"to": 764590
+			},
+			"text": " I feel like pretty quickly I'm forgetting"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:44,590",
+				"to": "00:12:45,750"
+			},
+			"offsets": {
+				"from": 764590,
+				"to": 765750
+			},
+			"text": " about the mouse that I'm using,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:45,750",
+				"to": "00:12:47,730"
+			},
+			"offsets": {
+				"from": 765750,
+				"to": 767730
+			},
+			"text": " and I'm just clicking on heads."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:47,730",
+				"to": "00:12:50,030"
+			},
+			"offsets": {
+				"from": 767730,
+				"to": 770030
+			},
+			"text": " Yeah, the response feels amazing."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:50,030",
+				"to": "00:12:52,590"
+			},
+			"offsets": {
+				"from": 770030,
+				"to": 772590
+			},
+			"text": " It feels so smooth, it feels so natural."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:52,590",
+				"to": "00:12:55,150"
+			},
+			"offsets": {
+				"from": 772590,
+				"to": 775150
+			},
+			"text": " The weight is good, even the 73 grams,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:55,150",
+				"to": "00:12:56,830"
+			},
+			"offsets": {
+				"from": 775150,
+				"to": 776830
+			},
+			"text": " even though it's a little heavier than ideal,"
+		},
+		{
+			"timestamps": {
+				"from": "00:12:56,830",
+				"to": "00:12:59,240"
+			},
+			"offsets": {
+				"from": 776830,
+				"to": 779240
+			},
+			"text": " it doesn't feel heavy in the hand."
+		},
+		{
+			"timestamps": {
+				"from": "00:12:59,240",
+				"to": "00:13:01,160"
+			},
+			"offsets": {
+				"from": 779240,
+				"to": 781160
+			},
+			"text": " I gotta say, this is going a lot more favorably"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:01,160",
+				"to": "00:13:02,990"
+			},
+			"offsets": {
+				"from": 781160,
+				"to": 782990
+			},
+			"text": " for this mouse than I expected,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:02,990",
+				"to": "00:13:04,150"
+			},
+			"offsets": {
+				"from": 782990,
+				"to": 784150
+			},
+			"text": " but why don't we try out a new game"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:04,150",
+				"to": "00:13:05,470"
+			},
+			"offsets": {
+				"from": 784150,
+				"to": 785470
+			},
+			"text": " that I'm a little more familiar with,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:05,470",
+				"to": "00:13:07,610"
+			},
+			"offsets": {
+				"from": 785470,
+				"to": 787610
+			},
+			"text": " which is Apex Legends."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:07,610",
+				"to": "00:13:10,730"
+			},
+			"offsets": {
+				"from": 787610,
+				"to": 790730
+			},
+			"text": " Boom, headshot, this mouse feels so good."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:10,730",
+				"to": "00:13:13,540"
+			},
+			"offsets": {
+				"from": 790730,
+				"to": 793540
+			},
+			"text": " I can't believe I'm saying this."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:13,540",
+				"to": "00:13:17,550"
+			},
+			"offsets": {
+				"from": 793540,
+				"to": 797550
+			},
+			"text": " I really thought this was just gonna be a ha ha funny joke movie."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:17,550",
+				"to": "00:13:18,910"
+			},
+			"offsets": {
+				"from": 797550,
+				"to": 798910
+			},
+			"text": " Like, I'm a pretty sweaty person,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:18,910",
+				"to": "00:13:21,470"
+			},
+			"offsets": {
+				"from": 798910,
+				"to": 801470
+			},
+			"text": " and when I'm presenting, I'm always like sweating everywhere."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:21,470",
+				"to": "00:13:24,230"
+			},
+			"offsets": {
+				"from": 801470,
+				"to": 804230
+			},
+			"text": " My hand is the only thing on me that is cool right now."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:24,230",
+				"to": "00:13:26,620"
+			},
+			"offsets": {
+				"from": 804230,
+				"to": 806620
+			},
+			"text": " You were looking at this, and you're like, maybe."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:26,620",
+				"to": "00:13:30,080"
+			},
+			"offsets": {
+				"from": 806620,
+				"to": 810080
+			},
+			"text": " And to you, I say, maybe plus."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:30,080",
+				"to": "00:13:31,560"
+			},
+			"offsets": {
+				"from": 810080,
+				"to": 811560
+			},
+			"text": " Yeah, I feel like if you're somebody that had a mouse,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:31,560",
+				"to": "00:13:34,680"
+			},
+			"offsets": {
+				"from": 811560,
+				"to": 814680
+			},
+			"text": " that was just like worn to sh*t right around here,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:34,680",
+				"to": "00:13:36,640"
+			},
+			"offsets": {
+				"from": 814680,
+				"to": 816640
+			},
+			"text": " as your hands have been sort of like sweating on it,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:36,640",
+				"to": "00:13:37,950"
+			},
+			"offsets": {
+				"from": 816640,
+				"to": 817950
+			},
+			"text": " this might be for you."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:37,950",
+				"to": "00:13:41,210"
+			},
+			"offsets": {
+				"from": 817950,
+				"to": 821210
+			},
+			"text": " I have never used a mouse that makes my hand cooler,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:41,210",
+				"to": "00:13:43,290"
+			},
+			"offsets": {
+				"from": 821210,
+				"to": 823290
+			},
+			"text": " and is also just a really solid mouse."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:43,290",
+				"to": "00:13:46,020"
+			},
+			"offsets": {
+				"from": 823290,
+				"to": 826020
+			},
+			"text": " This feels really good, the response times are good."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:46,020",
+				"to": "00:13:47,180"
+			},
+			"offsets": {
+				"from": 826020,
+				"to": 827180
+			},
+			"text": " The weight is really good."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:47,180",
+				"to": "00:13:49,080"
+			},
+			"offsets": {
+				"from": 827180,
+				"to": 829080
+			},
+			"text": " It's like slightly front heavy,"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:49,080",
+				"to": "00:13:50,840"
+			},
+			"offsets": {
+				"from": 829080,
+				"to": 830840
+			},
+			"text": " but it's not like it feels like it's gonna rip out"
+		},
+		{
+			"timestamps": {
+				"from": "00:13:50,840",
+				"to": "00:13:52,240"
+			},
+			"offsets": {
+				"from": 830840,
+				"to": 832240
+			},
+			"text": " of my hand at any point."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:52,240",
+				"to": "00:13:56,500"
+			},
+			"offsets": {
+				"from": 832240,
+				"to": 836500
+			},
+			"text": " I would gladly use this mouse any day of the week."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:56,500",
+				"to": "00:13:58,660"
+			},
+			"offsets": {
+				"from": 836500,
+				"to": 838660
+			},
+			"text": " This is surprisingly good."
+		},
+		{
+			"timestamps": {
+				"from": "00:13:58,660",
+				"to": "00:14:01,500"
+			},
+			"offsets": {
+				"from": 838660,
+				"to": 841500
+			},
+			"text": " And for $180, it should be really good."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:01,500",
+				"to": "00:14:04,780"
+			},
+			"offsets": {
+				"from": 841500,
+				"to": 844780
+			},
+			"text": " That's a pretty premium pricing category."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:04,780",
+				"to": "00:14:06,740"
+			},
+			"offsets": {
+				"from": 844780,
+				"to": 846740
+			},
+			"text": " At that point, you're getting pretty close"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:06,740",
+				"to": "00:14:09,670"
+			},
+			"offsets": {
+				"from": 846740,
+				"to": 849670
+			},
+			"text": " to the G Pro X2 Super Strike,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:09,670",
+				"to": "00:14:10,590"
+			},
+			"offsets": {
+				"from": 849670,
+				"to": 850590
+			},
+			"text": " which I think has other features"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:10,590",
+				"to": "00:14:12,970"
+			},
+			"offsets": {
+				"from": 850590,
+				"to": 852970
+			},
+			"text": " that might make it a more complete mouse experience,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:12,970",
+				"to": "00:14:14,320"
+			},
+			"offsets": {
+				"from": 852970,
+				"to": 854320
+			},
+			"text": " or something more novel."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:14,320",
+				"to": "00:14:17,110"
+			},
+			"offsets": {
+				"from": 854320,
+				"to": 857110
+			},
+			"text": " And there's just a ton of high end mice at that price point."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:17,110",
+				"to": "00:14:19,750"
+			},
+			"offsets": {
+				"from": 857110,
+				"to": 859750
+			},
+			"text": " And I'd still a believer that you can get a lot"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:19,750",
+				"to": "00:14:22,860"
+			},
+			"offsets": {
+				"from": 859750,
+				"to": 862860
+			},
+			"text": " for your money at a lower price."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:22,860",
+				"to": "00:14:26,660"
+			},
+			"offsets": {
+				"from": 862860,
+				"to": 866660
+			},
+			"text": " We got this M-chose K7, but the L7s are awesome too."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:26,660",
+				"to": "00:14:29,500"
+			},
+			"offsets": {
+				"from": 866660,
+				"to": 869500
+			},
+			"text": " There's the key corn mice that I really like that M series."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:29,500",
+				"to": "00:14:32,560"
+			},
+			"offsets": {
+				"from": 869500,
+				"to": 872560
+			},
+			"text": " That's so good, great specs for the price."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:32,560",
+				"to": "00:14:36,680"
+			},
+			"offsets": {
+				"from": 872560,
+				"to": 876680
+			},
+			"text": " As someone who thinks that spending nearly $200 US"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:36,680",
+				"to": "00:14:39,480"
+			},
+			"offsets": {
+				"from": 876680,
+				"to": 879480
+			},
+			"text": " on one peripherals, it's a little bit much,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:39,480",
+				"to": "00:14:41,600"
+			},
+			"offsets": {
+				"from": 879480,
+				"to": 881600
+			},
+			"text": " this is actually a surprisingly great product."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:41,600",
+				"to": "00:14:45,090"
+			},
+			"offsets": {
+				"from": 881600,
+				"to": 885090
+			},
+			"text": " And I think that if you're into the idea of this,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:45,090",
+				"to": "00:14:46,800"
+			},
+			"offsets": {
+				"from": 885090,
+				"to": 886800
+			},
+			"text": " it's definitely worth trying out."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:46,800",
+				"to": "00:14:48,200"
+			},
+			"offsets": {
+				"from": 886800,
+				"to": 888200
+			},
+			"text": " Just like you should definitely try watching"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:48,200",
+				"to": "00:14:49,120"
+			},
+			"offsets": {
+				"from": 888200,
+				"to": 889120
+			},
+			"text": " more short circuits."
+		},
+		{
+			"timestamps": {
+				"from": "00:14:49,120",
+				"to": "00:14:50,640"
+			},
+			"offsets": {
+				"from": 889120,
+				"to": 890640
+			},
+			"text": " You can either watch the time that I unboxed"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:50,640",
+				"to": "00:14:52,800"
+			},
+			"offsets": {
+				"from": 890640,
+				"to": 892800
+			},
+			"text": " the vertical keycron, it'll give you an idea"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:52,800",
+				"to": "00:14:54,840"
+			},
+			"offsets": {
+				"from": 892800,
+				"to": 894840
+			},
+			"text": " of the specs and the build quality,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:54,840",
+				"to": "00:14:57,800"
+			},
+			"offsets": {
+				"from": 894840,
+				"to": 897800
+			},
+			"text": " or the time that I preview from box to fan mouse,"
+		},
+		{
+			"timestamps": {
+				"from": "00:14:57,800",
+				"to": "00:15:00,480"
+			},
+			"offsets": {
+				"from": 897800,
+				"to": 900480
+			},
+			"text": " just to show you how far we've come since then."
+		}
+	]
+}

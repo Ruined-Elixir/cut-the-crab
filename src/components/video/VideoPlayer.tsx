@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
+import { formatPlaybackTime } from "../../utils/time";
+import "./VideoPlayer.css";
+
+type SeekRequest = {
+  time: number;
+  id: number;
+};
 
 type VideoPlayerProps = {
   onDurationChange?: (duration: number) => void;
   onTimeChange?: (currentTime: number) => void;
-  seekTo?: number;
   onVideoNameChange?: (name: string) => void;
-
-  // Waveforms
-  onVideoPathChange?: (path: string) => void;
-  
+  onVideoPathChange?: (path: string) => void | Promise<void>;
+  seekRequest?: SeekRequest | null;
 };
 
 function VideoPlayer({
@@ -19,17 +23,16 @@ function VideoPlayer({
   onTimeChange,
   onVideoNameChange,
   onVideoPathChange,
-  seekTo,
+  seekRequest,
 }: VideoPlayerProps) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [skipSeconds] = useState(10);
-  
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const skipSeconds = 10;
 
   const chooseVideo = async () => {
     const selected = await open({
@@ -47,17 +50,18 @@ function VideoPlayer({
       return;
     }
 
-    onVideoPathChange?.(selected);
-
     const name = selected.split(/[\\/]/).pop() ?? "Unknown video";
 
     setVideoName(name);
-    onVideoNameChange?.(name);
     setVideoUrl(convertFileSrc(selected));
-
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
+
+    onVideoNameChange?.(name);
+    onTimeChange?.(0);
+    onDurationChange?.(0);
+    await onVideoPathChange?.(selected);
   };
 
   const togglePlayPause = () => {
@@ -71,34 +75,14 @@ function VideoPlayer({
     }
   };
 
-  const jumpBackward = () => {
+  const jumpBy = (seconds: number) => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !Number.isFinite(video.duration)) return;
 
-    video.currentTime = Math.max(0, video.currentTime - skipSeconds);
-  };
-
-  const jumpForward = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    video.currentTime = Math.min(
-      video.duration,
-      video.currentTime + skipSeconds
+    video.currentTime = Math.max(
+      0,
+      Math.min(video.duration, video.currentTime + seconds)
     );
-  };
-
-  const formatTime = (time: number) => {
-    if (!Number.isFinite(time)) {
-      return "00:00";
-    }
-
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-
-    return `${minutes.toString().padStart(2, "0")}:${seconds
-      .toString()
-      .padStart(2, "0")}`;
   };
 
   useEffect(() => {
@@ -120,104 +104,95 @@ function VideoPlayer({
 
       if (event.code === "ArrowLeft") {
         event.preventDefault();
-        jumpBackward();
+        jumpBy(-skipSeconds);
       }
 
       if (event.code === "ArrowRight") {
         event.preventDefault();
-        jumpForward();
+        jumpBy(skipSeconds);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [skipSeconds]);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
-    if (videoRef.current && seekTo !== undefined) {
-      videoRef.current.currentTime = seekTo;
-      setCurrentTime(seekTo);
-    }
-  }, [seekTo]);
+    const video = videoRef.current;
+    if (!video || !seekRequest) return;
+
+    video.currentTime = seekRequest.time;
+    setCurrentTime(seekRequest.time);
+    onTimeChange?.(seekRequest.time);
+  }, [seekRequest, onTimeChange]);
 
   return (
-    <section>
-      <button onClick={chooseVideo}>
-        Choose Video
-      </button>
-
-      {videoName && <p>{videoName}</p>}
+    <section className="video-player">
+      <div className="video-player-toolbar">
+        <button onClick={chooseVideo}>Choose Video</button>
+        {videoName && <span className="video-name">{videoName}</span>}
+      </div>
 
       {videoUrl && (
         <>
           <video
             ref={videoRef}
+            className="video-preview"
             src={videoUrl}
             onTimeUpdate={() => {
-                const video = videoRef.current;
-                if (!video) return;
+              const video = videoRef.current;
+              if (!video) return;
 
-                const time = video.currentTime;
-
-                setCurrentTime(time);
-                onTimeChange?.(time);
+              const time = video.currentTime;
+              setCurrentTime(time);
+              onTimeChange?.(time);
             }}
             onLoadedMetadata={() => {
-                if (videoRef.current) {
-                    const videoDuration = videoRef.current.duration;
+              const video = videoRef.current;
+              if (!video) return;
 
-                    setDuration(videoDuration);
-                    onDurationChange?.(videoDuration);
-                }
+              setDuration(video.duration);
+              onDurationChange?.(video.duration);
             }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
-            style={{
-              width: "800px",
-              maxWidth: "100%",
-              marginTop: "20px",
-              display: "block",
-            }}
           />
 
-          <div style={{ marginTop: "10px" }}>
-            <button onClick={jumpBackward}>
-              -{skipSeconds}s
-            </button>
+          <div className="video-controls">
+            <div className="video-control-buttons">
+              <button onClick={() => jumpBy(-skipSeconds)}>
+                -{skipSeconds}s
+              </button>
 
-            <button onClick={togglePlayPause}>
-              {isPlaying ? "Pause" : "Play"}
-            </button>
+              <button onClick={togglePlayPause}>
+                {isPlaying ? "Pause" : "Play"}
+              </button>
 
-            <button onClick={jumpForward}>
-              +{skipSeconds}s
-            </button>
+              <button onClick={() => jumpBy(skipSeconds)}>
+                +{skipSeconds}s
+              </button>
+            </div>
 
-            <p>
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </p>
+            <span className="video-time">
+              {formatPlaybackTime(currentTime)} / {formatPlaybackTime(duration)}
+            </span>
 
             <input
+              className="video-seek"
               type="range"
               min="0"
               max={duration || 0}
               step="0.1"
               value={currentTime}
               onChange={(event) => {
-                const newTime = Number(event.target.value);
+                const video = videoRef.current;
+                if (!video) return;
 
-                if (videoRef.current) {
-                  videoRef.current.currentTime = newTime;
-                  setCurrentTime(newTime);
-                }
-              }}
-              style={{
-                width: "800px",
-                maxWidth: "100%",
+                const time = Number(event.target.value);
+                video.currentTime = time;
+                setCurrentTime(time);
+                onTimeChange?.(time);
               }}
             />
           </div>

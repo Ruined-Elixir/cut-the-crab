@@ -1,22 +1,35 @@
 import type { Subtitle } from "../types/subtitle";
 
 const parseTimestamp = (timestamp: string) => {
-  const [hours, minutes, rest] = timestamp.split(":");
-  const [seconds, milliseconds] = rest.split(",");
+  const normalized = timestamp.trim().replace(".", ",");
+  const [hours, minutes, rest] = normalized.split(":");
+
+  if (!hours || !minutes || !rest) {
+    return 0;
+  }
+
+  const [seconds, milliseconds = "0"] = rest.split(",");
 
   return (
     Number(hours) * 3600 +
     Number(minutes) * 60 +
     Number(seconds) +
-    Number(milliseconds) / 1000
+    Number(milliseconds.padEnd(3, "0").slice(0, 3)) / 1000
   );
 };
 
 const formatTimestamp = (time: number) => {
-  const hours = Math.floor(time / 3600);
-  const minutes = Math.floor((time % 3600) / 60);
-  const seconds = Math.floor(time % 60);
-  const milliseconds = Math.floor((time % 1) * 1000);
+  const safeTime = Math.max(0, time);
+  const totalMilliseconds = Math.round(safeTime * 1000);
+
+  const hours = Math.floor(totalMilliseconds / 3_600_000);
+  const minutes = Math.floor(
+    (totalMilliseconds % 3_600_000) / 60_000
+  );
+  const seconds = Math.floor(
+    (totalMilliseconds % 60_000) / 1000
+  );
+  const milliseconds = totalMilliseconds % 1000;
 
   return `${hours.toString().padStart(2, "0")}:${minutes
     .toString()
@@ -28,10 +41,13 @@ const formatTimestamp = (time: number) => {
 };
 
 export const parseSrt = (content: string): Subtitle[] => {
-  const blocks = content
-    .trim()
-    .split(/\r?\n\r?\n/);
+  const trimmed = content.trim();
 
+  if (!trimmed) {
+    return [];
+  }
+
+  const blocks = trimmed.split(/\r?\n\r?\n/);
   const subtitles: Subtitle[] = [];
 
   for (const block of blocks) {
@@ -42,37 +58,34 @@ export const parseSrt = (content: string): Subtitle[] => {
     }
 
     const timingLine = lines[1];
-    const [start, end] = timingLine.split(" --> ");
+    const [start, end] = timingLine.split(/\s+-->\s+/);
 
     if (!start || !end) {
       continue;
     }
 
-    const subtitle: Subtitle = {
+    subtitles.push({
       id: crypto.randomUUID(),
-      startTime: parseTimestamp(start.trim()),
-      endTime: parseTimestamp(end.trim()),
+      startTime: parseTimestamp(start),
+      endTime: parseTimestamp(end),
       text: lines.slice(2).join("\n"),
-    };
-
-    subtitles.push(subtitle);
+    });
   }
 
-  return subtitles;
+  return subtitles.sort((a, b) => a.startTime - b.startTime);
 };
 
 export const generateSrt = (subtitles: Subtitle[]) => {
-  return subtitles
-    .slice()
+  return [...subtitles]
     .sort((a, b) => a.startTime - b.startTime)
-    .map((subtitle, index) => {
-      return [
+    .map((subtitle, index) =>
+      [
         index + 1,
         `${formatTimestamp(subtitle.startTime)} --> ${formatTimestamp(
           subtitle.endTime
         )}`,
         subtitle.text,
-      ].join("\n");
-    })
+      ].join("\n")
+    )
     .join("\n\n");
 };

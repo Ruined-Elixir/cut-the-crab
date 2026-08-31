@@ -1,8 +1,19 @@
 use std::process::Command;
+use crate::ffmpeg_paths::get_ffmpeg_path;
+mod transcription;
+mod whisper_paths;
+mod model_manager;
+mod ffmpeg_paths;
 
 #[tauri::command]
-fn extract_waveform(video_path: String, points: usize) -> Result<Vec<f32>, String> {
-    let output = Command::new("ffmpeg")
+fn extract_waveform(
+    app: tauri::AppHandle,
+    video_path: String,
+    points: usize,
+) -> Result<Vec<f32>, String> {
+    let ffmpeg_path = get_ffmpeg_path(&app)?;
+
+    let output = Command::new(&ffmpeg_path)
         .args([
             "-i",
             &video_path,
@@ -82,7 +93,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![extract_waveform])
+        .invoke_handler(tauri::generate_handler![
+            extract_waveform,
+            transcription::transcribe_video
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
