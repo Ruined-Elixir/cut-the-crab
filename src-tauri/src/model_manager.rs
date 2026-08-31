@@ -16,6 +16,12 @@ const VAD_MODEL_URL: &str =
 const SMALL_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
 
+const SENSEVOICE_MODEL_URL: &str =
+    "https://huggingface.co/FunAudioLLM/SenseVoiceSmall-GGUF/resolve/main/sensevoice-small.gguf";
+
+const SENSEVOICE_VAD_URL: &str =
+    "https://huggingface.co/FunAudioLLM/fsmn-vad-GGUF/resolve/main/fsmn-vad.gguf";
+
 pub async fn ensure_whisper_model(
     app: &tauri::AppHandle,
     model_name: &str,
@@ -132,4 +138,114 @@ fn partial_path(model_path: &Path) -> PathBuf {
     path.push(".part");
 
     PathBuf::from(path)
+}
+
+async fn download_model_file(
+    app: &tauri::AppHandle,
+    url: &str,
+    destination: &Path,
+    status: &str,
+) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::Write;
+    use tauri::Emitter;
+
+    if destination.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create model directory: {e}"))?;
+    }
+
+    app.emit("transcription-progress", status)
+        .map_err(|e| format!("Failed to emit download status: {e}"))?;
+
+    app.emit("model-download-percent", 0u32)
+        .map_err(|e| format!("Failed to emit download progress: {e}"))?;
+
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| format!("Failed to download model: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Model download failed with HTTP status {}",
+            response.status()
+        ));
+    }
+
+    let total_size = response.content_length();
+
+    let part_path = destination.with_extension("part");
+
+    let mut file = File::create(&part_path)
+        .map_err(|e| format!("Failed to create temporary model file: {e}"))?;
+
+    let mut response = response;
+    let mut downloaded: u64 = 0;
+    let mut last_percent = 0;
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed while downloading model: {e}"))?
+    {
+        file.write_all(&chunk)
+            .map_err(|e| format!("Failed to write model data: {e}"))?;
+
+        downloaded += chunk.len() as u64;
+
+        if let Some(total) = total_size {
+            let percent = ((downloaded as f64 / total as f64) * 100.0)
+                .round() as u32;
+
+            if percent != last_percent {
+                last_percent = percent;
+
+                app.emit("model-download-percent", percent)
+                    .map_err(|e| {
+                        format!("Failed to emit download progress: {e}")
+                    })?;
+            }
+        }
+    }
+
+    file.flush()
+        .map_err(|e| format!("Failed to flush model file: {e}"))?;
+
+    std::fs::rename(&part_path, destination)
+        .map_err(|e| format!("Failed to finalize model download: {e}"))?;
+
+    app.emit("model-download-percent", 100u32)
+        .map_err(|e| format!("Failed to emit download progress: {e}"))?;
+
+    Ok(())
+}
+
+pub async fn ensure_sensevoice_model(
+    app: &tauri::AppHandle,
+    model_path: &Path,
+) -> Result<(), String> {
+    download_model_file(
+        app,
+        SENSEVOICE_MODEL_URL,
+        model_path,
+        "Downloading SenseVoice model...",
+    )
+    .await
+}
+
+pub async fn ensure_sensevoice_vad(
+    app: &tauri::AppHandle,
+    vad_path: &Path,
+) -> Result<(), String> {
+    download_model_file(
+        app,
+        SENSEVOICE_VAD_URL,
+        vad_path,
+        "Downloading SenseVoice VAD...",
+    )
+    .await
 }

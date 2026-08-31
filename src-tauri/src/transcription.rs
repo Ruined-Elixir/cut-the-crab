@@ -12,6 +12,12 @@ use crate::model_manager::{
     ensure_vad_model,
 };
 use crate::ffmpeg_paths::get_ffmpeg_path;
+use crate::sensevoice_engine::transcribe_with_sensevoice;
+use crate::sensevoice_paths::get_sensevoice_paths;
+use crate::model_manager::{
+    ensure_sensevoice_model,
+    ensure_sensevoice_vad,
+};
 
 
 #[derive(Debug, Deserialize)]
@@ -69,8 +75,66 @@ fn parse_whisper_progress(line: &str) -> Option<u32> {
 pub async fn transcribe_video(
     app: tauri::AppHandle,
     video_path: String,
+    engine: String,
     model: String,
 ) -> Result<TranscriptionResult, String> {
+
+    if engine == "sensevoice" {
+        let sensevoice_paths = get_sensevoice_paths(&app)?;
+
+        ensure_sensevoice_model(
+            &app,
+            &sensevoice_paths.model,
+        )
+        .await?;
+
+        ensure_sensevoice_vad(
+            &app,
+            &sensevoice_paths.vad_model,
+        )
+        .await?;
+
+        let binary_path = sensevoice_paths.binary;
+        let model_path = sensevoice_paths.model;
+        let vad_path = sensevoice_paths.vad_model;
+
+        let result = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            let video_path = video_path.clone();
+
+            move || {
+                transcribe_with_sensevoice(
+                    &app,
+                    &video_path,
+                    binary_path,
+                    model_path,
+                    vad_path,
+                )
+            }
+        })
+        .await
+        .map_err(|e| format!("SenseVoice task failed: {e}"))??;
+
+        return Ok(TranscriptionResult {
+            language: result.language,
+            segments: result
+                .segments
+                .into_iter()
+                .map(|segment| TranscriptionSegment {
+                    start_time: segment.start_time,
+                    end_time: segment.end_time,
+                    text: segment.text,
+                })
+                .collect(),
+        });
+    }
+
+    
+
+    if engine != "whisper" {
+        return Err(format!("Unsupported transcription engine: {engine}"));
+    }
+
     let whisper_paths = get_whisper_paths(&app)?;
     let ffmpeg_path = get_ffmpeg_path(&app)?;
 

@@ -4,6 +4,8 @@ mod transcription;
 mod whisper_paths;
 mod model_manager;
 mod ffmpeg_paths;
+mod sensevoice_engine;
+mod sensevoice_paths;
 
 #[tauri::command]
 fn extract_waveform(
