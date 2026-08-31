@@ -112,6 +112,7 @@ fn split_sensevoice_segment(
 ) -> Vec<SenseVoiceSegment> {
     const TARGET_CHARS: usize = 14;
     const MAX_DURATION: f64 = 6.0;
+    const MIN_DURATION: f64 = 0.8;
 
     let duration = segment.end_time - segment.start_time;
     let total_chars = segment.text.chars().count();
@@ -126,12 +127,14 @@ fn split_sensevoice_segment(
         return vec![segment];
     }
 
-    let total_weight: usize = chunks
+    let weights: Vec<f64> = chunks
         .iter()
-        .map(|chunk| chunk.chars().count())
-        .sum();
+        .map(|chunk| chunk_timing_weight(chunk))
+        .collect();
 
-    if total_weight == 0 {
+    let total_weight: f64 = weights.iter().sum();
+
+    if total_weight <= 0.0 {
         return vec![segment];
     }
 
@@ -139,14 +142,20 @@ fn split_sensevoice_segment(
     let mut current_time = segment.start_time;
 
     for (index, chunk) in chunks.iter().enumerate() {
-        let weight = chunk.chars().count() as f64 / total_weight as f64;
+        let proportional_duration =
+            duration * (weights[index] / total_weight);
 
-        let chunk_duration = duration * weight;
+        let remaining_chunks = chunks.len() - index - 1;
+
+        let latest_end = segment.end_time
+            - remaining_chunks as f64 * MIN_DURATION;
 
         let end_time = if index == chunks.len() - 1 {
             segment.end_time
         } else {
-            current_time + chunk_duration
+            (current_time + proportional_duration)
+                .max(current_time + MIN_DURATION)
+                .min(latest_end)
         };
 
         result.push(SenseVoiceSegment {
@@ -159,6 +168,21 @@ fn split_sensevoice_segment(
     }
 
     result
+}
+
+fn chunk_timing_weight(text: &str) -> f64 {
+    let mut weight: f64 = 0.0;
+
+    for ch in text.chars() {
+        weight += match ch {
+            '。' | '！' | '？' | '!' | '?' => 1.8,
+            '，' | ',' | '；' | ';' | '：' | ':' => 1.4,
+            ' ' => 0.3,
+            _ => 1.0,
+        };
+    }
+
+    weight.max(1.0)
 }
 
 fn split_text_into_chunks(
