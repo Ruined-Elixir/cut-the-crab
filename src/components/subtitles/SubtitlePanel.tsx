@@ -1,25 +1,38 @@
-import { useEffect, useRef } from "react";
-
 import type { Subtitle } from "../../types/subtitle";
-import { formatSubtitleTime } from "../../utils/time";
-import "./SubtitlePanel.css";
 
 import type {
   TranscriptionEngine,
   WhisperModel,
 } from "../../services/transcriptionService";
 
+import SubtitleActions from "./SubtitleActions";
+import SubtitleGenerationProgress from "./SubtitleGenerationProgress";
+import SubtitleList from "./SubtitleList";
+
+import "./SubtitlePanel.css";
 
 type SubtitlePanelProps = {
   subtitles: Subtitle[];
+
   selectedSubtitleId: string | null;
   activeSubtitleId: string | null;
+
   search: string;
   onSearchChange: (value: string) => void;
-  onSelect: (id: string, startTime: number) => void;
-  onTextChange: (id: string, text: string) => void;
+
+  onSelect: (
+    id: string,
+    startTime: number
+  ) => void;
+
+  onTextChange: (
+    id: string,
+    text: string
+  ) => void;
+
   onAdd: () => void;
   onDelete: (id: string) => void;
+
   onImport: () => void | Promise<void>;
   onExport: () => void | Promise<void>;
 
@@ -29,14 +42,17 @@ type SubtitlePanelProps = {
   generationStatus: string;
   generationPercent: number;
   modelDownloadPercent: number;
+  generationError: string;
 
   whisperModel: WhisperModel;
-  onWhisperModelChange: (model: WhisperModel) => void;
-  
-  transcriptionEngine: TranscriptionEngine;
-  onTranscriptionEngineChange: (engine: TranscriptionEngine) => void;
+  onWhisperModelChange: (
+    model: WhisperModel
+  ) => void;
 
-  generationError: string;
+  transcriptionEngine: TranscriptionEngine;
+  onTranscriptionEngineChange: (
+    engine: TranscriptionEngine
+  ) => void;
 };
 
 function SubtitlePanel({
@@ -56,192 +72,78 @@ function SubtitlePanel({
   generationStatus,
   generationPercent,
   modelDownloadPercent,
+  generationError,
   whisperModel,
   onWhisperModelChange,
   transcriptionEngine,
   onTranscriptionEngineChange,
-  generationError,
 }: SubtitlePanelProps) {
-  const listRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!activeSubtitleId || !listRef.current) return;
-
-    const element = listRef.current.querySelector(
-      `[data-subtitle-id="${activeSubtitleId}"]`
-    );
-
-    if (element instanceof HTMLElement) {
-      element.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [activeSubtitleId]);
-
-  const isDownloading = generationStatus.startsWith("Downloading");
-
-  const isTranscribing = generationStatus === "Transcribing...";
-
-  const isDeterminate = isDownloading || isTranscribing;
-
-  const displayedPercent = isDownloading
-    ? modelDownloadPercent
-    : generationPercent;  
-
   return (
     <aside className="subtitle-panel">
       <div className="subtitle-panel-header">
         <h2>Subtitles</h2>
 
-        <div className="subtitle-actions">
-          <select
-            value={transcriptionEngine}
-            onChange={(event) =>
-              onTranscriptionEngineChange(
-                event.target.value as TranscriptionEngine
-              )
-            }
-            disabled={isGenerating}
-          >
-            <option value="whisper">
-              Whisper
-            </option>
+        <SubtitleActions
+          onAdd={onAdd}
+          onImport={onImport}
+          onExport={onExport}
+          onGenerate={onGenerate}
+          isGenerating={isGenerating}
+          generationStatus={generationStatus}
+          whisperModel={whisperModel}
+          onWhisperModelChange={
+            onWhisperModelChange
+          }
+          transcriptionEngine={
+            transcriptionEngine
+          }
+          onTranscriptionEngineChange={
+            onTranscriptionEngineChange
+          }
+        />
 
-            <option value="sensevoice">
-              SenseVoice — Cantonese / Chinese
-            </option>
-          </select>
-
-          {transcriptionEngine === "whisper" && (
-            <select
-              value={whisperModel}
-              onChange={(event) =>
-                onWhisperModelChange(
-                  event.target.value as WhisperModel
-                )
-              }
-              disabled={isGenerating}
-            >
-              <option value="base">
-                Base - Fast
-              </option>
-
-              <option value="small">
-                Small - More Accurate
-              </option>
-            </select>
-          )}
-
-          <button onClick={onAdd}>Add</button>
-          <button
-            onClick={() => void onGenerate()}
-            disabled={isGenerating}
-          >
-            {isGenerating
-              ? generationStatus || "Generating..."
-              : "Generate"}
-          </button>
-          {generationError && (
-            <div className="subtitle-generation-error">
-              {generationError}
-            </div>
-          )}
-          <button onClick={() => void onImport()}>Import SRT</button>
-          <button onClick={() => void onExport()}>Export SRT</button>
-        </div>
-
-        {isGenerating && (
-          <div className="subtitle-generation-progress">
-            <div className="subtitle-generation-status">
-              <span>{generationStatus || "Generating..."}</span>
-
-              {isDeterminate && (
-                <span>{displayedPercent}%</span>
-              )}
-            </div>
-
-            <div
-              className={[
-                "subtitle-progress-track",
-                !isDeterminate ? "indeterminate" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <div
-                className="subtitle-progress-fill"
-                style={
-                  isDeterminate
-                    ? { width: `${displayedPercent}%` }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
-        )}
+        <SubtitleGenerationProgress
+          isGenerating={isGenerating}
+          generationStatus={
+            generationStatus
+          }
+          generationPercent={
+            generationPercent
+          }
+          modelDownloadPercent={
+            modelDownloadPercent
+          }
+          generationError={
+            generationError
+          }
+        />
 
         <input
           type="text"
-          placeholder="Search subtitles"
           className="subtitle-search"
+          placeholder="Search subtitles"
           value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
+          onChange={(event) =>
+            onSearchChange(
+              event.target.value
+            )
+          }
         />
       </div>
 
-      <div className="subtitle-list" ref={listRef}>
-        {subtitles.length === 0 ? (
-          <p className="subtitle-empty">
-            {search ? "No matching subtitles." : "No subtitles yet."}
-          </p>
-        ) : (
-          subtitles.map((subtitle) => {
-            const isSelected = selectedSubtitleId === subtitle.id;
-            const isActive = activeSubtitleId === subtitle.id;
-
-            return (
-              <div
-                key={subtitle.id}
-                data-subtitle-id={subtitle.id}
-                className={[
-                  "subtitle-row",
-                  isSelected ? "selected" : "",
-                  isActive ? "active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onSelect(subtitle.id, subtitle.startTime)}
-              >
-                <span className="subtitle-row-time">
-                  {formatSubtitleTime(subtitle.startTime)}
-                </span>
-
-                <input
-                  className="subtitle-row-text"
-                  value={subtitle.text}
-                  onClick={(event) => event.stopPropagation()}
-                  onFocus={() => onSelect(subtitle.id, subtitle.startTime)}
-                  onChange={(event) =>
-                    onTextChange(subtitle.id, event.target.value)
-                  }
-                />
-
-                <button
-                  className="subtitle-delete"
-                  aria-label="Delete subtitle"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(subtitle.id);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
+      <SubtitleList
+        subtitles={subtitles}
+        selectedSubtitleId={
+          selectedSubtitleId
+        }
+        activeSubtitleId={
+          activeSubtitleId
+        }
+        search={search}
+        onSelect={onSelect}
+        onTextChange={onTextChange}
+        onDelete={onDelete}
+      />
     </aside>
   );
 }

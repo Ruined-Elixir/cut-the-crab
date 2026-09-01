@@ -90,6 +90,25 @@ fn extract_waveform(
     Ok(waveform)
 }
 
+#[tauri::command]
+fn read_matching_srt(
+    video_path: String
+) -> Result<Option<String>, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let video_path = Path::new(&video_path);
+    let srt_path = video_path.with_extension("srt");
+
+    if !srt_path.exists() {
+        return Ok(None);
+    }
+
+    fs::read_to_string(&srt_path)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -97,7 +116,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             extract_waveform,
-            transcription::transcribe_video
+            transcription::transcribe_video,
+            read_matching_srt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

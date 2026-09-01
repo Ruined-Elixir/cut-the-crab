@@ -1,0 +1,89 @@
+/* ==========================================================================
+   Subtitle list
+   ========================================================================== */
+
+.subtitle-list {
+  flex: 1 1 0;
+
+  min-height: 0;
+
+  overflow-x: hidden;
+  overflow-y: auto;
+
+  scroll-behavior: smooth;
+}
+
+.subtitle-row {
+  display: grid;
+  grid-template-columns:
+    58px
+    minmax(0, 1fr)
+    28px;
+
+  align-items: center;
+
+  min-height: 38px;
+
+  padding: 3px 8px;
+
+  cursor: pointer;
+}
+
+.subtitle-row:hover {
+  background: #2a2a2a;
+}
+
+.subtitle-row.active {
+  background: #2f3a2f;
+}
+
+.subtitle-row.selected {
+  background: #344534;
+}
+
+.subtitle-row.active.selected {
+  background: #3d513d;
+}
+
+.subtitle-row-time {
+  color: #999;
+
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subtitle-row-text {
+  width: 100%;
+
+  padding: 6px 4px;
+
+  border: none;
+
+  background: transparent;
+  color: white;
+
+  font-size: 14px;
+
+  outline: none;
+}
+
+.subtitle-delete {
+  padding: 0;
+
+  border: none;
+
+  background: transparent;
+  color: #999;
+
+  font-size: 18px;
+}
+
+.subtitle-delete:hover {
+  color: white;
+}
+
+.subtitle-empty {
+  padding: 14px;
+
+  color: #888;
+}

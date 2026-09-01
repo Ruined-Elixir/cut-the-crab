@@ -1,26 +1,20 @@
-import { useEffect, useState } from "react";
-import "./App.css";
-
+import { useState } from "react";
 
 import VideoPlayer from "./components/video/VideoPlayer";
-import Timeline from "./components/timeline/Timeline";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
+import Timeline from "./components/timeline/Timeline";
 
-import { useWaveform } from "./hooks/useWaveform";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
-import { exportSrtFile, importSrtFile } from "./services/srtFiles";
+import { useTranscription } from "./hooks/useTranscription";
+import { useWaveform } from "./hooks/useWaveform";
 
 import {
-  transcribeVideo,
-  type WhisperModel,
-  type TranscriptionEngine,
-} from "./services/transcriptionService";
+  exportSrtFile,
+  importSrtFile,
+  loadMatchingSrtFile,
+} from "./services/srtFiles";
 
-import { listen } from "@tauri-apps/api/event";
-
-
-
-
+import "./App.css";
 
 type SeekRequest = {
   time: number;
@@ -28,26 +22,25 @@ type SeekRequest = {
 };
 
 function App() {
+  // Video
   const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [videoName, setVideoName] = useState<string | null>(null);
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
 
-  const { waveform, generateWaveform } = useWaveform();
+  const [videoName, setVideoName] =
+    useState<string | null>(null);
 
-  const [isGeneratingSubtitles, setIsGeneratingSubtitles] = useState(false);
-  const [transcriptionStatus, setTranscriptionStatus] = useState("");
-  const [transcriptionPercent, setTranscriptionPercent] = useState(0);
-  const [modelDownloadPercent, setModelDownloadPercent] = useState(0);
-  const [whisperModel, setWhisperModel] =
-  useState<WhisperModel>("base");
+  const [videoPath, setVideoPath] =
+    useState<string | null>(null);
 
-  const [transcriptionEngine, setTranscriptionEngine] =
-  useState<TranscriptionEngine>("whisper");
+  const [seekRequest, setSeekRequest] =
+    useState<SeekRequest | null>(null);
 
-  const [generationError, setGenerationError] = useState("");
+  const {
+    waveform,
+    generateWaveform,
+  } = useWaveform();
 
+  // Subtitles
   const {
     subtitles,
     filteredSubtitles,
@@ -57,14 +50,34 @@ function App() {
     setSubtitleSearch,
     selectSubtitle,
     updateSubtitleText,
+    updateSubtitlePosition,
     moveSubtitle,
     resizeSubtitle,
     addSubtitle,
     deleteSubtitle,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
-    updateSubtitlePosition,
-  } = useSubtitleEditor(currentTime, videoDuration);
+  } = useSubtitleEditor(
+    currentTime,
+    videoDuration
+  );
+
+  // Transcription
+  const {
+    isGenerating,
+    generationStatus,
+    generationPercent,
+    modelDownloadPercent,
+    generationError,
+    whisperModel,
+    setWhisperModel,
+    transcriptionEngine,
+    setTranscriptionEngine,
+    generateSubtitles,
+  } = useTranscription({
+    onGenerated:
+      replaceWithGeneratedSubtitles,
+  });
 
   const requestSeek = (time: number) => {
     setSeekRequest({
@@ -73,86 +86,51 @@ function App() {
     });
   };
 
+  const handleVideoPathChange = async (
+    path: string
+  ) => {
+    setVideoPath(path);
+
+    replaceSubtitles([]);
+    setSubtitleSearch("");
+
+    void generateWaveform(path);
+
+    const matchingSubtitles =
+      await loadMatchingSrtFile(path);
+
+    if (matchingSubtitles) {
+      replaceSubtitles(
+        matchingSubtitles
+      );
+    }
+  };
+
+  const handleSubtitleSelect = (
+    id: string,
+    startTime: number
+  ) => {
+    selectSubtitle(id);
+    requestSeek(startTime);
+  };
+
   const handleImportSrt = async () => {
-    const importedSubtitles = await importSrtFile();
+    const importedSubtitles =
+      await importSrtFile();
 
     if (importedSubtitles) {
-      replaceSubtitles(importedSubtitles);
+      replaceSubtitles(
+        importedSubtitles
+      );
     }
   };
 
   const handleExportSrt = async () => {
-    await exportSrtFile(subtitles);
+    await exportSrtFile(
+      subtitles,
+      videoPath
+    );
   };
-
-  async function generateSubtitles() {
-    if (!videoPath) {
-      setGenerationError("Please choose a video first.");
-      return;
-    }
-
-    setIsGeneratingSubtitles(true);
-    setGenerationError("");
-    setTranscriptionStatus("Checking models...");
-    setTranscriptionPercent(0);
-    setModelDownloadPercent(0);
-
-    try {
-      const result = await transcribeVideo(
-        videoPath,
-        transcriptionEngine,
-        whisperModel
-      );
-
-      replaceWithGeneratedSubtitles(result.segments);
-
-      setTranscriptionStatus("Finished");
-      setTranscriptionPercent(100);
-    } catch (error) {
-      console.error("Failed to generate subtitles:", error);
-
-      setTranscriptionStatus("Failed");
-
-      setGenerationError(
-        error instanceof Error
-          ? error.message
-          : String(error)
-      );
-    } finally {
-      setIsGeneratingSubtitles(false);
-    }
-  }
-
-  useEffect(() => {
-    const unlistenStatusPromise = listen<string>(
-      "transcription-progress",
-      (event) => {
-        setTranscriptionStatus(event.payload);
-      }
-    );
-
-    const unlistenPercentPromise = listen<number>(
-      "transcription-percent",
-      (event) => {
-        setTranscriptionPercent(event.payload);
-      }
-    );
-
-    const unlistenModelDownloadPromise = listen<number>(
-      "model-download-percent",
-      (event) => {
-        setModelDownloadPercent(event.payload);
-      }
-    );
-
-    return () => {
-      void unlistenStatusPromise.then((unlisten) => unlisten());
-      void unlistenPercentPromise.then((unlisten) => unlisten());
-      void unlistenModelDownloadPromise.then((unlisten) => unlisten());
-    };
-  }, []);
-
-  
 
   return (
     <main className="app">
@@ -163,50 +141,100 @@ function App() {
       <div className="workspace">
         <section className="preview-panel">
           <VideoPlayer
-            onDurationChange={setVideoDuration}
-            onTimeChange={setCurrentTime}
-            onVideoNameChange={setVideoName}
-            onVideoPathChange={(path) => {
-              setVideoPath(path);
-              void generateWaveform(path);
-            }}
+            onDurationChange={
+              setVideoDuration
+            }
+            onTimeChange={
+              setCurrentTime
+            }
+            onVideoNameChange={
+              setVideoName
+            }
+            onVideoPathChange={
+              handleVideoPathChange
+            }
             seekRequest={seekRequest}
-
             subtitles={subtitles}
             currentTime={currentTime}
-
-              onSubtitleSelect={selectSubtitle}
-              selectedSubtitleId={selectedSubtitleId}
-              onSubtitlePositionChange={updateSubtitlePosition}
-              onSubtitleTextChange={updateSubtitleText}
+            selectedSubtitleId={
+              selectedSubtitleId
+            }
+            onSubtitleSelect={
+              selectSubtitle
+            }
+            onSubtitlePositionChange={
+              updateSubtitlePosition
+            }
+            onSubtitleTextChange={
+              updateSubtitleText
+            }
           />
         </section>
 
         <SubtitlePanel
-          subtitles={filteredSubtitles}
-          selectedSubtitleId={selectedSubtitleId}
-          activeSubtitleId={activeSubtitleId}
+          subtitles={
+            filteredSubtitles
+          }
+          selectedSubtitleId={
+            selectedSubtitleId
+          }
+          activeSubtitleId={
+            activeSubtitleId
+          }
           search={subtitleSearch}
-          onSearchChange={setSubtitleSearch}
-          onSelect={(id, startTime) => {
-            selectSubtitle(id);
-            requestSeek(startTime);
-          }}
-          onTextChange={updateSubtitleText}
-          onAdd={() => addSubtitle(currentTime)}
-          onDelete={deleteSubtitle}
-          onImport={handleImportSrt}
-          onExport={handleExportSrt}
-          onGenerate={generateSubtitles}
-          isGenerating={isGeneratingSubtitles}
-          generationStatus={transcriptionStatus}
-          generationPercent={transcriptionPercent}
-          modelDownloadPercent={modelDownloadPercent}
-          whisperModel={whisperModel}
-          onWhisperModelChange={setWhisperModel}
-          transcriptionEngine={transcriptionEngine}
-          onTranscriptionEngineChange={setTranscriptionEngine}
-          generationError={generationError}
+          onSearchChange={
+            setSubtitleSearch
+          }
+          onSelect={
+            handleSubtitleSelect
+          }
+          onTextChange={
+            updateSubtitleText
+          }
+          onAdd={() =>
+            addSubtitle(currentTime)
+          }
+          onDelete={
+            deleteSubtitle
+          }
+          onImport={
+            handleImportSrt
+          }
+          onExport={
+            handleExportSrt
+          }
+          onGenerate={() =>
+            generateSubtitles(
+              videoPath
+            )
+          }
+          isGenerating={
+            isGenerating
+          }
+          generationStatus={
+            generationStatus
+          }
+          generationPercent={
+            generationPercent
+          }
+          modelDownloadPercent={
+            modelDownloadPercent
+          }
+          whisperModel={
+            whisperModel
+          }
+          onWhisperModelChange={
+            setWhisperModel
+          }
+          transcriptionEngine={
+            transcriptionEngine
+          }
+          onTranscriptionEngineChange={
+            setTranscriptionEngine
+          }
+          generationError={
+            generationError
+          }
         />
       </div>
 
@@ -216,10 +244,18 @@ function App() {
         videoName={videoName}
         waveform={waveform}
         subtitles={subtitles}
-        selectedSubtitleId={selectedSubtitleId}
-        onSubtitleSelect={selectSubtitle}
-        onSubtitleMove={moveSubtitle}
-        onSubtitleResize={resizeSubtitle}
+        selectedSubtitleId={
+          selectedSubtitleId
+        }
+        onSubtitleSelect={
+          selectSubtitle
+        }
+        onSubtitleMove={
+          moveSubtitle
+        }
+        onSubtitleResize={
+          resizeSubtitle
+        }
         onSeek={requestSeek}
       />
     </main>

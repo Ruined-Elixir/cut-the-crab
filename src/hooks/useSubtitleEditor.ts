@@ -17,6 +17,11 @@ const INITIAL_SUBTITLES: Subtitle[] = [
   },
 ];
 
+function sortSubtitles(subtitles: Subtitle[]) {
+  return [...subtitles].sort(
+    (a, b) => a.startTime - b.startTime
+  );
+}
 
 export function useSubtitleEditor(
   currentTime: number,
@@ -24,8 +29,10 @@ export function useSubtitleEditor(
 ) {
   const [subtitles, setSubtitles] =
     useState<Subtitle[]>(INITIAL_SUBTITLES);
+
   const [selectedSubtitleId, setSelectedSubtitleId] =
     useState<string | null>(null);
+
   const [subtitleSearch, setSubtitleSearch] = useState("");
 
   const filteredSubtitles = useMemo(() => {
@@ -51,20 +58,49 @@ export function useSubtitleEditor(
     setSelectedSubtitleId(id);
   };
 
-  const updateSubtitleText = (id: string, text: string) => {
+  const updateSubtitleText = (
+    id: string,
+    text: string
+  ) => {
     setSubtitles((current) =>
       current.map((subtitle) =>
-        subtitle.id === id ? { ...subtitle, text } : subtitle
+        subtitle.id === id
+          ? { ...subtitle, text }
+          : subtitle
       )
     );
   };
 
-  const moveSubtitle = (id: string, newStartTime: number) => {
+  const updateSubtitlePosition = (
+    id: string,
+    positionX: number,
+    positionY: number
+  ) => {
+    setSubtitles((current) =>
+      current.map((subtitle) =>
+        subtitle.id === id
+          ? {
+              ...subtitle,
+              positionX,
+              positionY,
+            }
+          : subtitle
+      )
+    );
+  };
+
+  const moveSubtitle = (
+    id: string,
+    newStartTime: number
+  ) => {
     setSubtitles((current) =>
       current.map((subtitle) => {
-        if (subtitle.id !== id) return subtitle;
+        if (subtitle.id !== id) {
+          return subtitle;
+        }
 
-        const duration = subtitle.endTime - subtitle.startTime;
+        const duration =
+          subtitle.endTime - subtitle.startTime;
 
         return {
           ...subtitle,
@@ -96,7 +132,10 @@ export function useSubtitleEditor(
   const addSubtitle = (startTime: number) => {
     const safeStart = Math.max(
       0,
-      Math.min(startTime, videoDuration || startTime)
+      Math.min(
+        startTime,
+        videoDuration || startTime
+      )
     );
 
     const endTime =
@@ -112,14 +151,17 @@ export function useSubtitleEditor(
     };
 
     setSubtitles((current) =>
-      [...current, subtitle].sort((a, b) => a.startTime - b.startTime)
+      sortSubtitles([...current, subtitle])
     );
+
     setSelectedSubtitleId(subtitle.id);
   };
 
   const deleteSubtitle = (id: string) => {
     setSubtitles((current) =>
-      current.filter((subtitle) => subtitle.id !== id)
+      current.filter(
+        (subtitle) => subtitle.id !== id
+      )
     );
 
     setSelectedSubtitleId((selectedId) =>
@@ -127,31 +169,47 @@ export function useSubtitleEditor(
     );
   };
 
-  const replaceSubtitles = (nextSubtitles: Subtitle[]) => {
+  const replaceSubtitles = (
+    nextSubtitles: Subtitle[]
+  ) => {
     setSubtitles(
-      [...nextSubtitles].sort((a, b) => a.startTime - b.startTime)
+      sortSubtitles(nextSubtitles)
     );
+
     setSelectedSubtitleId(null);
   };
 
   const replaceWithGeneratedSubtitles = (
-    segments: { startTime: number; endTime: number; text: string }[]
+    segments: {
+      startTime: number;
+      endTime: number;
+      text: string;
+    }[]
   ) => {
-    const generated = segments.map((segment) => ({
-      id: crypto.randomUUID(),
-      startTime: segment.startTime,
-      endTime: segment.endTime,
-      text: segment.text,
-    }));
+    const generated: Subtitle[] =
+      segments.map((segment) => ({
+        id: crypto.randomUUID(),
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+        text: segment.text,
+      }));
 
-    setSubtitles(generated);
-    setSelectedSubtitleId(generated[0]?.id ?? null);
+    setSubtitles(
+      sortSubtitles(generated)
+    );
+
+    setSelectedSubtitleId(
+      generated[0]?.id ?? null
+    );
   };
 
-
+  // Delete selected subtitle with keyboard
   useEffect(() => {
-    const handleDeleteKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
+    const handleDeleteKey = (
+      event: KeyboardEvent
+    ) => {
+      const target =
+        event.target as HTMLElement;
 
       if (
         target.tagName === "INPUT" ||
@@ -162,34 +220,26 @@ export function useSubtitleEditor(
       }
 
       if (
-        (event.key === "Delete" || event.key === "Backspace") &&
+        (event.key === "Delete" ||
+          event.key === "Backspace") &&
         selectedSubtitleId
       ) {
         deleteSubtitle(selectedSubtitleId);
       }
     };
 
-    window.addEventListener("keydown", handleDeleteKey);
-    return () => window.removeEventListener("keydown", handleDeleteKey);
-  }, [selectedSubtitleId]);
-
-  const updateSubtitlePosition = (
-    id: string,
-    positionX: number,
-    positionY: number
-  ) => {
-    setSubtitles((current) =>
-      current.map((subtitle) =>
-        subtitle.id === id
-          ? {
-              ...subtitle,
-              positionX,
-              positionY,
-            }
-          : subtitle
-      )
+    window.addEventListener(
+      "keydown",
+      handleDeleteKey
     );
-  };
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleDeleteKey
+      );
+    };
+  }, [selectedSubtitleId]);
 
   return {
     subtitles,
@@ -197,15 +247,16 @@ export function useSubtitleEditor(
     selectedSubtitleId,
     subtitleSearch,
     activeSubtitleId,
+
     setSubtitleSearch,
     selectSubtitle,
     updateSubtitleText,
+    updateSubtitlePosition,
     moveSubtitle,
     resizeSubtitle,
     addSubtitle,
     deleteSubtitle,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
-    updateSubtitlePosition,
   };
 }

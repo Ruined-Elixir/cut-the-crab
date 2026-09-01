@@ -1,13 +1,23 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+} from "react";
+
 import type { Subtitle } from "../../types/subtitle";
 
 type SubtitleTrackProps = {
   duration: number;
   subtitles: Subtitle[];
+
   selectedSubtitleId: string | null;
+
   onSeek?: (time: number) => void;
   onSubtitleSelect?: (id: string) => void;
-  onSubtitleMove?: (id: string, newStartTime: number) => void;
+
+  onSubtitleMove?: (
+    id: string,
+    newStartTime: number
+  ) => void;
+
   onSubtitleResize?: (
     id: string,
     newStartTime: number,
@@ -15,7 +25,9 @@ type SubtitleTrackProps = {
   ) => void;
 };
 
-function getTrackWidth(element: HTMLElement) {
+function getTrackWidth(
+  element: HTMLElement
+) {
   return element.getBoundingClientRect().width;
 }
 
@@ -34,17 +46,31 @@ function SubtitleTrack({
   ) => {
     event.stopPropagation();
 
-    const track = event.currentTarget.parentElement;
-    if (!track || duration <= 0) return;
+    const track =
+      event.currentTarget.parentElement;
+
+    if (!track || duration <= 0) {
+      return;
+    }
 
     const startX = event.clientX;
-    const originalStart = subtitle.startTime;
-    const subtitleDuration = subtitle.endTime - subtitle.startTime;
-    const trackWidth = getTrackWidth(track);
+    const originalStart =
+      subtitle.startTime;
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    const subtitleDuration =
+      subtitle.endTime -
+      subtitle.startTime;
+
+    const trackWidth =
+      getTrackWidth(track);
+
+    const handleMouseMove = (
+      moveEvent: MouseEvent
+    ) => {
       const deltaTime =
-        ((moveEvent.clientX - startX) / trackWidth) * duration;
+        ((moveEvent.clientX - startX) /
+          trackWidth) *
+        duration;
 
       const newStart = Math.max(
         0,
@@ -54,16 +80,33 @@ function SubtitleTrack({
         )
       );
 
-      onSubtitleMove?.(subtitle.id, newStart);
+      onSubtitleMove?.(
+        subtitle.id,
+        newStart
+      );
     };
 
     const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener(
+        "mousemove",
+        handleMouseMove
+      );
+
+      window.removeEventListener(
+        "mouseup",
+        handleMouseUp
+      );
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener(
+      "mousemove",
+      handleMouseMove
+    );
+
+    window.addEventListener(
+      "mouseup",
+      handleMouseUp
+    );
   };
 
   const startResize = (
@@ -73,61 +116,124 @@ function SubtitleTrack({
   ) => {
     event.stopPropagation();
 
-    const track = event.currentTarget.parentElement?.parentElement;
-    if (!track || duration <= 0) return;
+    const track =
+      event.currentTarget
+        .parentElement
+        ?.parentElement;
+
+    if (!track || duration <= 0) {
+      return;
+    }
 
     const startX = event.clientX;
-    const originalStart = subtitle.startTime;
-    const originalEnd = subtitle.endTime;
-    const trackWidth = getTrackWidth(track);
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    const originalStart =
+      subtitle.startTime;
+
+    const originalEnd =
+      subtitle.endTime;
+
+    const trackWidth =
+      getTrackWidth(track);
+
+    const handleMouseMove = (
+      moveEvent: MouseEvent
+    ) => {
       const deltaTime =
-        ((moveEvent.clientX - startX) / trackWidth) * duration;
+        ((moveEvent.clientX - startX) /
+          trackWidth) *
+        duration;
 
       if (edge === "left") {
         const newStart = Math.max(
           0,
-          Math.min(originalEnd - 0.1, originalStart + deltaTime)
+          Math.min(
+            originalEnd - 0.1,
+            originalStart + deltaTime
+          )
         );
 
-        onSubtitleResize?.(subtitle.id, newStart, originalEnd);
+        onSubtitleResize?.(
+          subtitle.id,
+          newStart,
+          originalEnd
+        );
+
         return;
       }
 
       const newEnd = Math.max(
         originalStart + 0.1,
-        Math.min(duration, originalEnd + deltaTime)
+        Math.min(
+          duration,
+          originalEnd + deltaTime
+        )
       );
 
-      onSubtitleResize?.(subtitle.id, originalStart, newEnd);
+      onSubtitleResize?.(
+        subtitle.id,
+        originalStart,
+        newEnd
+      );
     };
 
     const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener(
+        "mousemove",
+        handleMouseMove
+      );
+
+      window.removeEventListener(
+        "mouseup",
+        handleMouseUp
+      );
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener(
+      "mousemove",
+      handleMouseMove
+    );
+
+    window.addEventListener(
+      "mouseup",
+      handleMouseUp
+    );
   };
 
   return (
     <div className="subtitle-track">
       {subtitles.map((subtitle) => {
         const left =
-          duration > 0 ? (subtitle.startTime / duration) * 100 : 0;
+          duration > 0
+            ? (
+                subtitle.startTime /
+                duration
+              ) * 100
+            : 0;
+
         const width =
           duration > 0
-            ? ((subtitle.endTime - subtitle.startTime) / duration) * 100
+            ? (
+                (
+                  subtitle.endTime -
+                  subtitle.startTime
+                ) /
+                duration
+              ) * 100
             : 0;
+
+        const isSelected =
+          selectedSubtitleId ===
+          subtitle.id;
 
         return (
           <div
             key={subtitle.id}
             className={[
               "subtitle-clip",
-              selectedSubtitleId === subtitle.id ? "selected" : "",
+              isSelected
+                ? "selected"
+                : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -137,21 +243,46 @@ function SubtitleTrack({
             }}
             onClick={(event) => {
               event.stopPropagation();
-              onSubtitleSelect?.(subtitle.id);
-              onSeek?.(subtitle.startTime);
+
+              onSubtitleSelect?.(
+                subtitle.id
+              );
+
+              onSeek?.(
+                subtitle.startTime
+              );
             }}
-            onMouseDown={(event) => startMove(event, subtitle)}
+            onMouseDown={(event) =>
+              startMove(
+                event,
+                subtitle
+              )
+            }
           >
             <div
               className="subtitle-resize-handle left"
-              onMouseDown={(event) => startResize(event, subtitle, "left")}
+              onMouseDown={(event) =>
+                startResize(
+                  event,
+                  subtitle,
+                  "left"
+                )
+              }
             />
 
-            <span className="subtitle-clip-text">{subtitle.text}</span>
+            <span className="subtitle-clip-text">
+              {subtitle.text}
+            </span>
 
             <div
               className="subtitle-resize-handle right"
-              onMouseDown={(event) => startResize(event, subtitle, "right")}
+              onMouseDown={(event) =>
+                startResize(
+                  event,
+                  subtitle,
+                  "right"
+                )
+              }
             />
           </div>
         );
