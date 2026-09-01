@@ -168,6 +168,9 @@ function App() {
               void generateWaveform(path);
             }}
             seekRequest={seekRequest}
+
+            subtitles={subtitles}
+            currentTime={currentTime}
           />
         </section>
 

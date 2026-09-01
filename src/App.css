@@ -51,9 +51,20 @@ button {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns:
+    minmax(0, 1.5fr)
+    minmax(320px, 1fr);
+
   min-height: 0;
   overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(280px, 0.8fr);
+  }
 }
 
 .preview-panel {
