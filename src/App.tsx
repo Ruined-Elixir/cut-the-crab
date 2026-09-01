@@ -63,6 +63,7 @@ function App() {
     deleteSubtitle,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
+    updateSubtitlePosition,
   } = useSubtitleEditor(currentTime, videoDuration);
 
   const requestSeek = (time: number) => {
@@ -151,6 +152,8 @@ function App() {
     };
   }, []);
 
+  
+
   return (
     <main className="app">
       <header className="topbar">
@@ -171,6 +174,11 @@ function App() {
 
             subtitles={subtitles}
             currentTime={currentTime}
+
+              onSubtitleSelect={selectSubtitle}
+              selectedSubtitleId={selectedSubtitleId}
+              onSubtitlePositionChange={updateSubtitlePosition}
+              onSubtitleTextChange={updateSubtitleText}
           />
         </section>
 

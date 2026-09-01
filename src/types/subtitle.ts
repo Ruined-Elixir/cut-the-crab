@@ -3,4 +3,6 @@ export type Subtitle = {
   startTime: number;
   endTime: number;
   text: string;
+  positionX?: number;
+  positionY?: number;
 };

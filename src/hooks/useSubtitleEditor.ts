@@ -173,7 +173,23 @@ export function useSubtitleEditor(
     return () => window.removeEventListener("keydown", handleDeleteKey);
   }, [selectedSubtitleId]);
 
-  
+  const updateSubtitlePosition = (
+    id: string,
+    positionX: number,
+    positionY: number
+  ) => {
+    setSubtitles((current) =>
+      current.map((subtitle) =>
+        subtitle.id === id
+          ? {
+              ...subtitle,
+              positionX,
+              positionY,
+            }
+          : subtitle
+      )
+    );
+  };
 
   return {
     subtitles,
@@ -190,5 +206,6 @@ export function useSubtitleEditor(
     deleteSubtitle,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
+    updateSubtitlePosition,
   };
 }
