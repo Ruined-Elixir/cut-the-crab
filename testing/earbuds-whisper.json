@@ -1,0 +1,2045 @@
+{
+	"systeminfo": "WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | MTL : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | REPACK = 1 | ",
+	"model": {
+		"type": "small",
+		"multilingual": true,
+		"vocab": 51865,
+		"audio": {
+			"ctx": 1500,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"text": {
+			"ctx": 448,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"mels": 80,
+		"ftype": 1
+	},
+	"params": {
+		"model": "/Users/enochchan/Library/Application Support/com.ruinedelixir.subtitle-editor/whisper/models/ggml-small.bin",
+		"language": "auto",
+		"translate": false
+	},
+	"result": {
+		"language": "en"
+	},
+	"transcription": [
+		{
+			"timestamps": {
+				"from": "00:00:12,230",
+				"to": "00:00:14,020"
+			},
+			"offsets": {
+				"from": 12230,
+				"to": 14020
+			},
+			"text": " some serious shocks."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:14,020",
+				"to": "00:00:16,180"
+			},
+			"offsets": {
+				"from": 14020,
+				"to": 16180
+			},
+			"text": " These are the shocks open dots too."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:16,180",
+				"to": "00:00:19,020"
+			},
+			"offsets": {
+				"from": 16180,
+				"to": 19020
+			},
+			"text": " A clip style open ear bud."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:19,020",
+				"to": "00:00:21,660"
+			},
+			"offsets": {
+				"from": 19020,
+				"to": 21660
+			},
+			"text": " I am, I don't know what you would call it exactly."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:21,660",
+				"to": "00:00:23,820"
+			},
+			"offsets": {
+				"from": 21660,
+				"to": 23820
+			},
+			"text": " They clip on your ears and you use them"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:23,820",
+				"to": "00:00:26,980"
+			},
+			"offsets": {
+				"from": 23820,
+				"to": 26980
+			},
+			"text": " for music, podcasts, something like that."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:26,980",
+				"to": "00:00:28,800"
+			},
+			"offsets": {
+				"from": 26980,
+				"to": 28800
+			},
+			"text": " This is a nice smooth looking case."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:28,800",
+				"to": "00:00:30,780"
+			},
+			"offsets": {
+				"from": 28800,
+				"to": 30780
+			},
+			"text": " It does appear to be just a little bit larger"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:30,780",
+				"to": "00:00:33,500"
+			},
+			"offsets": {
+				"from": 30780,
+				"to": 33500
+			},
+			"text": " in the case for my old AirPods Pro 2,"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:33,500",
+				"to": "00:00:37,370"
+			},
+			"offsets": {
+				"from": 33500,
+				"to": 37370
+			},
+			"text": " but the battery life on these buds is 10 hours"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:37,370",
+				"to": "00:00:40,050"
+			},
+			"offsets": {
+				"from": 37370,
+				"to": 40050
+			},
+			"text": " for just the buds and 40 hours with the case."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:40,050",
+				"to": "00:00:43,210"
+			},
+			"offsets": {
+				"from": 40050,
+				"to": 43210
+			},
+			"text": " That blows my old AirPods out of the water."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:43,210",
+				"to": "00:00:46,010"
+			},
+			"offsets": {
+				"from": 43210,
+				"to": 46010
+			},
+			"text": " One last note about this case, it's IP54"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:46,010",
+				"to": "00:00:48,410"
+			},
+			"offsets": {
+				"from": 46010,
+				"to": 48410
+			},
+			"text": " and the buds are IP57."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:48,410",
+				"to": "00:00:49,770"
+			},
+			"offsets": {
+				"from": 48410,
+				"to": 49770
+			},
+			"text": " Something you might notice pretty quick"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:49,770",
+				"to": "00:00:52,400"
+			},
+			"offsets": {
+				"from": 49770,
+				"to": 52400
+			},
+			"text": " 'cause they don't have a left and a right on them"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:52,400",
+				"to": "00:00:53,280"
+			},
+			"offsets": {
+				"from": 52400,
+				"to": 53280
+			},
+			"text": " and that's 'cause you could put them"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:53,280",
+				"to": "00:00:56,000"
+			},
+			"offsets": {
+				"from": 53280,
+				"to": 56000
+			},
+			"text": " in either side of the case or either ear."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:56,000",
+				"to": "00:00:57,520"
+			},
+			"offsets": {
+				"from": 56000,
+				"to": 57520
+			},
+			"text": " These do have type C in the bottom."
+		},
+		{
+			"timestamps": {
+				"from": "00:00:57,520",
+				"to": "00:01:00,360"
+			},
+			"offsets": {
+				"from": 57520,
+				"to": 60360
+			},
+			"text": " You can also charge them with Qi wireless charging."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:00,360",
+				"to": "00:01:01,560"
+			},
+			"offsets": {
+				"from": 60360,
+				"to": 61560
+			},
+			"text": " Let's take the buds out of the case"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:01,560",
+				"to": "00:01:02,560"
+			},
+			"offsets": {
+				"from": 61560,
+				"to": 62560
+			},
+			"text": " and see what's going on."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:02,560",
+				"to": "00:01:04,370"
+			},
+			"offsets": {
+				"from": 62560,
+				"to": 64370
+			},
+			"text": " These are interesting."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:04,370",
+				"to": "00:01:06,650"
+			},
+			"offsets": {
+				"from": 64370,
+				"to": 66650
+			},
+			"text": " So you can squeeze the back to interact with them"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:06,650",
+				"to": "00:01:10,130"
+			},
+			"offsets": {
+				"from": 66650,
+				"to": 70130
+			},
+			"text": " but you can also tap on this nickel titanium bridge."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:10,130",
+				"to": "00:01:12,850"
+			},
+			"offsets": {
+				"from": 70130,
+				"to": 72850
+			},
+			"text": " Actually really cool, this thing's very stretchy"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:12,850",
+				"to": "00:01:16,770"
+			},
+			"offsets": {
+				"from": 72850,
+				"to": 76770
+			},
+			"text": " and it's not as clampy as the previous clipped design buds"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:16,770",
+				"to": "00:01:18,210"
+			},
+			"offsets": {
+				"from": 76770,
+				"to": 78210
+			},
+			"text": " I've tried in the past."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:18,210",
+				"to": "00:01:19,410"
+			},
+			"offsets": {
+				"from": 78210,
+				"to": 79410
+			},
+			"text": " It's actually really comfortable."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:19,410",
+				"to": "00:01:21,130"
+			},
+			"offsets": {
+				"from": 79410,
+				"to": 81130
+			},
+			"text": " These have a spherical acoustic system"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:21,130",
+				"to": "00:01:22,930"
+			},
+			"offsets": {
+				"from": 81130,
+				"to": 82930
+			},
+			"text": " that's built around two custom drivers"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:22,930",
+				"to": "00:01:25,690"
+			},
+			"offsets": {
+				"from": 82930,
+				"to": 85690
+			},
+			"text": " that delivers a bit more of a consistent sound profile"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:25,690",
+				"to": "00:01:27,050"
+			},
+			"offsets": {
+				"from": 85690,
+				"to": 87050
+			},
+			"text": " as you move them around in your ear."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:27,050",
+				"to": "00:01:29,330"
+			},
+			"offsets": {
+				"from": 87050,
+				"to": 89330
+			},
+			"text": " Supposedly it can more direct that audio"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:29,330",
+				"to": "00:01:30,570"
+			},
+			"offsets": {
+				"from": 89330,
+				"to": 90570
+			},
+			"text": " into your ear canal."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:30,570",
+				"to": "00:01:33,250"
+			},
+			"offsets": {
+				"from": 90570,
+				"to": 93250
+			},
+			"text": " They call the system Shock's Bass Sphere 2.0"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:33,250",
+				"to": "00:01:36,010"
+			},
+			"offsets": {
+				"from": 93250,
+				"to": 96010
+			},
+			"text": " and apparently it lowers distortion by 70%."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:36,010",
+				"to": "00:01:38,050"
+			},
+			"offsets": {
+				"from": 96010,
+				"to": 98050
+			},
+			"text": " They're also using Bluetooth 6.1"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:38,050",
+				"to": "00:01:41,450"
+			},
+			"offsets": {
+				"from": 98050,
+				"to": 101450
+			},
+			"text": " and can go about 10 meters or 30 feet of range."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:41,450",
+				"to": "00:01:42,570"
+			},
+			"offsets": {
+				"from": 101450,
+				"to": 102570
+			},
+			"text": " Which is pretty significant."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:42,570",
+				"to": "00:01:45,450"
+			},
+			"offsets": {
+				"from": 102570,
+				"to": 105450
+			},
+			"text": " Usually my phone's a lot closer than 10 meters."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:45,450",
+				"to": "00:01:46,970"
+			},
+			"offsets": {
+				"from": 105450,
+				"to": 106970
+			},
+			"text": " Where is my phone?"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:46,970",
+				"to": "00:01:49,570"
+			},
+			"offsets": {
+				"from": 106970,
+				"to": 109570
+			},
+			"text": " Bluetooth 6.1 also means multi-point connectivity"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:49,570",
+				"to": "00:01:51,050"
+			},
+			"offsets": {
+				"from": 109570,
+				"to": 111050
+			},
+			"text": " and these are power efficient"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:51,050",
+				"to": "00:01:56,070"
+			},
+			"offsets": {
+				"from": 111050,
+				"to": 116070
+			},
+			"text": " so you get up to 270 days of standby time."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:56,310",
+				"to": "00:01:58,750"
+			},
+			"offsets": {
+				"from": 116310,
+				"to": 118750
+			},
+			"text": " That's like encroaching upon a year."
+		},
+		{
+			"timestamps": {
+				"from": "00:01:58,750",
+				"to": "00:02:00,390"
+			},
+			"offsets": {
+				"from": 118750,
+				"to": 120390
+			},
+			"text": " That's like two thirds of a year."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:00,390",
+				"to": "00:02:02,150"
+			},
+			"offsets": {
+				"from": 120390,
+				"to": 122150
+			},
+			"text": " I feel like I would use these running."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:02,150",
+				"to": "00:02:03,270"
+			},
+			"offsets": {
+				"from": 122150,
+				"to": 123270
+			},
+			"text": " Actually I don't run that much."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:03,270",
+				"to": "00:02:04,350"
+			},
+			"offsets": {
+				"from": 123270,
+				"to": 124350
+			},
+			"text": " I would use these cycling."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:04,350",
+				"to": "00:02:06,790"
+			},
+			"offsets": {
+				"from": 124350,
+				"to": 126790
+			},
+			"text": " - I keep in mind my goomsday call but that's standby time."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:06,790",
+				"to": "00:02:08,110"
+			},
+			"offsets": {
+				"from": 126790,
+				"to": 128110
+			},
+			"text": " - When the apocalypse comes around"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:08,110",
+				"to": "00:02:10,110"
+			},
+			"offsets": {
+				"from": 128110,
+				"to": 130110
+			},
+			"text": " you'll be like feeling the bass."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:10,110",
+				"to": "00:02:11,670"
+			},
+			"offsets": {
+				"from": 130110,
+				"to": 131670
+			},
+			"text": " Speaking of the bass,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:11,670",
+				"to": "00:02:13,310"
+			},
+			"offsets": {
+				"from": 131670,
+				"to": 133310
+			},
+			"text": " maybe we should talk about sound quality."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:13,310",
+				"to": "00:02:15,440"
+			},
+			"offsets": {
+				"from": 133310,
+				"to": 135440
+			},
+			"text": " With science, we take these clips"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:15,440",
+				"to": "00:02:16,680"
+			},
+			"offsets": {
+				"from": 135440,
+				"to": 136680
+			},
+			"text": " and we put them on something called"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:16,680",
+				"to": "00:02:18,560"
+			},
+			"offsets": {
+				"from": 136680,
+				"to": 138560
+			},
+			"text": " a head and torso simulator."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:18,560",
+				"to": "00:02:21,640"
+			},
+			"offsets": {
+				"from": 138560,
+				"to": 141640
+			},
+			"text": " We run sound through it and we generate this graph."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:21,640",
+				"to": "00:02:24,360"
+			},
+			"offsets": {
+				"from": 141640,
+				"to": 144360
+			},
+			"text": " Now this range right here, these two gray lines,"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:24,360",
+				"to": "00:02:25,960"
+			},
+			"offsets": {
+				"from": 144360,
+				"to": 145960
+			},
+			"text": " this is the average listener preference."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:25,960",
+				"to": "00:02:26,960"
+			},
+			"offsets": {
+				"from": 145960,
+				"to": 146960
+			},
+			"text": " That's the area where most people"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:26,960",
+				"to": "00:02:29,000"
+			},
+			"offsets": {
+				"from": 146960,
+				"to": 149000
+			},
+			"text": " are gonna think things sound good."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:29,000",
+				"to": "00:02:32,400"
+			},
+			"offsets": {
+				"from": 149000,
+				"to": 152400
+			},
+			"text": " Down here is the bass, here is the mid range"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:32,400",
+				"to": "00:02:35,520"
+			},
+			"offsets": {
+				"from": 152400,
+				"to": 155520
+			},
+			"text": " and then up here is where the mid range goes into the treble"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:35,520",
+				"to": "00:02:38,360"
+			},
+			"offsets": {
+				"from": 155520,
+				"to": 158360
+			},
+			"text": " where your hisses and pops and sizzles live."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:38,360",
+				"to": "00:02:40,920"
+			},
+			"offsets": {
+				"from": 158360,
+				"to": 160920
+			},
+			"text": " This has, I can't even see how much bass this has."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:40,920",
+				"to": "00:02:42,240"
+			},
+			"offsets": {
+				"from": 160920,
+				"to": 162240
+			},
+			"text": " It goes off the charts."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:42,240",
+				"to": "00:02:45,860"
+			},
+			"offsets": {
+				"from": 162240,
+				"to": 165860
+			},
+			"text": " I think we're gonna need a bigger chart."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:45,860",
+				"to": "00:02:49,840"
+			},
+			"offsets": {
+				"from": 165860,
+				"to": 169840
+			},
+			"text": " Wow, this is what they called bass sphere 2.0, huh?"
+		},
+		{
+			"timestamps": {
+				"from": "00:02:49,840",
+				"to": "00:02:51,880"
+			},
+			"offsets": {
+				"from": 169840,
+				"to": 171880
+			},
+			"text": " This is the bass sphere right here."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:51,880",
+				"to": "00:02:53,120"
+			},
+			"offsets": {
+				"from": 171880,
+				"to": 173120
+			},
+			"text": " This is where it lives."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:53,120",
+				"to": "00:02:54,480"
+			},
+			"offsets": {
+				"from": 173120,
+				"to": 174480
+			},
+			"text": " That's a lot of bass."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:54,480",
+				"to": "00:02:58,560"
+			},
+			"offsets": {
+				"from": 174480,
+				"to": 178560
+			},
+			"text": " That is the most bass I've ever seen in an audio product."
+		},
+		{
+			"timestamps": {
+				"from": "00:02:58,560",
+				"to": "00:03:00,640"
+			},
+			"offsets": {
+				"from": 178560,
+				"to": 180640
+			},
+			"text": " Like that's it, like actually."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:00,640",
+				"to": "00:03:04,160"
+			},
+			"offsets": {
+				"from": 180640,
+				"to": 184160
+			},
+			"text": " So we're about 47 dB here, about nine dB here."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:04,160",
+				"to": "00:03:07,680"
+			},
+			"offsets": {
+				"from": 184160,
+				"to": 187680
+			},
+			"text": " So perceptibly, the bass would be about 14 times louder"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:07,680",
+				"to": "00:03:08,720"
+			},
+			"offsets": {
+				"from": 187680,
+				"to": 188720
+			},
+			"text": " than the mid range and treble."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:08,720",
+				"to": "00:03:11,000"
+			},
+			"offsets": {
+				"from": 188720,
+				"to": 191000
+			},
+			"text": " Now we do see in the mid range and treble,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:11,000",
+				"to": "00:03:12,560"
+			},
+			"offsets": {
+				"from": 191000,
+				"to": 192560
+			},
+			"text": " these three spikes."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:12,560",
+				"to": "00:03:14,080"
+			},
+			"offsets": {
+				"from": 192560,
+				"to": 194080
+			},
+			"text": " I guess four if you're counting this one up here,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:14,080",
+				"to": "00:03:15,360"
+			},
+			"offsets": {
+				"from": 194080,
+				"to": 195360
+			},
+			"text": " but that's so high in frequency,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:15,360",
+				"to": "00:03:16,200"
+			},
+			"offsets": {
+				"from": 195360,
+				"to": 196200
+			},
+			"text": " you wouldn't hear it anyway."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:16,200",
+				"to": "00:03:17,920"
+			},
+			"offsets": {
+				"from": 196200,
+				"to": 197920
+			},
+			"text": " These I'm not actually hearing."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:17,920",
+				"to": "00:03:19,880"
+			},
+			"offsets": {
+				"from": 197920,
+				"to": 199880
+			},
+			"text": " I think these are a bit of background interference"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:19,880",
+				"to": "00:03:21,520"
+			},
+			"offsets": {
+				"from": 199880,
+				"to": 201520
+			},
+			"text": " that we got while we were doing measurements."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:21,520",
+				"to": "00:03:23,780"
+			},
+			"offsets": {
+				"from": 201520,
+				"to": 203780
+			},
+			"text": " You know, because these are open ear design."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:23,780",
+				"to": "00:03:24,620"
+			},
+			"offsets": {
+				"from": 203780,
+				"to": 204620
+			},
+			"text": " They're not ceiling."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:24,620",
+				"to": "00:03:26,540"
+			},
+			"offsets": {
+				"from": 204620,
+				"to": 206540
+			},
+			"text": " You can hear things going on around you."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:26,540",
+				"to": "00:03:30,220"
+			},
+			"offsets": {
+				"from": 206540,
+				"to": 210220
+			},
+			"text": " This is a bit much on the bass for me though."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:30,220",
+				"to": "00:03:32,580"
+			},
+			"offsets": {
+				"from": 210220,
+				"to": 212580
+			},
+			"text": " Again, this mid range and treble pretty linear"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:32,580",
+				"to": "00:03:34,860"
+			},
+			"offsets": {
+				"from": 212580,
+				"to": 214860
+			},
+			"text": " after about 6,700 Hertz."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:34,860",
+				"to": "00:03:36,220"
+			},
+			"offsets": {
+				"from": 214860,
+				"to": 216220
+			},
+			"text": " I just said 6,7."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:36,220",
+				"to": "00:03:37,300"
+			},
+			"offsets": {
+				"from": 216220,
+				"to": 217300
+			},
+			"text": " Even though there is a ton of bass,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:37,300",
+				"to": "00:03:39,820"
+			},
+			"offsets": {
+				"from": 217300,
+				"to": 219820
+			},
+			"text": " you don't feel the bass pressure from it that much."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:39,820",
+				"to": "00:03:43,140"
+			},
+			"offsets": {
+				"from": 219820,
+				"to": 223140
+			},
+			"text": " It again, would probably be nice if you're like exercising,"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:43,140",
+				"to": "00:03:45,340"
+			},
+			"offsets": {
+				"from": 223140,
+				"to": 225340
+			},
+			"text": " but this does have EQ."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:45,340",
+				"to": "00:03:49,060"
+			},
+			"offsets": {
+				"from": 225340,
+				"to": 229060
+			},
+			"text": " And while it's not parametric EQ, we only get five bands."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:49,060",
+				"to": "00:03:51,700"
+			},
+			"offsets": {
+				"from": 229060,
+				"to": 231700
+			},
+			"text": " They do have a neat little feature here called Smart EQ."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:51,700",
+				"to": "00:03:54,940"
+			},
+			"offsets": {
+				"from": 231700,
+				"to": 234940
+			},
+			"text": " You tap this, you go through a bunch of A/B tests"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:54,940",
+				"to": "00:03:57,820"
+			},
+			"offsets": {
+				"from": 234940,
+				"to": 237820
+			},
+			"text": " where it plays music, asks you which one you prefer"
+		},
+		{
+			"timestamps": {
+				"from": "00:03:57,820",
+				"to": "00:03:59,020"
+			},
+			"offsets": {
+				"from": 237820,
+				"to": 239020
+			},
+			"text": " and then generates a curve."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:59,020",
+				"to": "00:03:59,900"
+			},
+			"offsets": {
+				"from": 239020,
+				"to": 239900
+			},
+			"text": " And look at that."
+		},
+		{
+			"timestamps": {
+				"from": "00:03:59,900",
+				"to": "00:04:04,220"
+			},
+			"offsets": {
+				"from": 239900,
+				"to": 244220
+			},
+			"text": " The curve I got fixes the curve that these have by default."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:04,220",
+				"to": "00:04:05,780"
+			},
+			"offsets": {
+				"from": 244220,
+				"to": 245780
+			},
+			"text": " It's almost the exact opposite."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:05,780",
+				"to": "00:04:08,180"
+			},
+			"offsets": {
+				"from": 245780,
+				"to": 248180
+			},
+			"text": " If you look at them side by side, look at that."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:08,180",
+				"to": "00:04:09,500"
+			},
+			"offsets": {
+				"from": 248180,
+				"to": 249500
+			},
+			"text": " It doesn't completely fix it,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:09,500",
+				"to": "00:04:11,540"
+			},
+			"offsets": {
+				"from": 249500,
+				"to": 251540
+			},
+			"text": " but it does make a notable improvement for me"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:11,540",
+				"to": "00:04:14,460"
+			},
+			"offsets": {
+				"from": 251540,
+				"to": 254460
+			},
+			"text": " in terms of music sound quality and listening."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:14,460",
+				"to": "00:04:17,020"
+			},
+			"offsets": {
+				"from": 254460,
+				"to": 257020
+			},
+			"text": " That said, I don't think I would actually use these"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:17,020",
+				"to": "00:04:21,100"
+			},
+			"offsets": {
+				"from": 257020,
+				"to": 261100
+			},
+			"text": " for music, maybe for movies if I put on the Dolby audio mode,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:21,100",
+				"to": "00:04:22,780"
+			},
+			"offsets": {
+				"from": 261100,
+				"to": 262780
+			},
+			"text": " though I think the bass is a little bit deeper"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:22,780",
+				"to": "00:04:23,940"
+			},
+			"offsets": {
+				"from": 262780,
+				"to": 263940
+			},
+			"text": " when I have that turned off."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:23,940",
+				"to": "00:04:26,740"
+			},
+			"offsets": {
+				"from": 263940,
+				"to": 266740
+			},
+			"text": " Does give me a bit more spatial qualities."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:26,740",
+				"to": "00:04:28,180"
+			},
+			"offsets": {
+				"from": 266740,
+				"to": 268180
+			},
+			"text": " For me, given the IP rating,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:28,180",
+				"to": "00:04:30,780"
+			},
+			"offsets": {
+				"from": 268180,
+				"to": 270780
+			},
+			"text": " the fact that the left and right are interchangeable,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:30,780",
+				"to": "00:04:34,180"
+			},
+			"offsets": {
+				"from": 270780,
+				"to": 274180
+			},
+			"text": " how open they are, this seems like the device to use"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:34,180",
+				"to": "00:04:37,580"
+			},
+			"offsets": {
+				"from": 274180,
+				"to": 277580
+			},
+			"text": " for podcasts, conferences, exercise,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:37,580",
+				"to": "00:04:38,940"
+			},
+			"offsets": {
+				"from": 277580,
+				"to": 278940
+			},
+			"text": " things where you're just wearing them around,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:38,940",
+				"to": "00:04:40,380"
+			},
+			"offsets": {
+				"from": 278940,
+				"to": 280380
+			},
+			"text": " using them throughout the day,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:40,380",
+				"to": "00:04:42,420"
+			},
+			"offsets": {
+				"from": 280380,
+				"to": 282420
+			},
+			"text": " rather than a dedicated sitting down,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:42,420",
+				"to": "00:04:44,100"
+			},
+			"offsets": {
+				"from": 282420,
+				"to": 284100
+			},
+			"text": " listening to music experience."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:44,100",
+				"to": "00:04:45,740"
+			},
+			"offsets": {
+				"from": 284100,
+				"to": 285740
+			},
+			"text": " I don't think they're designed for audiophiles,"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:45,740",
+				"to": "00:04:47,780"
+			},
+			"offsets": {
+				"from": 285740,
+				"to": 287780
+			},
+			"text": " they're designed for people living life."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:47,780",
+				"to": "00:04:51,110"
+			},
+			"offsets": {
+				"from": 287780,
+				"to": 291110
+			},
+			"text": " And they're really comfortable, they're on my head."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:51,110",
+				"to": "00:04:51,970"
+			},
+			"offsets": {
+				"from": 291110,
+				"to": 291970
+			},
+			"text": " - Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:51,970",
+				"to": "00:04:53,290"
+			},
+			"offsets": {
+				"from": 291970,
+				"to": 293290
+			},
+			"text": " - Oh, they are really comfortable."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:53,290",
+				"to": "00:04:54,690"
+			},
+			"offsets": {
+				"from": 293290,
+				"to": 294690
+			},
+			"text": " Wow, that's pretty good."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:54,690",
+				"to": "00:04:57,050"
+			},
+			"offsets": {
+				"from": 294690,
+				"to": 297050
+			},
+			"text": " Yeah, I could wear these for a while."
+		},
+		{
+			"timestamps": {
+				"from": "00:04:57,050",
+				"to": "00:04:59,090"
+			},
+			"offsets": {
+				"from": 297050,
+				"to": 299090
+			},
+			"text": " I couldn't wear the link buds clip for that long"
+		},
+		{
+			"timestamps": {
+				"from": "00:04:59,090",
+				"to": "00:05:00,530"
+			},
+			"offsets": {
+				"from": 299090,
+				"to": 300530
+			},
+			"text": " because I felt like the link buds clip"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:00,530",
+				"to": "00:05:02,130"
+			},
+			"offsets": {
+				"from": 300530,
+				"to": 302130
+			},
+			"text": " were just like crushing my ears."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:02,130",
+				"to": "00:05:03,410"
+			},
+			"offsets": {
+				"from": 302130,
+				"to": 303410
+			},
+			"text": " They're crushing my pinna."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:03,410",
+				"to": "00:05:05,730"
+			},
+			"offsets": {
+				"from": 303410,
+				"to": 305730
+			},
+			"text": " My pinna's funny word."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:05,730",
+				"to": "00:05:06,570"
+			},
+			"offsets": {
+				"from": 305730,
+				"to": 306570
+			},
+			"text": " That's what this is called."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:06,570",
+				"to": "00:05:08,090"
+			},
+			"offsets": {
+				"from": 306570,
+				"to": 308090
+			},
+			"text": " Some people probably pay a lot of money for that."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:08,090",
+				"to": "00:05:08,930"
+			},
+			"offsets": {
+				"from": 308090,
+				"to": 308930
+			},
+			"text": " - In there."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:08,930",
+				"to": "00:05:09,770"
+			},
+			"offsets": {
+				"from": 308930,
+				"to": 309770
+			},
+			"text": " (laughing)"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:09,770",
+				"to": "00:05:12,160"
+			},
+			"offsets": {
+				"from": 309770,
+				"to": 312160
+			},
+			"text": " - It's like a very light clamp."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:12,160",
+				"to": "00:05:14,280"
+			},
+			"offsets": {
+				"from": 312160,
+				"to": 314280
+			},
+			"text": " Feels like they're just kind of floating on my ears."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:14,280",
+				"to": "00:05:16,400"
+			},
+			"offsets": {
+				"from": 314280,
+				"to": 316400
+			},
+			"text": " I'm not getting any like heat or pressure."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:16,400",
+				"to": "00:05:18,660"
+			},
+			"offsets": {
+				"from": 316400,
+				"to": 318660
+			},
+			"text": " It's just attached to ear."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:18,660",
+				"to": "00:05:19,500"
+			},
+			"offsets": {
+				"from": 318660,
+				"to": 319500
+			},
+			"text": " Good."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:19,500",
+				"to": "00:05:21,020"
+			},
+			"offsets": {
+				"from": 319500,
+				"to": 321020
+			},
+			"text": " I'm using the microphone on them now."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:21,020",
+				"to": "00:05:26,270"
+			},
+			"offsets": {
+				"from": 321020,
+				"to": 326270
+			},
+			"text": " What do they, they call this like an air something microphone?"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:26,270",
+				"to": "00:05:27,670"
+			},
+			"offsets": {
+				"from": 326270,
+				"to": 327670
+			},
+			"text": " If you didn't hear what Brad just said,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:27,670",
+				"to": "00:05:29,550"
+			},
+			"offsets": {
+				"from": 327670,
+				"to": 329550
+			},
+			"text": " they have two air conducting microphones"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:29,550",
+				"to": "00:05:32,570"
+			},
+			"offsets": {
+				"from": 329550,
+				"to": 332570
+			},
+			"text": " and one microphone that conducts me bones."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:32,570",
+				"to": "00:05:33,530"
+			},
+			"offsets": {
+				"from": 332570,
+				"to": 333530
+			},
+			"text": " It's bone conducting."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:33,530",
+				"to": "00:05:35,290"
+			},
+			"offsets": {
+				"from": 333530,
+				"to": 335290
+			},
+			"text": " Bone conducting microphones and something like this"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:35,290",
+				"to": "00:05:36,330"
+			},
+			"offsets": {
+				"from": 335290,
+				"to": 336330
+			},
+			"text": " is actually pretty handy."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:36,330",
+				"to": "00:05:37,930"
+			},
+			"offsets": {
+				"from": 336330,
+				"to": 337930
+			},
+			"text": " I would love to see it used more often"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:37,930",
+				"to": "00:05:40,690"
+			},
+			"offsets": {
+				"from": 337930,
+				"to": 340690
+			},
+			"text": " because it basically means that outside sounds"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:40,690",
+				"to": "00:05:42,770"
+			},
+			"offsets": {
+				"from": 340690,
+				"to": 342770
+			},
+			"text": " aren't going to activate the mics as often."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:42,770",
+				"to": "00:05:44,050"
+			},
+			"offsets": {
+				"from": 342770,
+				"to": 344050
+			},
+			"text": " It's going to pick up the vibrations"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:44,050",
+				"to": "00:05:46,250"
+			},
+			"offsets": {
+				"from": 344050,
+				"to": 346250
+			},
+			"text": " coming through the bones and cartilage in your face"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:46,250",
+				"to": "00:05:48,770"
+			},
+			"offsets": {
+				"from": 346250,
+				"to": 348770
+			},
+			"text": " to activate the microphone so that it's not, you know,"
+		},
+		{
+			"timestamps": {
+				"from": "00:05:48,770",
+				"to": "00:05:49,730"
+			},
+			"offsets": {
+				"from": 348770,
+				"to": 349730
+			},
+			"text": " a train horn."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:49,730",
+				"to": "00:05:50,570"
+			},
+			"offsets": {
+				"from": 349730,
+				"to": 350570
+			},
+			"text": " A train horn might do."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:50,570",
+				"to": "00:05:51,410"
+			},
+			"offsets": {
+				"from": 350570,
+				"to": 351410
+			},
+			"text": " That's pretty loud."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:51,410",
+				"to": "00:05:53,890"
+			},
+			"offsets": {
+				"from": 351410,
+				"to": 353890
+			},
+			"text": " A train horn kind of vibrates your bones."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:53,890",
+				"to": "00:05:55,330"
+			},
+			"offsets": {
+				"from": 353890,
+				"to": 355330
+			},
+			"text": " Brad talking across the room."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:55,330",
+				"to": "00:05:56,530"
+			},
+			"offsets": {
+				"from": 355330,
+				"to": 356530
+			},
+			"text": " You might not be able to hear him."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:56,530",
+				"to": "00:05:57,370"
+			},
+			"offsets": {
+				"from": 356530,
+				"to": 357370
+			},
+			"text": " I don't know."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:57,370",
+				"to": "00:05:58,210"
+			},
+			"offsets": {
+				"from": 357370,
+				"to": 358210
+			},
+			"text": " They'd say something."
+		},
+		{
+			"timestamps": {
+				"from": "00:05:58,210",
+				"to": "00:06:02,950"
+			},
+			"offsets": {
+				"from": 358210,
+				"to": 362950
+			},
+			"text": " Tell me."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:02,950",
+				"to": "00:06:03,790"
+			},
+			"offsets": {
+				"from": 362950,
+				"to": 363790
+			},
+			"text": " Did you hear him?"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:03,790",
+				"to": "00:06:06,440"
+			},
+			"offsets": {
+				"from": 363790,
+				"to": 366440
+			},
+			"text": " His bones weren't being conducted, but mine were."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:06,440",
+				"to": "00:06:07,640"
+			},
+			"offsets": {
+				"from": 366440,
+				"to": 367640
+			},
+			"text": " Some people pay a lot of money for that."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:07,640",
+				"to": "00:06:08,930"
+			},
+			"offsets": {
+				"from": 367640,
+				"to": 368930
+			},
+			"text": " Yeah."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:08,930",
+				"to": "00:06:10,570"
+			},
+			"offsets": {
+				"from": 368930,
+				"to": 370570
+			},
+			"text": " Some people might pay $199 for that"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:10,570",
+				"to": "00:06:11,730"
+			},
+			"offsets": {
+				"from": 370570,
+				"to": 371730
+			},
+			"text": " 'cause that's what these cost."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:11,730",
+				"to": "00:06:13,030"
+			},
+			"offsets": {
+				"from": 371730,
+				"to": 373030
+			},
+			"text": " They're $199."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:13,030",
+				"to": "00:06:14,590"
+			},
+			"offsets": {
+				"from": 373030,
+				"to": 374590
+			},
+			"text": " This is the exact kind of environment"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:14,590",
+				"to": "00:06:16,630"
+			},
+			"offsets": {
+				"from": 374590,
+				"to": 376630
+			},
+			"text": " where I think the shocks open dots too."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:16,630",
+				"to": "00:06:17,470"
+			},
+			"offsets": {
+				"from": 376630,
+				"to": 377470
+			},
+			"text": " Right."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:17,470",
+				"to": "00:06:18,910"
+			},
+			"offsets": {
+				"from": 377470,
+				"to": 378910
+			},
+			"text": " Riding a bicycle, exercising,"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:18,910",
+				"to": "00:06:21,190"
+			},
+			"offsets": {
+				"from": 378910,
+				"to": 381190
+			},
+			"text": " listening to some podcasts to get through your day,"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:21,190",
+				"to": "00:06:24,280"
+			},
+			"offsets": {
+				"from": 381190,
+				"to": 384280
+			},
+			"text": " or maybe you just need some puffy bass to keep going."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:24,280",
+				"to": "00:06:26,200"
+			},
+			"offsets": {
+				"from": 384280,
+				"to": 386200
+			},
+			"text": " The next gen sound for these over the previous generation"
+		},
+		{
+			"timestamps": {
+				"from": "00:06:26,200",
+				"to": "00:06:28,410"
+			},
+			"offsets": {
+				"from": 386200,
+				"to": 388410
+			},
+			"text": " does exactly that."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:28,410",
+				"to": "00:06:30,460"
+			},
+			"offsets": {
+				"from": 388410,
+				"to": 390460
+			},
+			"text": " I really need to exercise."
+		},
+		{
+			"timestamps": {
+				"from": "00:06:30,460",
+				"to": "00:06:31,650"
+			},
+			"offsets": {
+				"from": 390460,
+				"to": 391650
+			},
+			"text": " So throughout the short circuit,"
+		}
+	]
+}

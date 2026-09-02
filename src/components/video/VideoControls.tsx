@@ -35,9 +35,7 @@ function VideoControls({
             <path d="M3 5v5h5" />
           </svg>
 
-          <span className="video-skip-number">
-            {skipSeconds}
-          </span>
+          <span className="video-skip-number">{skipSeconds}</span>
         </button>
 
         <button
@@ -68,16 +66,12 @@ function VideoControls({
             <path d="M21 5v5h-5" />
           </svg>
 
-          <span className="video-skip-number">
-            {skipSeconds}
-          </span>
+          <span className="video-skip-number">{skipSeconds}</span>
         </button>
       </div>
 
       <div className="video-scrubber-row">
-        <span className="video-time">
-          {formatPlaybackTime(currentTime)}
-        </span>
+        <span className="video-time">{formatPlaybackTime(currentTime)}</span>
 
         <input
           type="range"
@@ -85,16 +79,12 @@ function VideoControls({
           max={duration || 0}
           step={0.01}
           value={Math.min(currentTime, duration || 0)}
-          onChange={(event) =>
-            onSeekTo(Number(event.target.value))
-          }
+          onChange={(event) => onSeekTo(Number(event.target.value))}
           className="video-scrubber"
           aria-label="Video position"
         />
 
-        <span className="video-time">
-          {formatPlaybackTime(duration)}
-        </span>
+        <span className="video-time">{formatPlaybackTime(duration)}</span>
       </div>
     </div>
   );

@@ -1,62 +1,114 @@
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
+#[cfg(not(debug_assertions))]
 use tauri::Manager;
 
 pub fn get_ffmpeg_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Unable to determine app data directory: {error}"))?;
+    #[cfg(debug_assertions)]
+    {
+        let _ = app;
 
-    let ffmpeg_dir = app_data.join("ffmpeg");
+        if let Some(path) = find_system_ffmpeg() {
+            println!("Using system FFmpeg for development: {}", path.display());
 
-    fs::create_dir_all(&ffmpeg_dir)
-        .map_err(|error| format!("Failed to create FFmpeg directory: {error}"))?;
+            return Ok(path);
+        }
+
+        return Err("FFmpeg was not found on this computer. \
+             Install FFmpeg before running the app in development."
+            .to_string());
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        get_bundled_ffmpeg_path(app)
+    }
+}
+
+#[cfg(debug_assertions)]
+fn find_system_ffmpeg() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"];
+
+        for candidate in candidates {
+            let path = PathBuf::from(candidate);
+
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        if let Some(path) = find_ffmpeg_in_path("which", "ffmpeg") {
+            return Some(path);
+        }
+    }
 
     #[cfg(target_os = "windows")]
-    let ffmpeg_path = ffmpeg_dir.join("ffmpeg.exe");
+    {
+        if let Some(path) = find_ffmpeg_in_path("where", "ffmpeg.exe") {
+            return Some(path);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(path) = find_ffmpeg_in_path("which", "ffmpeg") {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+#[cfg(all(
+    debug_assertions,
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
+))]
+fn find_ffmpeg_in_path(command: &str, ffmpeg_name: &str) -> Option<PathBuf> {
+    use std::process::Command;
+
+    let output = Command::new(command).arg(ffmpeg_name).output().ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let result = String::from_utf8_lossy(&output.stdout);
+
+    let first_line = result.lines().next()?.trim();
+
+    if first_line.is_empty() {
+        return None;
+    }
+
+    let path = PathBuf::from(first_line);
+
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn get_bundled_ffmpeg_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("Failed to locate application resources: {}", error))?;
+
+    #[cfg(target_os = "windows")]
+    let ffmpeg_path = resource_dir.join("ffmpeg").join("ffmpeg.exe");
 
     #[cfg(not(target_os = "windows"))]
-    let ffmpeg_path = ffmpeg_dir.join("ffmpeg");
+    let ffmpeg_path = resource_dir.join("ffmpeg").join("ffmpeg");
 
     if !ffmpeg_path.exists() {
-        #[cfg(target_os = "windows")]
-        let bundled = app
-            .path()
-            .resolve(
-                "resources/ffmpeg/ffmpeg.exe",
-                tauri::path::BaseDirectory::Resource,
-            )
-            .map_err(|error| format!("Unable to resolve bundled FFmpeg: {error}"))?;
-
-        #[cfg(not(target_os = "windows"))]
-        let bundled = app
-            .path()
-            .resolve(
-                "resources/ffmpeg/ffmpeg",
-                tauri::path::BaseDirectory::Resource,
-            )
-            .map_err(|error| format!("Unable to resolve bundled FFmpeg: {error}"))?;
-
-        fs::copy(&bundled, &ffmpeg_path)
-            .map_err(|error| format!("Failed to install FFmpeg: {error}"))?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&ffmpeg_path)
-                .map_err(|error| format!("Failed to read FFmpeg permissions: {error}"))?
-                .permissions();
-
-            permissions.set_mode(0o755);
-
-            fs::set_permissions(&ffmpeg_path, permissions)
-                .map_err(|error| format!("Failed to set FFmpeg permissions: {error}"))?;
-        }
+        return Err(format!(
+            "Bundled FFmpeg was not found at {}",
+            ffmpeg_path.display()
+        ));
     }
 
     Ok(ffmpeg_path)

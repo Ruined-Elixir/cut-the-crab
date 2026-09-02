@@ -1,11 +1,17 @@
-use std::process::Command;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
 use crate::ffmpeg_paths::get_ffmpeg_path;
-mod transcription;
-mod whisper_paths;
-mod model_manager;
+
 mod ffmpeg_paths;
+mod model_manager;
 mod sensevoice_engine;
 mod sensevoice_paths;
+mod transcription;
+mod whisper_paths;
 
 #[tauri::command]
 fn extract_waveform(
@@ -75,7 +81,6 @@ fn extract_waveform(
             .sum();
 
         let rms = (sum_squares / chunk.len() as f32).sqrt();
-
         waveform.push(rms);
     }
 
@@ -91,14 +96,8 @@ fn extract_waveform(
 }
 
 #[tauri::command]
-fn read_matching_srt(
-    video_path: String
-) -> Result<Option<String>, String> {
-    use std::fs;
-    use std::path::Path;
-
-    let video_path = Path::new(&video_path);
-    let srt_path = video_path.with_extension("srt");
+fn read_matching_srt(video_path: String) -> Result<Option<String>, String> {
+    let srt_path = Path::new(&video_path).with_extension("srt");
 
     if !srt_path.exists() {
         return Ok(None);
@@ -109,6 +108,123 @@ fn read_matching_srt(
         .map_err(|error| error.to_string())
 }
 
+fn escape_ffmpeg_filter_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .replace(':', "\\:")
+        .replace('\'', "\\'")
+}
+
+fn development_fonts_dir() -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public/fonts");
+
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+fn export_styled_video(
+    app: tauri::AppHandle,
+    video_path: String,
+    output_path: String,
+    ass_content: String,
+) -> Result<(), String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let ffmpeg_path = get_ffmpeg_path(&app)?;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+
+    let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+
+    fs::write(&ass_path, ass_content)
+        .map_err(|error| format!("Failed to create temporary ASS file: {}", error))?;
+
+    let ass_path_string = escape_ffmpeg_filter_path(&ass_path);
+
+    let video_filter = if let Some(fonts_dir) = development_fonts_dir() {
+        let fonts_dir_string = escape_ffmpeg_filter_path(&fonts_dir);
+
+        format!(
+            "ass=filename='{}':fontsdir='{}'",
+            ass_path_string, fonts_dir_string,
+        )
+    } else {
+        format!("ass=filename='{}'", ass_path_string,)
+    };
+
+    println!("Exporting with FFmpeg: {}", ffmpeg_path.display());
+
+    println!("ASS filter: {}", video_filter);
+
+    let result = Command::new(&ffmpeg_path)
+        .args([
+            "-y",
+            "-i",
+            &video_path,
+            "-vf",
+            &video_filter,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            &output_path,
+        ])
+        .status();
+
+    let _ = fs::remove_file(&ass_path);
+
+    let status = result.map_err(|error| format!("Failed to start FFmpeg: {}", error))?;
+
+    if !status.success() {
+        return Err(format!("FFmpeg export failed with status: {}", status));
+    }
+
+    Ok(())
+}
+
+fn matching_project_path(video_path: &Path) -> PathBuf {
+    video_path.with_extension("subtitle-project.json")
+}
+
+#[tauri::command]
+fn read_matching_project(video_path: String) -> Result<Option<String>, String> {
+    let project_path = matching_project_path(Path::new(&video_path));
+
+    if !project_path.exists() {
+        return Ok(None);
+    }
+
+    fs::read_to_string(&project_path)
+        .map(Some)
+        .map_err(|error| format!("Failed to read subtitle project: {}", error))
+}
+
+#[tauri::command]
+fn save_subtitle_project(video_path: String, project_json: String) -> Result<(), String> {
+    let project_path = matching_project_path(Path::new(&video_path));
+
+    fs::write(&project_path, project_json)
+        .map_err(|error| format!("Failed to save subtitle project: {}", error))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -117,7 +233,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             extract_waveform,
             transcription::transcribe_video,
-            read_matching_srt
+            read_matching_srt,
+            read_matching_project,
+            save_subtitle_project,
+            export_styled_video
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

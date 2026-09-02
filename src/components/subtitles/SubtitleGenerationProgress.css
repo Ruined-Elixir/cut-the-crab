@@ -46,15 +46,10 @@
   transition: width 0.15s ease;
 }
 
-.subtitle-progress-track.indeterminate
-  .subtitle-progress-fill {
+.subtitle-progress-track.indeterminate .subtitle-progress-fill {
   width: 35%;
 
-  animation:
-    subtitle-progress-indeterminate
-    1.2s
-    ease-in-out
-    infinite;
+  animation: subtitle-progress-indeterminate 1.2s ease-in-out infinite;
 }
 
 @keyframes subtitle-progress-indeterminate {

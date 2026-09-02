@@ -23,19 +23,13 @@ const formatTimestamp = (time: number) => {
   const totalMilliseconds = Math.round(safeTime * 1000);
 
   const hours = Math.floor(totalMilliseconds / 3_600_000);
-  const minutes = Math.floor(
-    (totalMilliseconds % 3_600_000) / 60_000
-  );
-  const seconds = Math.floor(
-    (totalMilliseconds % 60_000) / 1000
-  );
+  const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
+  const seconds = Math.floor((totalMilliseconds % 60_000) / 1000);
   const milliseconds = totalMilliseconds % 1000;
 
   return `${hours.toString().padStart(2, "0")}:${minutes
     .toString()
-    .padStart(2, "0")}:${seconds
-    .toString()
-    .padStart(2, "0")},${milliseconds
+    .padStart(2, "0")}:${seconds.toString().padStart(2, "0")},${milliseconds
     .toString()
     .padStart(3, "0")}`;
 };
@@ -82,10 +76,10 @@ export const generateSrt = (subtitles: Subtitle[]) => {
       [
         index + 1,
         `${formatTimestamp(subtitle.startTime)} --> ${formatTimestamp(
-          subtitle.endTime
+          subtitle.endTime,
         )}`,
         subtitle.text,
-      ].join("\n")
+      ].join("\n"),
     )
     .join("\n\n");
 };

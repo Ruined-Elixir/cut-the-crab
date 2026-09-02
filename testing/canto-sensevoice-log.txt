@@ -1,0 +1,116 @@
+[sensevoice] loading model metadata
+[sensevoice] model ready: 919 tensors
+[sensevoice] loading audio
+[sensevoice] audio ready: 1789237 samples
+[sensevoice] running VAD
+[sensevoice] VAD ready: 18 segments
+[sensevoice] building graph: 23 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 73 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 80 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 110 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 504 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 101 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 61 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 14 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 63 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 26 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 37 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 38 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 49 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 89 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 32 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 70 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 22 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] building graph: 14 frames
+[sensevoice] graph built
+[sensevoice] allocating graph
+[sensevoice] graph allocated
+[sensevoice] compute starting
+[sensevoice] compute complete: status=0
+[sensevoice] 18 vad segments
+[sensevoice] done 4.13s

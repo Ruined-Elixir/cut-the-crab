@@ -20,21 +20,16 @@ type SubtitlePanelProps = {
   search: string;
   onSearchChange: (value: string) => void;
 
-  onSelect: (
-    id: string,
-    startTime: number
-  ) => void;
+  onSelect: (id: string, startTime: number) => void;
 
-  onTextChange: (
-    id: string,
-    text: string
-  ) => void;
+  onTextChange: (id: string, text: string) => void;
 
   onAdd: () => void;
   onDelete: (id: string) => void;
 
   onImport: () => void | Promise<void>;
   onExport: () => void | Promise<void>;
+  onSaveProject: () => void | Promise<void>;
 
   onGenerate: () => void | Promise<void>;
   isGenerating: boolean;
@@ -45,14 +40,14 @@ type SubtitlePanelProps = {
   generationError: string;
 
   whisperModel: WhisperModel;
-  onWhisperModelChange: (
-    model: WhisperModel
-  ) => void;
+
+  onWhisperModelChange: (model: WhisperModel) => void;
 
   transcriptionEngine: TranscriptionEngine;
-  onTranscriptionEngineChange: (
-    engine: TranscriptionEngine
-  ) => void;
+
+  onTranscriptionEngineChange: (engine: TranscriptionEngine) => void;
+
+  onExportStyledVideo: () => void | Promise<void>;
 };
 
 function SubtitlePanel({
@@ -67,6 +62,7 @@ function SubtitlePanel({
   onDelete,
   onImport,
   onExport,
+  onSaveProject,
   onGenerate,
   isGenerating,
   generationStatus,
@@ -77,6 +73,7 @@ function SubtitlePanel({
   onWhisperModelChange,
   transcriptionEngine,
   onTranscriptionEngineChange,
+  onExportStyledVideo,
 }: SubtitlePanelProps) {
   return (
     <aside className="subtitle-panel">
@@ -87,35 +84,23 @@ function SubtitlePanel({
           onAdd={onAdd}
           onImport={onImport}
           onExport={onExport}
+          onSaveProject={onSaveProject}
           onGenerate={onGenerate}
           isGenerating={isGenerating}
           generationStatus={generationStatus}
           whisperModel={whisperModel}
-          onWhisperModelChange={
-            onWhisperModelChange
-          }
-          transcriptionEngine={
-            transcriptionEngine
-          }
-          onTranscriptionEngineChange={
-            onTranscriptionEngineChange
-          }
+          onWhisperModelChange={onWhisperModelChange}
+          transcriptionEngine={transcriptionEngine}
+          onTranscriptionEngineChange={onTranscriptionEngineChange}
+          onExportStyledVideo={onExportStyledVideo}
         />
 
         <SubtitleGenerationProgress
           isGenerating={isGenerating}
-          generationStatus={
-            generationStatus
-          }
-          generationPercent={
-            generationPercent
-          }
-          modelDownloadPercent={
-            modelDownloadPercent
-          }
-          generationError={
-            generationError
-          }
+          generationStatus={generationStatus}
+          generationPercent={generationPercent}
+          modelDownloadPercent={modelDownloadPercent}
+          generationError={generationError}
         />
 
         <input
@@ -123,22 +108,14 @@ function SubtitlePanel({
           className="subtitle-search"
           placeholder="Search subtitles"
           value={search}
-          onChange={(event) =>
-            onSearchChange(
-              event.target.value
-            )
-          }
+          onChange={(event) => onSearchChange(event.target.value)}
         />
       </div>
 
       <SubtitleList
         subtitles={subtitles}
-        selectedSubtitleId={
-          selectedSubtitleId
-        }
-        activeSubtitleId={
-          activeSubtitleId
-        }
+        selectedSubtitleId={selectedSubtitleId}
+        activeSubtitleId={activeSubtitleId}
         search={search}
         onSelect={onSelect}
         onTextChange={onTextChange}

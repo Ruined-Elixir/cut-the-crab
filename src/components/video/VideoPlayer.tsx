@@ -1,13 +1,9 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import type { Subtitle } from "../../types/subtitle";
+import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
@@ -36,13 +32,14 @@ type VideoPlayerProps = {
   onSubtitlePositionChange?: (
     id: string,
     positionX: number,
-    positionY: number
+    positionY: number,
   ) => void;
 
-  onSubtitleTextChange?: (
-    id: string,
-    text: string
-  ) => void;
+  onSubtitleTextChange?: (id: string, text: string) => void;
+
+  onSubtitleStyleChange?: (id: string, style: SubtitleStyle) => void;
+
+  onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
 
 function VideoPlayer({
@@ -57,29 +54,19 @@ function VideoPlayer({
   onSubtitleSelect,
   onSubtitlePositionChange,
   onSubtitleTextChange,
+  onSubtitleStyleChange,
+  onAllSubtitleStylesChange,
 }: VideoPlayerProps) {
-  const [videoUrl, setVideoUrl] =
-    useState<string | null>(null);
-
-  const [videoName, setVideoName] =
-    useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoName, setVideoName] = useState<string | null>(null);
 
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const videoRef =
-    useRef<HTMLVideoElement | null>(null);
-
-  const shellRef =
-    useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
   const skipSeconds = 10;
-
-  const activeSubtitle = subtitles.find(
-    (subtitle) =>
-      currentTime >= subtitle.startTime &&
-      currentTime <= subtitle.endTime
-  );
 
   // Video loading
   const chooseVideo = async () => {
@@ -89,12 +76,7 @@ function VideoPlayer({
       filters: [
         {
           name: "Video",
-          extensions: [
-            "mp4",
-            "mov",
-            "webm",
-            "mkv",
-          ],
+          extensions: ["mp4", "mov", "webm", "mkv"],
         },
       ],
     });
@@ -103,9 +85,7 @@ function VideoPlayer({
       return;
     }
 
-    const name =
-      selected.split(/[\\/]/).pop() ??
-      "Unknown video";
+    const name = selected.split(/[\\/]/).pop() ?? "Unknown video";
 
     setVideoName(name);
     setVideoUrl(convertFileSrc(selected));
@@ -138,19 +118,13 @@ function VideoPlayer({
   const jumpBy = (seconds: number) => {
     const video = videoRef.current;
 
-    if (
-      !video ||
-      !Number.isFinite(video.duration)
-    ) {
+    if (!video || !Number.isFinite(video.duration)) {
       return;
     }
 
     const nextTime = Math.max(
       0,
-      Math.min(
-        video.duration,
-        video.currentTime + seconds
-      )
+      Math.min(video.duration, video.currentTime + seconds),
     );
 
     video.currentTime = nextTime;
@@ -161,25 +135,15 @@ function VideoPlayer({
   const seekTo = (time: number) => {
     const video = videoRef.current;
 
-    if (
-      !video ||
-      !Number.isFinite(time)
-    ) {
+    if (!video || !Number.isFinite(time)) {
       return;
     }
 
-    const maxDuration =
-      Number.isFinite(video.duration)
-        ? video.duration
-        : duration;
+    const maxDuration = Number.isFinite(video.duration)
+      ? video.duration
+      : duration;
 
-    const nextTime = Math.max(
-      0,
-      Math.min(
-        maxDuration || 0,
-        time
-      )
-    );
+    const nextTime = Math.max(0, Math.min(maxDuration || 0, time));
 
     video.currentTime = nextTime;
 
@@ -189,10 +153,7 @@ function VideoPlayer({
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
 
-    if (
-      !video ||
-      !Number.isFinite(video.duration)
-    ) {
+    if (!video || !Number.isFinite(video.duration)) {
       return;
     }
 
@@ -213,11 +174,8 @@ function VideoPlayer({
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (
-      event: KeyboardEvent
-    ) => {
-      const target =
-        event.target as HTMLElement;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
 
       if (
         target.tagName === "INPUT" ||
@@ -243,16 +201,10 @@ function VideoPlayer({
       }
     };
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown
-    );
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown
-      );
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -267,11 +219,9 @@ function VideoPlayer({
     const nextTime = Math.max(
       0,
       Math.min(
-        Number.isFinite(video.duration)
-          ? video.duration
-          : seekRequest.time,
-        seekRequest.time
-      )
+        Number.isFinite(video.duration) ? video.duration : seekRequest.time,
+        seekRequest.time,
+      ),
     );
 
     video.currentTime = nextTime;
@@ -282,99 +232,57 @@ function VideoPlayer({
   return (
     <div className="video-player">
       <div className="video-player-toolbar">
-        <button
-          className="video-file-button"
-          onClick={chooseVideo}
-        >
-          {videoUrl
-            ? "Change video"
-            : "Choose video"}
+        <button className="video-file-button" onClick={chooseVideo}>
+          {videoUrl ? "Change video" : "Choose video"}
         </button>
 
         {videoName && (
-          <span
-            className="video-name"
-            title={videoName}
-          >
+          <span className="video-name" title={videoName}>
             {videoName}
           </span>
         )}
       </div>
 
       {videoUrl ? (
-        <div
-          ref={shellRef}
-          className="video-shell"
-        >
+        <div ref={shellRef} className="video-shell">
           <video
             ref={videoRef}
             src={videoUrl}
             className="video-element"
-            onLoadedMetadata={
-              handleLoadedMetadata
-            }
-            onTimeUpdate={
-              handleTimeUpdate
-            }
-            onPlay={() =>
-              setIsPlaying(true)
-            }
-            onPause={() =>
-              setIsPlaying(false)
-            }
-            onEnded={() =>
-              setIsPlaying(false)
-            }
-            onClick={
-              togglePlayPause
-            }
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            onClick={togglePlayPause}
           />
 
-          {activeSubtitle && (
-            <VideoSubtitleOverlay
-              activeSubtitle={
-                activeSubtitle
-              }
-              selectedSubtitleId={
-                selectedSubtitleId
-              }
-              shellRef={shellRef}
-              onSubtitleSelect={
-                onSubtitleSelect
-              }
-              onSubtitlePositionChange={
-                onSubtitlePositionChange
-              }
-              onSubtitleTextChange={
-                onSubtitleTextChange
-              }
-            />
-          )}
+          <VideoSubtitleOverlay
+            subtitles={subtitles}
+            currentTime={currentTime}
+            selectedSubtitleId={selectedSubtitleId}
+            shellRef={shellRef}
+            onSubtitleSelect={onSubtitleSelect}
+            onSubtitlePositionChange={onSubtitlePositionChange}
+            onSubtitleTextChange={onSubtitleTextChange}
+            onSubtitleStyleChange={onSubtitleStyleChange}
+            onAllSubtitleStylesChange={onAllSubtitleStylesChange}
+          />
 
           <VideoControls
             currentTime={currentTime}
             duration={duration}
             isPlaying={isPlaying}
             skipSeconds={skipSeconds}
-            onTogglePlayPause={
-              togglePlayPause
-            }
+            onTogglePlayPause={togglePlayPause}
             onJumpBy={jumpBy}
             onSeekTo={seekTo}
           />
         </div>
       ) : (
-        <button
-          className="video-placeholder"
-          onClick={chooseVideo}
-        >
-          <span className="video-placeholder-icon">
-            ▶
-          </span>
-
-          <span>
-            Choose a video to begin
-          </span>
+        <button className="video-placeholder" onClick={chooseVideo}>
+          <span className="video-placeholder-icon">▶</span>
+          <span>Choose a video to begin</span>
         </button>
       )}
     </div>

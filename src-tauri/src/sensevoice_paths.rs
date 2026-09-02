@@ -18,9 +18,7 @@ fn bundled_sensevoice_binary(app: &tauri::AppHandle) -> Result<PathBuf, String> 
         .map_err(|e| format!("Unable to resolve bundled SenseVoice binary: {e}"))
 }
 
-pub fn get_sensevoice_paths(
-    app: &tauri::AppHandle,
-) -> Result<SenseVoicePaths, String> {
+pub fn get_sensevoice_paths(app: &tauri::AppHandle) -> Result<SenseVoicePaths, String> {
     let app_data = app
         .path()
         .app_data_dir()
@@ -52,17 +50,13 @@ pub fn get_sensevoice_paths(
             use std::os::unix::fs::PermissionsExt;
 
             let mut permissions = fs::metadata(&binary)
-                .map_err(|e| {
-                    format!("Failed to read SenseVoice binary permissions: {e}")
-                })?
+                .map_err(|e| format!("Failed to read SenseVoice binary permissions: {e}"))?
                 .permissions();
 
             permissions.set_mode(0o755);
 
             fs::set_permissions(&binary, permissions)
-                .map_err(|e| {
-                    format!("Failed to set SenseVoice binary permissions: {e}")
-                })?;
+                .map_err(|e| format!("Failed to set SenseVoice binary permissions: {e}"))?;
         }
     }
 

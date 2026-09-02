@@ -12,15 +12,9 @@ type SubtitleListProps = {
 
   search: string;
 
-  onSelect: (
-    id: string,
-    startTime: number
-  ) => void;
+  onSelect: (id: string, startTime: number) => void;
 
-  onTextChange: (
-    id: string,
-    text: string
-  ) => void;
+  onTextChange: (id: string, text: string) => void;
 
   onDelete: (id: string) => void;
 };
@@ -34,21 +28,16 @@ function SubtitleList({
   onTextChange,
   onDelete,
 }: SubtitleListProps) {
-  const listRef =
-    useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (
-      !activeSubtitleId ||
-      !listRef.current
-    ) {
+    if (!activeSubtitleId || !listRef.current) {
       return;
     }
 
-    const element =
-      listRef.current.querySelector(
-        `[data-subtitle-id="${activeSubtitleId}"]`
-      );
+    const element = listRef.current.querySelector(
+      `[data-subtitle-id="${activeSubtitleId}"]`,
+    );
 
     if (element instanceof HTMLElement) {
       element.scrollIntoView({
@@ -59,23 +48,16 @@ function SubtitleList({
   }, [activeSubtitleId]);
 
   return (
-    <div
-      ref={listRef}
-      className="subtitle-list"
-    >
+    <div ref={listRef} className="subtitle-list">
       {subtitles.length === 0 ? (
         <p className="subtitle-empty">
-          {search
-            ? "No matching subtitles."
-            : "No subtitles yet."}
+          {search ? "No matching subtitles." : "No subtitles yet."}
         </p>
       ) : (
         subtitles.map((subtitle) => {
-          const isSelected =
-            selectedSubtitleId === subtitle.id;
+          const isSelected = selectedSubtitleId === subtitle.id;
 
-          const isActive =
-            activeSubtitleId === subtitle.id;
+          const isActive = activeSubtitleId === subtitle.id;
 
           return (
             <div
@@ -88,36 +70,19 @@ function SubtitleList({
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={() =>
-                onSelect(
-                  subtitle.id,
-                  subtitle.startTime
-                )
-              }
+              onClick={() => onSelect(subtitle.id, subtitle.startTime)}
             >
               <span className="subtitle-row-time">
-                {formatSubtitleTime(
-                  subtitle.startTime
-                )}
+                {formatSubtitleTime(subtitle.startTime)}
               </span>
 
               <input
                 className="subtitle-row-text"
                 value={subtitle.text}
-                onClick={(event) =>
-                  event.stopPropagation()
-                }
-                onFocus={() =>
-                  onSelect(
-                    subtitle.id,
-                    subtitle.startTime
-                  )
-                }
+                onClick={(event) => event.stopPropagation()}
+                onFocus={() => onSelect(subtitle.id, subtitle.startTime)}
                 onChange={(event) =>
-                  onTextChange(
-                    subtitle.id,
-                    event.target.value
-                  )
+                  onTextChange(subtitle.id, event.target.value)
                 }
               />
 

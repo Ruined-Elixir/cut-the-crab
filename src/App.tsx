@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
@@ -14,7 +14,14 @@ import {
   loadMatchingSrtFile,
 } from "./services/srtFiles";
 
+import {
+  loadMatchingProjectFile,
+  saveProjectFile,
+} from "./services/projectFiles";
+
 import "./App.css";
+
+import { exportStyledVideo } from "./services/videoExport";
 
 type SeekRequest = {
   time: number;
@@ -22,62 +29,156 @@ type SeekRequest = {
 };
 
 function App() {
+  // ==========================================================================
   // Video
+  // ==========================================================================
+
   const [videoDuration, setVideoDuration] = useState(0);
+
   const [currentTime, setCurrentTime] = useState(0);
 
-  const [videoName, setVideoName] =
-    useState<string | null>(null);
+  const [videoName, setVideoName] = useState<string | null>(null);
 
-  const [videoPath, setVideoPath] =
-    useState<string | null>(null);
+  const [videoPath, setVideoPath] = useState<string | null>(null);
 
-  const [seekRequest, setSeekRequest] =
-    useState<SeekRequest | null>(null);
+  const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
 
-  const {
-    waveform,
-    generateWaveform,
-  } = useWaveform();
+  // ==========================================================================
+  // Project save state
+  // ==========================================================================
 
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  const [isSavingProject, setIsSavingProject] = useState(false);
+
+  /*
+   * Prevent subtitle changes caused by loading
+   * a new video/project from being treated as
+   * user edits.
+   */
+  const isLoadingVideoRef = useRef(false);
+
+  /*
+   * Stores the subtitle state that was last
+   * loaded or successfully saved.
+   *
+   * Comparing against this is more reliable
+   * than marking every subtitle state update
+   * as dirty.
+   */
+  const lastSavedSnapshotRef = useRef<string>(JSON.stringify([]));
+
+  // ==========================================================================
+  // Waveform
+  // ==========================================================================
+
+  const { waveform, generateWaveform } = useWaveform();
+
+  // ==========================================================================
   // Subtitles
+  // ==========================================================================
+
   const {
     subtitles,
     filteredSubtitles,
     selectedSubtitleId,
     subtitleSearch,
     activeSubtitleId,
+
     setSubtitleSearch,
     selectSubtitle,
+
     updateSubtitleText,
     updateSubtitlePosition,
+    updateSubtitleStyle,
+    updateAllSubtitleStyles,
+
     moveSubtitle,
     resizeSubtitle,
     addSubtitle,
     deleteSubtitle,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
-  } = useSubtitleEditor(
-    currentTime,
-    videoDuration
-  );
+  } = useSubtitleEditor(currentTime, videoDuration);
 
+  // ==========================================================================
+  // Dirty-state detection
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!videoPath) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    if (isLoadingVideoRef.current) {
+      return;
+    }
+
+    const currentSnapshot = JSON.stringify(subtitles);
+
+    setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
+  }, [subtitles, videoPath]);
+
+  // ==========================================================================
+  // Autosave
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!videoPath || !hasUnsavedChanges || isLoadingVideoRef.current) {
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsSavingProject(true);
+
+        await saveProjectFile(videoPath, subtitles);
+
+        /*
+         * Only mark this exact subtitle
+         * state as saved.
+         */
+        lastSavedSnapshotRef.current = JSON.stringify(subtitles);
+
+        setHasUnsavedChanges(false);
+      } catch (error) {
+        console.error("Autosave failed:", error);
+      } finally {
+        setIsSavingProject(false);
+      }
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [videoPath, subtitles, hasUnsavedChanges]);
+
+  // ==========================================================================
   // Transcription
+  // ==========================================================================
+
   const {
     isGenerating,
     generationStatus,
     generationPercent,
     modelDownloadPercent,
     generationError,
+
     whisperModel,
     setWhisperModel,
+
     transcriptionEngine,
     setTranscriptionEngine,
+
     generateSubtitles,
   } = useTranscription({
-    onGenerated:
-      replaceWithGeneratedSubtitles,
+    onGenerated: replaceWithGeneratedSubtitles,
   });
+
+  // ==========================================================================
+  // Seek
+  // ==========================================================================
 
   const requestSeek = (time: number) => {
     setSeekRequest({
@@ -86,9 +187,15 @@ function App() {
     });
   };
 
-  const handleVideoPathChange = async (
-    path: string
-  ) => {
+  // ==========================================================================
+  // Video loading
+  // ==========================================================================
+
+  const handleVideoPathChange = async (path: string) => {
+    isLoadingVideoRef.current = true;
+
+    setHasUnsavedChanges(false);
+
     setVideoPath(path);
 
     replaceSubtitles([]);
@@ -96,166 +203,267 @@ function App() {
 
     void generateWaveform(path);
 
-    const matchingSubtitles =
-      await loadMatchingSrtFile(path);
+    try {
+      // --------------------------------------------------------------
+      // 1. Prefer subtitle project
+      // --------------------------------------------------------------
 
-    if (matchingSubtitles) {
-      replaceSubtitles(
-        matchingSubtitles
-      );
+      const matchingProject = await loadMatchingProjectFile(path);
+
+      if (matchingProject) {
+        const loadedSubtitles = matchingProject.subtitles;
+
+        replaceSubtitles(loadedSubtitles);
+
+        lastSavedSnapshotRef.current = JSON.stringify(loadedSubtitles);
+
+        setHasUnsavedChanges(false);
+
+        return;
+      }
+
+      // --------------------------------------------------------------
+      // 2. Fall back to matching SRT
+      // --------------------------------------------------------------
+
+      const matchingSubtitles = await loadMatchingSrtFile(path);
+
+      if (matchingSubtitles) {
+        replaceSubtitles(matchingSubtitles);
+
+        /*
+         * Treat the imported SRT as the
+         * initial clean state.
+         *
+         * A project JSON will only be
+         * created after editing/autosaving
+         * or pressing Save Project.
+         */
+        lastSavedSnapshotRef.current = JSON.stringify(matchingSubtitles);
+
+        setHasUnsavedChanges(false);
+
+        return;
+      }
+
+      // --------------------------------------------------------------
+      // 3. No project or SRT
+      // --------------------------------------------------------------
+
+      lastSavedSnapshotRef.current = JSON.stringify([]);
+
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      console.error("Failed to load subtitle data:", error);
+
+      lastSavedSnapshotRef.current = JSON.stringify([]);
+
+      setHasUnsavedChanges(false);
+    } finally {
+      isLoadingVideoRef.current = false;
     }
   };
 
-  const handleSubtitleSelect = (
-    id: string,
-    startTime: number
-  ) => {
+  // ==========================================================================
+  // Project saving
+  // ==========================================================================
+
+  const handleSaveProject = async () => {
+    if (!videoPath || isSavingProject) {
+      return;
+    }
+
+    try {
+      setIsSavingProject(true);
+
+      await saveProjectFile(videoPath, subtitles);
+
+      lastSavedSnapshotRef.current = JSON.stringify(subtitles);
+
+      setHasUnsavedChanges(false);
+
+      console.log("Project saved.");
+    } catch (error) {
+      console.error("Failed to save project:", error);
+    } finally {
+      setIsSavingProject(false);
+    }
+  };
+
+  // ==========================================================================
+  // Subtitle selection
+  // ==========================================================================
+
+  const handleSubtitleSelect = (id: string, startTime: number) => {
     selectSubtitle(id);
+
     requestSeek(startTime);
   };
 
+  // ==========================================================================
+  // SRT import/export
+  // ==========================================================================
+
   const handleImportSrt = async () => {
-    const importedSubtitles =
-      await importSrtFile();
+    const importedSubtitles = await importSrtFile();
 
     if (importedSubtitles) {
-      replaceSubtitles(
-        importedSubtitles
-      );
+      replaceSubtitles(importedSubtitles);
+
+      /*
+       * Importing an SRT changes the
+       * current project content, so it
+       * should be considered unsaved.
+       *
+       * We intentionally DO NOT update
+       * lastSavedSnapshotRef here.
+       */
     }
   };
 
   const handleExportSrt = async () => {
-    await exportSrtFile(
-      subtitles,
-      videoPath
-    );
+    await exportSrtFile(subtitles, videoPath);
   };
+
+  // =====================
+  // Exporting
+  // =====================
+
+  const handleExportStyledVideo = async () => {
+    if (!videoPath) {
+      return;
+    }
+
+    try {
+      const outputPath = await exportStyledVideo(videoPath, subtitles);
+
+      if (outputPath) {
+        console.log("Styled video exported:", outputPath);
+      }
+    } catch (error) {
+      console.error("Styled video export failed:", error);
+    }
+  };
+
+  // ==========================================================================
+  // UI
+  // ==========================================================================
 
   return (
     <main className="app">
       <header className="topbar">
         <h1>Subtitle Editor</h1>
+
+        {videoPath && (
+          <span className="project-save-status">
+            {isSavingProject
+              ? "Saving..."
+              : hasUnsavedChanges
+                ? "Unsaved changes..."
+                : "Saved"}
+          </span>
+        )}
       </header>
 
       <div className="workspace">
         <section className="preview-panel">
           <VideoPlayer
-            onDurationChange={
-              setVideoDuration
-            }
-            onTimeChange={
-              setCurrentTime
-            }
-            onVideoNameChange={
-              setVideoName
-            }
-            onVideoPathChange={
-              handleVideoPathChange
-            }
+            onDurationChange={setVideoDuration}
+
+            onTimeChange={setCurrentTime}
+
+            onVideoNameChange={setVideoName}
+
+            onVideoPathChange={handleVideoPathChange}
+
             seekRequest={seekRequest}
+
             subtitles={subtitles}
+
             currentTime={currentTime}
-            selectedSubtitleId={
-              selectedSubtitleId
-            }
-            onSubtitleSelect={
-              selectSubtitle
-            }
-            onSubtitlePositionChange={
-              updateSubtitlePosition
-            }
-            onSubtitleTextChange={
-              updateSubtitleText
-            }
+
+            selectedSubtitleId={selectedSubtitleId}
+
+            onSubtitleSelect={selectSubtitle}
+
+            onSubtitlePositionChange={updateSubtitlePosition}
+
+            onSubtitleTextChange={updateSubtitleText}
+
+            onSubtitleStyleChange={updateSubtitleStyle}
+
+            onAllSubtitleStylesChange={updateAllSubtitleStyles}
           />
         </section>
 
         <SubtitlePanel
-          subtitles={
-            filteredSubtitles
-          }
-          selectedSubtitleId={
-            selectedSubtitleId
-          }
-          activeSubtitleId={
-            activeSubtitleId
-          }
+          subtitles={filteredSubtitles}
+
+          selectedSubtitleId={selectedSubtitleId}
+
+          activeSubtitleId={activeSubtitleId}
+
           search={subtitleSearch}
-          onSearchChange={
-            setSubtitleSearch
-          }
-          onSelect={
-            handleSubtitleSelect
-          }
-          onTextChange={
-            updateSubtitleText
-          }
-          onAdd={() =>
-            addSubtitle(currentTime)
-          }
-          onDelete={
-            deleteSubtitle
-          }
-          onImport={
-            handleImportSrt
-          }
-          onExport={
-            handleExportSrt
-          }
-          onGenerate={() =>
-            generateSubtitles(
-              videoPath
-            )
-          }
-          isGenerating={
-            isGenerating
-          }
-          generationStatus={
-            generationStatus
-          }
-          generationPercent={
-            generationPercent
-          }
-          modelDownloadPercent={
-            modelDownloadPercent
-          }
-          whisperModel={
-            whisperModel
-          }
-          onWhisperModelChange={
-            setWhisperModel
-          }
-          transcriptionEngine={
-            transcriptionEngine
-          }
-          onTranscriptionEngineChange={
-            setTranscriptionEngine
-          }
-          generationError={
-            generationError
-          }
+
+          onSearchChange={setSubtitleSearch}
+
+          onSelect={handleSubtitleSelect}
+
+          onTextChange={updateSubtitleText}
+
+          onAdd={() => addSubtitle(currentTime)}
+
+          onDelete={deleteSubtitle}
+
+          onImport={handleImportSrt}
+
+          onExport={handleExportSrt}
+
+          onSaveProject={handleSaveProject}
+
+          onGenerate={() => generateSubtitles(videoPath)}
+
+          isGenerating={isGenerating}
+
+          generationStatus={generationStatus}
+
+          generationPercent={generationPercent}
+
+          modelDownloadPercent={modelDownloadPercent}
+
+          whisperModel={whisperModel}
+
+          onWhisperModelChange={setWhisperModel}
+
+          transcriptionEngine={transcriptionEngine}
+
+          onTranscriptionEngineChange={setTranscriptionEngine}
+
+          generationError={generationError}
+
+          onExportStyledVideo={handleExportStyledVideo}
         />
       </div>
 
       <Timeline
         duration={videoDuration}
+
         currentTime={currentTime}
+
         videoName={videoName}
+
         waveform={waveform}
+
         subtitles={subtitles}
-        selectedSubtitleId={
-          selectedSubtitleId
-        }
-        onSubtitleSelect={
-          selectSubtitle
-        }
-        onSubtitleMove={
-          moveSubtitle
-        }
-        onSubtitleResize={
-          resizeSubtitle
-        }
+
+        selectedSubtitleId={selectedSubtitleId}
+
+        onSubtitleSelect={selectSubtitle}
+
+        onSubtitleMove={moveSubtitle}
+
+        onSubtitleResize={resizeSubtitle}
+
         onSeek={requestSeek}
       />
     </main>

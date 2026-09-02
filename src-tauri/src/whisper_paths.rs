@@ -10,17 +10,13 @@ pub struct WhisperPaths {
     pub vad_model: PathBuf,
 }
 
-fn bundled_whisper_binary(
-    app: &tauri::AppHandle,
-) -> Result<PathBuf, String> {
+fn bundled_whisper_binary(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resolve(
             "resources/whisper/whisper-cli",
             tauri::path::BaseDirectory::Resource,
         )
-        .map_err(|error| {
-            format!("Unable to resolve bundled Whisper binary: {error}")
-        })
+        .map_err(|error| format!("Unable to resolve bundled Whisper binary: {error}"))
 }
 
 pub fn get_whisper_paths(app: &tauri::AppHandle) -> Result<WhisperPaths, String> {

@@ -77,8 +77,7 @@ pub async fn ensure_whisper_model(
 
         if let Some(total) = total_size {
             if total > 0 {
-                let percent =
-                    ((downloaded as f64 / total as f64) * 100.0).round() as u32;
+                let percent = ((downloaded as f64 / total as f64) * 100.0).round() as u32;
 
                 let percent = percent.min(100);
 
@@ -127,8 +126,7 @@ pub async fn ensure_vad_model(model_path: &Path) -> Result<(), String> {
         .await
         .map_err(|error| format!("Failed to read VAD model download: {error}"))?;
 
-    fs::write(model_path, bytes)
-        .map_err(|error| format!("Failed to save VAD model: {error}"))?;
+    fs::write(model_path, bytes).map_err(|error| format!("Failed to save VAD model: {error}"))?;
 
     Ok(())
 }
@@ -198,16 +196,13 @@ async fn download_model_file(
         downloaded += chunk.len() as u64;
 
         if let Some(total) = total_size {
-            let percent = ((downloaded as f64 / total as f64) * 100.0)
-                .round() as u32;
+            let percent = ((downloaded as f64 / total as f64) * 100.0).round() as u32;
 
             if percent != last_percent {
                 last_percent = percent;
 
                 app.emit("model-download-percent", percent)
-                    .map_err(|e| {
-                        format!("Failed to emit download progress: {e}")
-                    })?;
+                    .map_err(|e| format!("Failed to emit download progress: {e}"))?;
             }
         }
     }
@@ -237,10 +232,7 @@ pub async fn ensure_sensevoice_model(
     .await
 }
 
-pub async fn ensure_sensevoice_vad(
-    app: &tauri::AppHandle,
-    vad_path: &Path,
-) -> Result<(), String> {
+pub async fn ensure_sensevoice_vad(app: &tauri::AppHandle, vad_path: &Path) -> Result<(), String> {
     download_model_file(
         app,
         SENSEVOICE_VAD_URL,

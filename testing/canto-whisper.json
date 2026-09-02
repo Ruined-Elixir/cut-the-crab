@@ -1,0 +1,461 @@
+{
+	"systeminfo": "WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | MTL : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | REPACK = 1 | ",
+	"model": {
+		"type": "small",
+		"multilingual": true,
+		"vocab": 51865,
+		"audio": {
+			"ctx": 1500,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"text": {
+			"ctx": 448,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"mels": 80,
+		"ftype": 1
+	},
+	"params": {
+		"model": "/Users/enochchan/Library/Application Support/com.ruinedelixir.subtitle-editor/whisper/models/ggml-small.bin",
+		"language": "auto",
+		"translate": false
+	},
+	"result": {
+		"language": "zh"
+	},
+	"transcription": [
+		{
+			"timestamps": {
+				"from": "00:00:00,030",
+				"to": "00:00:01,020"
+			},
+			"offsets": {
+				"from": 30,
+				"to": 1020
+			},
+			"text": "你還在撈我嗎?"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:01,020",
+				"to": "00:00:04,010"
+			},
+			"offsets": {
+				"from": 1020,
+				"to": 4010
+			},
+			"text": "撈我嗎?"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:04,010",
+				"to": "00:00:05,730"
+			},
+			"offsets": {
+				"from": 4010,
+				"to": 5730
+			},
+			"text": "各位"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:05,730",
+				"to": "00:00:06,930"
+			},
+			"offsets": {
+				"from": 5730,
+				"to": 6930
+			},
+			"text": "坐下,我們坐來談"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:06,930",
+				"to": "00:00:10,780"
+			},
+			"offsets": {
+				"from": 6930,
+				"to": 10780
+			},
+			"text": "我們剛剛在討論"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:10,780",
+				"to": "00:00:13,440"
+			},
+			"offsets": {
+				"from": 10780,
+				"to": 13440
+			},
+			"text": "我們如何去面對我們的未來"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:13,440",
+				"to": "00:00:17,080"
+			},
+			"offsets": {
+				"from": 13440,
+				"to": 17080
+			},
+			"text": "健康"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:17,080",
+				"to": "00:00:18,370"
+			},
+			"offsets": {
+				"from": 17080,
+				"to": 18370
+			},
+			"text": "社會"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:18,370",
+				"to": "00:00:20,510"
+			},
+			"offsets": {
+				"from": 18370,
+				"to": 20510
+			},
+			"text": "我們每天都在面對很多挑戰"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:20,510",
+				"to": "00:00:24,700"
+			},
+			"offsets": {
+				"from": 20510,
+				"to": 24700
+			},
+			"text": "我剛剛就在醫院出來"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:25,440",
+				"to": "00:00:29,080"
+			},
+			"offsets": {
+				"from": 25440,
+				"to": 29080
+			},
+			"text": "剛剛在討論現在這個社會"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:29,080",
+				"to": "00:00:30,560"
+			},
+			"offsets": {
+				"from": 29080,
+				"to": 30560
+			},
+			"text": "面對這麼多問題"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:30,560",
+				"to": "00:00:32,960"
+			},
+			"offsets": {
+				"from": 30560,
+				"to": 32960
+			},
+			"text": "是大家其實需要些什麼呢?"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:32,960",
+				"to": "00:00:33,860"
+			},
+			"offsets": {
+				"from": 32960,
+				"to": 33860
+			},
+			"text": "就是我覺得"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:33,860",
+				"to": "00:00:35,930"
+			},
+			"offsets": {
+				"from": 33860,
+				"to": 35930
+			},
+			"text": "我一定不是價值型的頻道"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:35,930",
+				"to": "00:00:39,650"
+			},
+			"offsets": {
+				"from": 35930,
+				"to": 39650
+			},
+			"text": "我覺得我最直接可以給大家的就是"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:39,650",
+				"to": "00:00:42,510"
+			},
+			"offsets": {
+				"from": 39650,
+				"to": 42510
+			},
+			"text": "我們要堅持"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:42,510",
+				"to": "00:00:44,410"
+			},
+			"offsets": {
+				"from": 42510,
+				"to": 44410
+			},
+			"text": "堅持做下去"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:44,410",
+				"to": "00:00:47,130"
+			},
+			"offsets": {
+				"from": 44410,
+				"to": 47130
+			},
+			"text": "要盡力去呼吸"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:47,130",
+				"to": "00:00:49,820"
+			},
+			"offsets": {
+				"from": 47130,
+				"to": 49820
+			},
+			"text": "每天都要深呼吸"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:49,820",
+				"to": "00:00:52,430"
+			},
+			"offsets": {
+				"from": 49820,
+				"to": 52430
+			},
+			"text": "繼續走"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:52,430",
+				"to": "00:00:58,710"
+			},
+			"offsets": {
+				"from": 52430,
+				"to": 58710
+			},
+			"text": "沒錢,就省錢"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:58,710",
+				"to": "00:01:01,620"
+			},
+			"offsets": {
+				"from": 58710,
+				"to": 61620
+			},
+			"text": "不要買這麼多件衣服"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:01,620",
+				"to": "00:01:02,720"
+			},
+			"offsets": {
+				"from": 61620,
+				"to": 62720
+			},
+			"text": "我這件衣服"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:02,720",
+				"to": "00:01:05,440"
+			},
+			"offsets": {
+				"from": 62720,
+				"to": 65440
+			},
+			"text": "Cover那時候已經在穿"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:05,440",
+				"to": "00:01:07,760"
+			},
+			"offsets": {
+				"from": 65440,
+				"to": 67760
+			},
+			"text": "到現在還在穿"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:07,760",
+				"to": "00:01:09,510"
+			},
+			"offsets": {
+				"from": 67760,
+				"to": 69510
+			},
+			"text": "如果你被人炒了"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:09,510",
+				"to": "00:01:12,450"
+			},
+			"offsets": {
+				"from": 69510,
+				"to": 72450
+			},
+			"text": "加油"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:12,450",
+				"to": "00:01:15,120"
+			},
+			"offsets": {
+				"from": 72450,
+				"to": 75120
+			},
+			"text": "繼續堅持"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:15,120",
+				"to": "00:01:17,290"
+			},
+			"offsets": {
+				"from": 75120,
+				"to": 77290
+			},
+			"text": "就算我撿不到工作"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:17,290",
+				"to": "00:01:20,640"
+			},
+			"offsets": {
+				"from": 77290,
+				"to": 80640
+			},
+			"text": "都要堅持下去"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:20,640",
+				"to": "00:01:22,050"
+			},
+			"offsets": {
+				"from": 80640,
+				"to": 82050
+			},
+			"text": "有我嗎?"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:22,050",
+				"to": "00:01:23,350"
+			},
+			"offsets": {
+				"from": 82050,
+				"to": 83350
+			},
+			"text": "我以後就出這段影片"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:23,350",
+				"to": "00:01:24,490"
+			},
+			"offsets": {
+				"from": 83350,
+				"to": 84490
+			},
+			"text": "如果你喜歡的話"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:24,490",
+				"to": "00:01:26,150"
+			},
+			"offsets": {
+				"from": 84490,
+				"to": 86150
+			},
+			"text": "我每個星期出一條"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:26,150",
+				"to": "00:01:27,810"
+			},
+			"offsets": {
+				"from": 86150,
+				"to": 87810
+			},
+			"text": "去激勵你們"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:28,730",
+				"to": "00:01:30,430"
+			},
+			"offsets": {
+				"from": 88730,
+				"to": 90430
+			},
+			"text": "差一點就40萬了"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:30,430",
+				"to": "00:01:32,450"
+			},
+			"offsets": {
+				"from": 90430,
+				"to": 92450
+			},
+			"text": "大家訂閱我的頻道"
+		},
+		{
+			"timestamps": {
+				"from": "00:01:32,450",
+				"to": "00:01:35,260"
+			},
+			"offsets": {
+				"from": 92450,
+				"to": 95260
+			},
+			"text": "去做遊戲"
+		}
+	]
+}

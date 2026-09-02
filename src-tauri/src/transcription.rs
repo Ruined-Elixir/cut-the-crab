@@ -1,3 +1,7 @@
+use crate::ffmpeg_paths::get_ffmpeg_path;
+use crate::sensevoice_engine::transcribe_with_sensevoice;
+use crate::sensevoice_paths::get_sensevoice_paths;
+use crate::whisper_paths::get_whisper_paths;
 use serde::Deserialize;
 use std::{
     fs,
@@ -6,19 +10,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Emitter;
-use crate::whisper_paths::get_whisper_paths;
-use crate::model_manager::{
-    ensure_whisper_model,
-    ensure_vad_model,
-};
-use crate::ffmpeg_paths::get_ffmpeg_path;
-use crate::sensevoice_engine::transcribe_with_sensevoice;
-use crate::sensevoice_paths::get_sensevoice_paths;
-use crate::model_manager::{
-    ensure_sensevoice_model,
-    ensure_sensevoice_vad,
-};
 
+use crate::model_manager::{
+    ensure_sensevoice_model, ensure_sensevoice_vad, ensure_vad_model, ensure_whisper_model,
+};
 
 #[derive(Debug, Deserialize)]
 struct WhisperOutput {
@@ -63,10 +58,7 @@ fn parse_whisper_progress(line: &str) -> Option<u32> {
     let start = line.find(marker)?;
     let remaining = &line[start + marker.len()..];
 
-    let percent_text = remaining
-        .trim()
-        .trim_end_matches('%')
-        .trim();
+    let percent_text = remaining.trim().trim_end_matches('%').trim();
 
     percent_text.parse::<u32>().ok()
 }
@@ -78,21 +70,12 @@ pub async fn transcribe_video(
     engine: String,
     model: String,
 ) -> Result<TranscriptionResult, String> {
-
     if engine == "sensevoice" {
         let sensevoice_paths = get_sensevoice_paths(&app)?;
 
-        ensure_sensevoice_model(
-            &app,
-            &sensevoice_paths.model,
-        )
-        .await?;
+        ensure_sensevoice_model(&app, &sensevoice_paths.model).await?;
 
-        ensure_sensevoice_vad(
-            &app,
-            &sensevoice_paths.vad_model,
-        )
-        .await?;
+        ensure_sensevoice_vad(&app, &sensevoice_paths.vad_model).await?;
 
         let binary_path = sensevoice_paths.binary;
         let model_path = sensevoice_paths.model;
@@ -102,15 +85,7 @@ pub async fn transcribe_video(
             let app = app.clone();
             let video_path = video_path.clone();
 
-            move || {
-                transcribe_with_sensevoice(
-                    &app,
-                    &video_path,
-                    binary_path,
-                    model_path,
-                    vad_path,
-                )
-            }
+            move || transcribe_with_sensevoice(&app, &video_path, binary_path, model_path, vad_path)
         })
         .await
         .map_err(|e| format!("SenseVoice task failed: {e}"))??;
@@ -128,8 +103,6 @@ pub async fn transcribe_video(
                 .collect(),
         });
     }
-
-    
 
     if engine != "whisper" {
         return Err(format!("Unsupported transcription engine: {engine}"));
@@ -154,14 +127,8 @@ pub async fn transcribe_video(
 
     let _ = app.emit("transcription-progress", "Checking models...");
 
-    ensure_whisper_model(
-        &app,
-        &model,
-        &whisper_model,
-    )
-    .await?;
+    ensure_whisper_model(&app, &model, &whisper_model).await?;
     ensure_vad_model(&vad_model).await?;
-
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -170,13 +137,9 @@ pub async fn transcribe_video(
 
     let temp_dir = std::env::temp_dir();
 
-    let audio_path = temp_dir.join(format!(
-        "subtitle-editor-audio-{timestamp}.wav"
-    ));
+    let audio_path = temp_dir.join(format!("subtitle-editor-audio-{timestamp}.wav"));
 
-    let output_base = temp_dir.join(format!(
-        "subtitle-editor-whisper-{timestamp}"
-    ));
+    let output_base = temp_dir.join(format!("subtitle-editor-whisper-{timestamp}"));
 
     // 1. Extract temporary 16 kHz mono WAV with FFmpeg
 
@@ -204,10 +167,7 @@ pub async fn transcribe_video(
     .map_err(|error| format!("Failed to start FFmpeg: {error}"))?;
 
     if !ffmpeg_status.success() {
-        return Err(format!(
-            "FFmpeg exited with status: {}",
-            ffmpeg_status
-        ));
+        return Err(format!("FFmpeg exited with status: {}", ffmpeg_status));
     }
 
     // 2. Run Whisper on the extracted audio
@@ -246,14 +206,11 @@ pub async fn transcribe_video(
             let reader = BufReader::new(stderr);
 
             for line in reader.lines() {
-                let line = line
-                    .map_err(|error| format!("Failed reading Whisper output: {error}"))?;
+                let line =
+                    line.map_err(|error| format!("Failed reading Whisper output: {error}"))?;
 
                 if let Some(progress) = parse_whisper_progress(&line) {
-                    let _ = whisper_app.emit(
-                        "transcription-percent",
-                        progress,
-                    );
+                    let _ = whisper_app.emit("transcription-percent", progress);
                 }
             }
         }
@@ -265,15 +222,11 @@ pub async fn transcribe_video(
     .await
     .map_err(|error| format!("Whisper task failed: {error}"))??;
 
-
     // Temporary WAV is no longer needed
     let _ = fs::remove_file(&audio_path);
 
     if !whisper_status.success() {
-        return Err(format!(
-            "Whisper exited with status: {}",
-            whisper_status
-        ));
+        return Err(format!("Whisper exited with status: {}", whisper_status));
     }
 
     // 3. Read Whisper JSON
@@ -286,9 +239,8 @@ pub async fn transcribe_video(
 
     let _ = fs::remove_file(&json_path);
 
-    let output: WhisperOutput =
-        serde_json::from_str(&json)
-            .map_err(|error| format!("Failed to parse Whisper output: {error}"))?;
+    let output: WhisperOutput = serde_json::from_str(&json)
+        .map_err(|error| format!("Failed to parse Whisper output: {error}"))?;
 
     // 4. Convert Whisper output to our subtitle format
     let segments = output

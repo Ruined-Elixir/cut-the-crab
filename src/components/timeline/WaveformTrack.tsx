@@ -1,8 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 
 type WaveformTrackProps = {
   duration: number;
@@ -22,13 +18,9 @@ function WaveformTrack({
   zoom,
   onSeek,
 }: WaveformTrackProps) {
-  const canvasRef =
-    useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const playheadPosition =
-    duration > 0
-      ? (currentTime / duration) * 100
-      : 0;
+  const playheadPosition = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,8 +30,7 @@ function WaveformTrack({
     }
 
     const draw = () => {
-      const context =
-        canvas.getContext("2d");
+      const context = canvas.getContext("2d");
 
       if (!context) {
         return;
@@ -47,70 +38,38 @@ function WaveformTrack({
 
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
-      const scale =
-        window.devicePixelRatio || 1;
+      const scale = window.devicePixelRatio || 1;
 
-      canvas.width = Math.max(
-        1,
-        Math.round(width * scale)
-      );
+      canvas.width = Math.max(1, Math.round(width * scale));
 
-      canvas.height = Math.max(
-        1,
-        Math.round(height * scale)
-      );
+      canvas.height = Math.max(1, Math.round(height * scale));
 
-      context.setTransform(
-        scale,
-        0,
-        0,
-        scale,
-        0,
-        0
-      );
+      context.setTransform(scale, 0, 0, scale, 0, 0);
 
-      context.clearRect(
-        0,
-        0,
-        width,
-        height
-      );
+      context.clearRect(0, 0, width, height);
 
       if (waveform.length === 0) {
         return;
       }
 
       const centerY = height / 2;
-      const barWidth =
-        width / waveform.length;
+      const barWidth = width / waveform.length;
 
       context.fillStyle = "#aaa";
 
-      waveform.forEach(
-        (value, index) => {
-          const amplitude = Math.max(
-            1,
-            value * height * 0.9
-          );
+      waveform.forEach((value, index) => {
+        const amplitude = Math.max(1, value * height * 0.9);
 
-          const x = index * barWidth;
-          const y =
-            centerY - amplitude / 2;
+        const x = index * barWidth;
+        const y = centerY - amplitude / 2;
 
-          context.fillRect(
-            x,
-            y,
-            Math.max(1, barWidth),
-            amplitude
-          );
-        }
-      );
+        context.fillRect(x, y, Math.max(1, barWidth), amplitude);
+      });
     };
 
     draw();
 
-    const observer =
-      new ResizeObserver(draw);
+    const observer = new ResizeObserver(draw);
 
     observer.observe(canvas);
 
@@ -119,45 +78,28 @@ function WaveformTrack({
     };
   }, [waveform, zoom]);
 
-  const handleClick = (
-    event: ReactMouseEvent<HTMLDivElement>
-  ) => {
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (duration <= 0) {
       return;
     }
 
-    const rect =
-      event.currentTarget.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
 
-    const percentage =
-      (event.clientX - rect.left) /
-      rect.width;
+    const percentage = (event.clientX - rect.left) / rect.width;
 
-    const newTime = Math.max(
-      0,
-      Math.min(
-        duration,
-        percentage * duration
-      )
-    );
+    const newTime = Math.max(0, Math.min(duration, percentage * duration));
 
     onSeek?.(newTime);
   };
 
   return (
-    <div
-      className="timeline-track"
-      onClick={handleClick}
-    >
+    <div className="timeline-track" onClick={handleClick}>
       <div className="timeline-video-clip">
         <span className="timeline-video-name">
           {videoName ?? "No video selected"}
         </span>
 
-        <canvas
-          ref={canvasRef}
-          className="waveform-canvas"
-        />
+        <canvas ref={canvasRef} className="waveform-canvas" />
       </div>
 
       <div

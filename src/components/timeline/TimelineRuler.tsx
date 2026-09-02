@@ -3,10 +3,7 @@ type TimelineRulerProps = {
   zoom: number;
 };
 
-function getMarkerInterval(
-  duration: number,
-  zoom: number
-) {
+function getMarkerInterval(duration: number, zoom: number) {
   const visibleDuration = duration / zoom;
 
   if (visibleDuration <= 15) return 1;
@@ -18,45 +15,27 @@ function getMarkerInterval(
   return 60;
 }
 
-function TimelineRuler({
-  duration,
-  zoom,
-}: TimelineRulerProps) {
-  const interval =
-    getMarkerInterval(duration, zoom);
+function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
+  const interval = getMarkerInterval(duration, zoom);
 
   const markerTimes: number[] = [];
 
-  for (
-    let time = 0;
-    time <= duration;
-    time += interval
-  ) {
+  for (let time = 0; time <= duration; time += interval) {
     markerTimes.push(time);
   }
 
-  const lastMarker =
-    markerTimes[markerTimes.length - 1];
+  const lastMarker = markerTimes[markerTimes.length - 1];
 
-  if (
-    duration > 0 &&
-    Math.abs(lastMarker - duration) > 0.001
-  ) {
+  if (duration > 0 && Math.abs(lastMarker - duration) > 0.001) {
     markerTimes.push(duration);
   }
 
   return (
     <div className="timeline-ruler">
       {markerTimes.map((time, index) => {
-        const position =
-          duration > 0
-            ? (time / duration) * 100
-            : 0;
+        const position = duration > 0 ? (time / duration) * 100 : 0;
 
-        const label =
-          time % 1 === 0
-            ? `${time}s`
-            : `${time.toFixed(1)}s`;
+        const label = time % 1 === 0 ? `${time}s` : `${time.toFixed(1)}s`;
 
         return (
           <div

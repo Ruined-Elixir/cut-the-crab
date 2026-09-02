@@ -1,0 +1,183 @@
+import { invoke } from "@tauri-apps/api/core";
+
+import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
+
+export const CURRENT_PROJECT_VERSION = 1;
+
+export type SubtitleProject = {
+  version: number;
+
+  videoPath: string;
+
+  subtitles: Subtitle[];
+
+  updatedAt: string;
+};
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asNumber(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
+  if (value === "left" || value === "center" || value === "right") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const startTime = asNumber(value.startTime, 0);
+
+  const endTime = asNumber(value.endTime, startTime + 2);
+
+  const text = typeof value.text === "string" ? value.text : "";
+
+  /*
+   * We don't want one malformed subtitle
+   * to crash the whole project.
+   */
+  if (startTime < 0 || endTime < startTime) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof value.id === "string" && value.id.length > 0
+        ? value.id
+        : `recovered-${index}-${crypto.randomUUID()}`,
+
+    startTime,
+    endTime,
+    text,
+
+    positionX: asOptionalNumber(value.positionX),
+
+    positionY: asOptionalNumber(value.positionY),
+
+    fontSize: asOptionalNumber(value.fontSize),
+
+    fontFamily: asOptionalString(value.fontFamily),
+
+    color: asOptionalString(value.color),
+
+    backgroundColor: asOptionalString(value.backgroundColor),
+
+    isBold: asOptionalBoolean(value.isBold),
+
+    isUnderlined: asOptionalBoolean(value.isUnderlined),
+
+    textAlign: parseTextAlign(value.textAlign),
+  };
+}
+
+function normalizeProject(
+  value: unknown,
+  fallbackVideoPath: string,
+): SubtitleProject {
+  if (!isRecord(value)) {
+    throw new Error("Project file does not contain a valid object.");
+  }
+
+  const version = typeof value.version === "number" ? value.version : 1;
+
+  if (version > CURRENT_PROJECT_VERSION) {
+    throw new Error(
+      `This project was created with a newer project format (version ${version}). ` +
+        `This app currently supports version ${CURRENT_PROJECT_VERSION}.`,
+    );
+  }
+
+  if (!Array.isArray(value.subtitles)) {
+    throw new Error("Project file does not contain a valid subtitles array.");
+  }
+
+  const subtitles = value.subtitles
+    .map((subtitle, index) => normalizeSubtitle(subtitle, index))
+    .filter((subtitle): subtitle is Subtitle => subtitle !== null)
+    .sort((a, b) => a.startTime - b.startTime);
+
+  return {
+    version: CURRENT_PROJECT_VERSION,
+
+    videoPath:
+      typeof value.videoPath === "string" ? value.videoPath : fallbackVideoPath,
+
+    subtitles,
+
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
+  };
+}
+
+export async function loadMatchingProjectFile(
+  videoPath: string,
+): Promise<SubtitleProject | null> {
+  try {
+    const content = await invoke<string | null>("read_matching_project", {
+      videoPath,
+    });
+
+    if (!content) {
+      return null;
+    }
+
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new Error("Project file contains invalid JSON.");
+    }
+
+    return normalizeProject(parsed, videoPath);
+  } catch (error) {
+    console.error("Failed to load subtitle project:", error);
+
+    return null;
+  }
+}
+
+export async function saveProjectFile(
+  videoPath: string,
+  subtitles: Subtitle[],
+): Promise<void> {
+  const project: SubtitleProject = {
+    version: CURRENT_PROJECT_VERSION,
+
+    videoPath,
+
+    subtitles,
+
+    updatedAt: new Date().toISOString(),
+  };
+
+  await invoke("save_subtitle_project", {
+    videoPath,
+
+    projectJson: JSON.stringify(project, null, 2),
+  });
+}

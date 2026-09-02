@@ -1,9 +1,9 @@
+use crate::ffmpeg_paths::get_ffmpeg_path;
+use opencc_rs::{Config, OpenCC};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::{AppHandle, Manager};
-use opencc_rs::{Config, OpenCC};
-use crate::ffmpeg_paths::get_ffmpeg_path;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,16 +41,7 @@ pub fn transcribe_with_sensevoice(
     let ffmpeg_path = get_ffmpeg_path(app)?;
 
     let ffmpeg_output = Command::new(ffmpeg_path)
-        .args([
-            "-y",
-            "-i",
-            video_path,
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-        ])
+        .args(["-y", "-i", video_path, "-vn", "-ac", "1", "-ar", "16000"])
         .arg(&wav_path)
         .output()
         .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
@@ -82,8 +73,8 @@ pub fn transcribe_with_sensevoice(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let converter = OpenCC::new([Config::S2HK])
-        .map_err(|e| format!("Failed to initialize OpenCC: {e}"))?;
+    let converter =
+        OpenCC::new([Config::S2HK]).map_err(|e| format!("Failed to initialize OpenCC: {e}"))?;
 
     let converted_segments = parse_srt_output(&stdout)?
         .into_iter()
@@ -109,9 +100,7 @@ pub fn transcribe_with_sensevoice(
     })
 }
 
-fn split_sensevoice_segment(
-    segment: SenseVoiceSegment,
-) -> Vec<SenseVoiceSegment> {
+fn split_sensevoice_segment(segment: SenseVoiceSegment) -> Vec<SenseVoiceSegment> {
     const TARGET_CHARS: usize = 14;
     const MAX_DURATION: f64 = 6.0;
     const MIN_DURATION: f64 = 0.8;
@@ -144,13 +133,11 @@ fn split_sensevoice_segment(
     let mut current_time = segment.start_time;
 
     for (index, chunk) in chunks.iter().enumerate() {
-        let proportional_duration =
-            duration * (weights[index] / total_weight);
+        let proportional_duration = duration * (weights[index] / total_weight);
 
         let remaining_chunks = chunks.len() - index - 1;
 
-        let latest_end = segment.end_time
-            - remaining_chunks as f64 * MIN_DURATION;
+        let latest_end = segment.end_time - remaining_chunks as f64 * MIN_DURATION;
 
         let end_time = if index == chunks.len() - 1 {
             segment.end_time
@@ -187,10 +174,7 @@ fn chunk_timing_weight(text: &str) -> f64 {
     weight.max(1.0)
 }
 
-fn split_text_into_chunks(
-    text: &str,
-    target_chars: usize,
-) -> Vec<String> {
+fn split_text_into_chunks(text: &str, target_chars: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut current = String::new();
 
@@ -199,15 +183,9 @@ fn split_text_into_chunks(
 
         let char_count = current.chars().count();
 
-        let is_strong_boundary = matches!(
-            ch,
-            '。' | '！' | '？' | '!' | '?'
-        );
+        let is_strong_boundary = matches!(ch, '。' | '！' | '？' | '!' | '?');
 
-        let is_soft_boundary = matches!(
-            ch,
-            '，' | ',' | '；' | ';'
-        );
+        let is_soft_boundary = matches!(ch, '，' | ',' | '；' | ';');
 
         if is_strong_boundary
             || (is_soft_boundary && char_count >= target_chars / 2)
@@ -298,10 +276,7 @@ fn clean_subtitle_punctuation(text: &str) -> String {
         .map(|ch| {
             if matches!(
                 ch,
-                '。' | '，' | '、' | '；' | '：'
-                    | '！' | '？'
-                    | '.' | ',' | ';' | ':'
-                    | '!' | '?'
+                '。' | '，' | '、' | '；' | '：' | '！' | '？' | '.' | ',' | ';' | ':' | '!' | '?'
             ) {
                 ' '
             } else {

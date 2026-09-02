@@ -19,14 +19,11 @@ type TimelineProps = {
 
   onSeek?: (time: number) => void;
   onSubtitleSelect?: (id: string) => void;
-  onSubtitleMove?: (
-    id: string,
-    newStartTime: number
-  ) => void;
+  onSubtitleMove?: (id: string, newStartTime: number) => void;
   onSubtitleResize?: (
     id: string,
     newStartTime: number,
-    newEndTime: number
+    newEndTime: number,
   ) => void;
 };
 
@@ -45,15 +42,11 @@ function Timeline({
   const [zoom, setZoom] = useState(1);
 
   const zoomOut = () => {
-    setZoom((value) =>
-      Math.max(1, value - 0.5)
-    );
+    setZoom((value) => Math.max(1, value - 0.5));
   };
 
   const zoomIn = () => {
-    setZoom((value) =>
-      Math.min(8, value + 0.5)
-    );
+    setZoom((value) => Math.min(8, value + 0.5));
   };
 
   return (
@@ -64,9 +57,7 @@ function Timeline({
         <div className="timeline-controls">
           <button onClick={zoomOut}>-</button>
 
-          <span>
-            {Math.round(zoom * 100)}%
-          </span>
+          <span>{Math.round(zoom * 100)}%</span>
 
           <button onClick={zoomIn}>+</button>
         </div>
@@ -79,10 +70,7 @@ function Timeline({
             width: `${zoom * 100}%`,
           }}
         >
-          <TimelineRuler
-            duration={duration}
-            zoom={zoom}
-          />
+          <TimelineRuler duration={duration} zoom={zoom} />
 
           <WaveformTrack
             duration={duration}
@@ -96,18 +84,10 @@ function Timeline({
           <SubtitleTrack
             duration={duration}
             subtitles={subtitles}
-            selectedSubtitleId={
-              selectedSubtitleId
-            }
-            onSubtitleSelect={
-              onSubtitleSelect
-            }
-            onSubtitleMove={
-              onSubtitleMove
-            }
-            onSubtitleResize={
-              onSubtitleResize
-            }
+            selectedSubtitleId={selectedSubtitleId}
+            onSubtitleSelect={onSubtitleSelect}
+            onSubtitleMove={onSubtitleMove}
+            onSubtitleResize={onSubtitleResize}
             onSeek={onSeek}
           />
         </div>
