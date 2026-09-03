@@ -4,7 +4,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
-import Timeline from "./components/timeline/Timeline";
+import Timeline, {
+  clampTimelineZoom,
+  TIMELINE_ZOOM_STEP,
+} from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
 import SubtitleGenerationProgress from "./components/subtitles/SubtitleGenerationProgress";
 
@@ -31,6 +34,8 @@ import {
   type AppMenuCommand,
 } from "./services/appMenu";
 
+import type { TimelineMarker } from "./types/timeline";
+
 type SeekRequest = {
   time: number;
   id: number;
@@ -52,6 +57,9 @@ function App() {
   const [videoPath, setVideoPath] = useState<string | null>(null);
 
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
+
+  const [markers, setMarkers] = useState<TimelineMarker[]>([]);
+  const [timelineZoom, setTimelineZoom] = useState(1);
 
   // ==========================================================================
   // Video export UI
@@ -84,7 +92,9 @@ function App() {
    * than marking every subtitle state update
    * as dirty.
    */
-  const lastSavedSnapshotRef = useRef<string>(JSON.stringify([]));
+  const lastSavedSnapshotRef = useRef<string>(
+    JSON.stringify({ subtitles: [], markers: [] }),
+  );
 
   // ==========================================================================
   // Waveform
@@ -133,10 +143,10 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify(subtitles);
+    const currentSnapshot = JSON.stringify({ subtitles, markers });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
-  }, [subtitles, videoPath]);
+  }, [subtitles, markers, videoPath]);
 
   // ==========================================================================
   // Autosave
@@ -151,13 +161,13 @@ function App() {
       try {
         setIsSavingProject(true);
 
-        await saveProjectFile(videoPath, subtitles);
+        await saveProjectFile(videoPath, subtitles, markers);
 
         /*
          * Only mark this exact subtitle
          * state as saved.
          */
-        lastSavedSnapshotRef.current = JSON.stringify(subtitles);
+        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
 
         setHasUnsavedChanges(false);
       } catch (error) {
@@ -170,7 +180,7 @@ function App() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [videoPath, subtitles, hasUnsavedChanges]);
+  }, [videoPath, subtitles, markers, hasUnsavedChanges]);
 
   // ==========================================================================
   // Transcription
@@ -214,7 +224,9 @@ function App() {
     setVideoPath(path);
 
     replaceSubtitles([]);
+    setMarkers([]);
     setSubtitleSearch("");
+    setTimelineZoom(1);
 
     void generateWaveform(path);
 
@@ -227,10 +239,15 @@ function App() {
 
       if (matchingProject) {
         const loadedSubtitles = matchingProject.subtitles;
+        const loadedMarkers = matchingProject.markers;
 
         replaceSubtitles(loadedSubtitles);
+        setMarkers(loadedMarkers);
 
-        lastSavedSnapshotRef.current = JSON.stringify(loadedSubtitles);
+        lastSavedSnapshotRef.current = JSON.stringify({
+          subtitles: loadedSubtitles,
+          markers: loadedMarkers,
+        });
 
         setHasUnsavedChanges(false);
 
@@ -254,7 +271,10 @@ function App() {
          * created after editing/autosaving
          * or pressing Save Project.
          */
-        lastSavedSnapshotRef.current = JSON.stringify(matchingSubtitles);
+        lastSavedSnapshotRef.current = JSON.stringify({
+          subtitles: matchingSubtitles,
+          markers: [],
+        });
 
         setHasUnsavedChanges(false);
 
@@ -265,13 +285,19 @@ function App() {
       // 3. No project or SRT
       // --------------------------------------------------------------
 
-      lastSavedSnapshotRef.current = JSON.stringify([]);
+      lastSavedSnapshotRef.current = JSON.stringify({
+        subtitles: [],
+        markers: [],
+      });
 
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error("Failed to load subtitle data:", error);
 
-      lastSavedSnapshotRef.current = JSON.stringify([]);
+      lastSavedSnapshotRef.current = JSON.stringify({
+        subtitles: [],
+        markers: [],
+      });
 
       setHasUnsavedChanges(false);
     } finally {
@@ -310,9 +336,9 @@ function App() {
     try {
       setIsSavingProject(true);
 
-      await saveProjectFile(videoPath, subtitles);
+      await saveProjectFile(videoPath, subtitles, markers);
 
-      lastSavedSnapshotRef.current = JSON.stringify(subtitles);
+      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
 
       setHasUnsavedChanges(false);
 
@@ -452,6 +478,22 @@ function App() {
           engine: "sensevoice",
         });
         return;
+
+      case "view.timeline-zoom-in":
+        setTimelineZoom((current) =>
+          clampTimelineZoom(current + TIMELINE_ZOOM_STEP),
+        );
+        return;
+
+      case "view.timeline-zoom-out":
+        setTimelineZoom((current) =>
+          clampTimelineZoom(current - TIMELINE_ZOOM_STEP),
+        );
+        return;
+
+      case "view.timeline-zoom-reset":
+        setTimelineZoom(1);
+        return;
     }
   };
 
@@ -546,6 +588,10 @@ function App() {
 
         subtitles={subtitles}
 
+        markers={markers}
+
+        zoom={timelineZoom}
+
         selectedSubtitleId={selectedSubtitleId}
 
         onSubtitleSelect={selectSubtitle}
@@ -553,6 +599,10 @@ function App() {
         onSubtitleMove={moveSubtitle}
 
         onSubtitleResize={resizeSubtitle}
+
+        onMarkersChange={setMarkers}
+
+        onZoomChange={setTimelineZoom}
 
         onSeek={requestSeek}
       />

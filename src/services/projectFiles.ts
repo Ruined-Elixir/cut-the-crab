@@ -1,16 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
+import type { TimelineMarker } from "../types/timeline";
 
-export const CURRENT_PROJECT_VERSION = 1;
+export const CURRENT_PROJECT_VERSION = 2;
 
 export type SubtitleProject = {
   version: number;
-
   videoPath: string;
-
   subtitles: Subtitle[];
-
+  markers: TimelineMarker[];
   updatedAt: string;
 };
 
@@ -52,15 +51,9 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
   }
 
   const startTime = asNumber(value.startTime, 0);
-
   const endTime = asNumber(value.endTime, startTime + 2);
-
   const text = typeof value.text === "string" ? value.text : "";
 
-  /*
-   * We don't want one malformed subtitle
-   * to crash the whole project.
-   */
   if (startTime < 0 || endTime < startTime) {
     return null;
   }
@@ -70,28 +63,38 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
       typeof value.id === "string" && value.id.length > 0
         ? value.id
         : `recovered-${index}-${crypto.randomUUID()}`,
-
     startTime,
     endTime,
     text,
-
     positionX: asOptionalNumber(value.positionX),
-
     positionY: asOptionalNumber(value.positionY),
-
     fontSize: asOptionalNumber(value.fontSize),
-
     fontFamily: asOptionalString(value.fontFamily),
-
     color: asOptionalString(value.color),
-
     backgroundColor: asOptionalString(value.backgroundColor),
-
     isBold: asOptionalBoolean(value.isBold),
-
     isUnderlined: asOptionalBoolean(value.isUnderlined),
-
     textAlign: parseTextAlign(value.textAlign),
+  };
+}
+
+function normalizeMarker(value: unknown, index: number): TimelineMarker | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const time = asNumber(value.time, -1);
+
+  if (time < 0) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof value.id === "string" && value.id.length > 0
+        ? value.id
+        : `marker-${index}-${crypto.randomUUID()}`,
+    time,
   };
 }
 
@@ -121,14 +124,19 @@ function normalizeProject(
     .filter((subtitle): subtitle is Subtitle => subtitle !== null)
     .sort((a, b) => a.startTime - b.startTime);
 
+  const markers = Array.isArray(value.markers)
+    ? value.markers
+        .map((marker, index) => normalizeMarker(marker, index))
+        .filter((marker): marker is TimelineMarker => marker !== null)
+        .sort((a, b) => a.time - b.time)
+    : [];
+
   return {
     version: CURRENT_PROJECT_VERSION,
-
     videoPath:
       typeof value.videoPath === "string" ? value.videoPath : fallbackVideoPath,
-
     subtitles,
-
+    markers,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
 }
@@ -156,7 +164,6 @@ export async function loadMatchingProjectFile(
     return normalizeProject(parsed, videoPath);
   } catch (error) {
     console.error("Failed to load subtitle project:", error);
-
     return null;
   }
 }
@@ -164,20 +171,18 @@ export async function loadMatchingProjectFile(
 export async function saveProjectFile(
   videoPath: string,
   subtitles: Subtitle[],
+  markers: TimelineMarker[],
 ): Promise<void> {
   const project: SubtitleProject = {
     version: CURRENT_PROJECT_VERSION,
-
     videoPath,
-
     subtitles,
-
+    markers: [...markers].sort((a, b) => a.time - b.time),
     updatedAt: new Date().toISOString(),
   };
 
   await invoke("save_subtitle_project", {
     videoPath,
-
     projectJson: JSON.stringify(project, null, 2),
   });
 }

@@ -1,6 +1,12 @@
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import type { Subtitle } from "../../types/subtitle";
+import type { TimelineMarker } from "../../types/timeline";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
@@ -8,17 +14,14 @@ import WaveformTrack from "./WaveformTrack";
 
 import "./Timeline.css";
 
-type TimelineMarker = {
-  id: string;
-  time: number;
-};
-
 type TimelineProps = {
   duration: number;
   currentTime: number;
   videoName: string | null;
   waveform: number[];
   subtitles: Subtitle[];
+  markers: TimelineMarker[];
+  zoom: number;
 
   selectedSubtitleId: string | null;
 
@@ -30,14 +33,16 @@ type TimelineProps = {
     newStartTime: number,
     newEndTime: number,
   ) => void;
+  onMarkersChange?: (markers: TimelineMarker[]) => void;
+  onZoomChange?: (zoom: number) => void;
 };
 
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 12;
-const ZOOM_STEP = 0.25;
+export const MIN_TIMELINE_ZOOM = 1;
+export const MAX_TIMELINE_ZOOM = 12;
+export const TIMELINE_ZOOM_STEP = 0.25;
 
-function clampZoom(value: number) {
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
+export function clampTimelineZoom(value: number) {
+  return Math.max(MIN_TIMELINE_ZOOM, Math.min(MAX_TIMELINE_ZOOM, value));
 }
 
 function Timeline({
@@ -46,15 +51,18 @@ function Timeline({
   videoName,
   waveform,
   subtitles,
+  markers,
+  zoom,
   selectedSubtitleId,
   onSeek,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleResize,
+  onMarkersChange,
+  onZoomChange,
 }: TimelineProps) {
-  const [zoom, setZoom] = useState(1);
-  const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousZoomRef = useRef(zoom);
 
   const playheadPosition = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -64,20 +72,23 @@ function Timeline({
   );
 
   const setTimelineZoom = (nextZoom: number) => {
-    const scroll = scrollRef.current;
-    const previousZoom = zoom;
-    const clampedZoom = clampZoom(nextZoom);
+    onZoomChange?.(clampTimelineZoom(nextZoom));
+  };
 
-    if (!scroll || previousZoom === clampedZoom) {
-      setZoom(clampedZoom);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const previousZoom = previousZoomRef.current;
+
+    previousZoomRef.current = zoom;
+
+    if (!scroll || previousZoom === zoom) {
       return;
     }
 
+    const previousContentWidth =
+      zoom > 0 ? (scroll.scrollWidth * previousZoom) / zoom : scroll.scrollWidth;
     const viewportCenter = scroll.scrollLeft + scroll.clientWidth / 2;
-    const previousContentWidth = scroll.scrollWidth || scroll.clientWidth;
     const centerRatio = previousContentWidth > 0 ? viewportCenter / previousContentWidth : 0;
-
-    setZoom(clampedZoom);
 
     window.requestAnimationFrame(() => {
       const nextContentWidth = scroll.scrollWidth;
@@ -86,10 +97,29 @@ function Timeline({
         centerRatio * nextContentWidth - scroll.clientWidth / 2,
       );
     });
-  };
+  }, [zoom]);
 
-  const zoomOut = () => setTimelineZoom(zoom - ZOOM_STEP);
-  const zoomIn = () => setTimelineZoom(zoom + ZOOM_STEP);
+  const zoomOut = () => setTimelineZoom(zoom - TIMELINE_ZOOM_STEP);
+  const zoomIn = () => setTimelineZoom(zoom + TIMELINE_ZOOM_STEP);
+
+  const addMarker = (time: number) => {
+    if (duration <= 0) {
+      return;
+    }
+
+    const safeTime = Math.max(0, Math.min(duration, time));
+    const existing = markers.find((marker) => Math.abs(marker.time - safeTime) < 0.05);
+
+    if (existing) {
+      return;
+    }
+
+    onMarkersChange?.(
+      [...markers, { id: crypto.randomUUID(), time: safeTime }].sort(
+        (a, b) => a.time - b.time,
+      ),
+    );
+  };
 
   const addMarkerAtEvent = (event: ReactMouseEvent<HTMLElement>) => {
     if (duration <= 0) {
@@ -100,24 +130,64 @@ function Timeline({
     const labelWidth = 86;
     const trackWidth = Math.max(1, rect.width - labelWidth);
     const ratio = (event.clientX - rect.left - labelWidth) / trackWidth;
-    const time = Math.max(0, Math.min(duration, ratio * duration));
 
-    setMarkers((current) => {
-      const existing = current.find((marker) => Math.abs(marker.time - time) < 0.05);
-
-      if (existing) {
-        return current;
-      }
-
-      return [...current, { id: crypto.randomUUID(), time }].sort(
-        (a, b) => a.time - b.time,
-      );
-    });
+    addMarker(ratio * duration);
   };
 
   const removeMarker = (id: string) => {
-    setMarkers((current) => current.filter((marker) => marker.id !== id));
+    onMarkersChange?.(markers.filter((marker) => marker.id !== id));
   };
+
+  const removeNearestMarkerAtPlayhead = () => {
+    if (markers.length === 0) {
+      return;
+    }
+
+    const nearest = markers.reduce((best, marker) =>
+      Math.abs(marker.time - currentTime) < Math.abs(best.time - currentTime)
+        ? marker
+        : best,
+    );
+
+    // Only remove a marker that is reasonably close to the playhead.
+    // 0.5 seconds keeps Shift+M predictable rather than deleting a distant marker.
+    if (Math.abs(nearest.time - currentTime) <= 0.5) {
+      removeMarker(nearest.id);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "m") {
+        event.preventDefault();
+
+        if (event.shiftKey) {
+          removeNearestMarkerAtPlayhead();
+        } else {
+          addMarker(currentTime);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [currentTime, duration, markers]);
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!event.metaKey && !event.ctrlKey) {
@@ -125,7 +195,7 @@ function Timeline({
     }
 
     event.preventDefault();
-    setTimelineZoom(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+    setTimelineZoom(zoom + (event.deltaY < 0 ? TIMELINE_ZOOM_STEP : -TIMELINE_ZOOM_STEP));
   };
 
   return (
@@ -133,7 +203,9 @@ function Timeline({
       <div className="timeline-header">
         <div className="timeline-title-group">
           <h2>Timeline</h2>
-          <span className="timeline-help">Double-click to add marker</span>
+          <span className="timeline-help">
+            Double-click or M to add marker · Shift+M removes marker at playhead
+          </span>
         </div>
 
         <div className="timeline-controls">
@@ -141,7 +213,7 @@ function Timeline({
             type="button"
             className="timeline-zoom-button"
             onClick={zoomOut}
-            disabled={zoom <= MIN_ZOOM}
+            disabled={zoom <= MIN_TIMELINE_ZOOM}
             aria-label="Zoom timeline out"
           >
             −
@@ -150,9 +222,9 @@ function Timeline({
           <input
             className="timeline-zoom-slider"
             type="range"
-            min={MIN_ZOOM}
-            max={MAX_ZOOM}
-            step={ZOOM_STEP}
+            min={MIN_TIMELINE_ZOOM}
+            max={MAX_TIMELINE_ZOOM}
+            step={TIMELINE_ZOOM_STEP}
             value={zoom}
             onChange={(event) => setTimelineZoom(Number(event.target.value))}
             aria-label="Timeline zoom"
@@ -162,7 +234,7 @@ function Timeline({
             type="button"
             className="timeline-zoom-button"
             onClick={zoomIn}
-            disabled={zoom >= MAX_ZOOM}
+            disabled={zoom >= MAX_TIMELINE_ZOOM}
             aria-label="Zoom timeline in"
           >
             +
@@ -172,11 +244,7 @@ function Timeline({
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="timeline-scroll"
-        onWheel={handleWheel}
-      >
+      <div ref={scrollRef} className="timeline-scroll" onWheel={handleWheel}>
         <div
           className="timeline-content"
           style={{
@@ -185,10 +253,7 @@ function Timeline({
         >
           <TimelineRuler duration={duration} zoom={zoom} />
 
-          <div
-            className="timeline-track-stack"
-            onDoubleClick={addMarkerAtEvent}
-          >
+          <div className="timeline-track-stack" onDoubleClick={addMarkerAtEvent}>
             <WaveformTrack
               duration={duration}
               videoName={videoName}

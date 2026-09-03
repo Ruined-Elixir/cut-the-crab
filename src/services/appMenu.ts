@@ -14,7 +14,10 @@ export type AppMenuCommand =
   | "edit.delete-subtitle"
   | "transcription.whisper-base"
   | "transcription.whisper-small"
-  | "transcription.sensevoice";
+  | "transcription.sensevoice"
+  | "view.timeline-zoom-in"
+  | "view.timeline-zoom-out"
+  | "view.timeline-zoom-reset";
 
 export function useAppMenuCommands(
   onCommand: (command: AppMenuCommand) => void | Promise<void>,

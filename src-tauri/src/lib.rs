@@ -179,9 +179,17 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         MenuItemBuilder::with_id("transcription.sensevoice", "Generate with SenseVoice")
             .build(app)?;
 
-    let view_placeholder =
-        MenuItemBuilder::with_id("view.timeline-placeholder", "Timeline controls coming next")
-            .enabled(false)
+    let timeline_zoom_in = MenuItemBuilder::with_id("view.timeline-zoom-in", "Zoom In Timeline")
+        .accelerator("CmdOrCtrl+=")
+        .build(app)?;
+
+    let timeline_zoom_out = MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
+
+    let timeline_zoom_reset =
+        MenuItemBuilder::with_id("view.timeline-zoom-reset", "Reset Timeline Zoom")
+            .accelerator("CmdOrCtrl+0")
             .build(app)?;
 
     // -------------------------------------------------------------------------
@@ -266,7 +274,10 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&view_placeholder)
+        .item(&timeline_zoom_in)
+        .item(&timeline_zoom_out)
+        .separator()
+        .item(&timeline_zoom_reset)
         .build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Window")
@@ -317,7 +328,10 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "edit.delete-subtitle"
             | "transcription.whisper-base"
             | "transcription.whisper-small"
-            | "transcription.sensevoice" => {
+            | "transcription.sensevoice"
+            | "view.timeline-zoom-in"
+            | "view.timeline-zoom-out"
+            | "view.timeline-zoom-reset" => {
                 if let Err(error) = app_handle.emit(APP_MENU_COMMAND_EVENT, id.to_string()) {
                     eprintln!("Failed to emit app menu command: {error}");
                 }
