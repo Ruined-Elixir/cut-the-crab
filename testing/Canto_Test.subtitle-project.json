@@ -17,8 +17,8 @@
     },
     {
       "id": "667a960b-0b95-45af-ba9a-08476362c060",
-      "startTime": 2.93,
-      "endTime": 7.09,
+      "startTime": 2.2566258503401357,
+      "endTime": 8.725337220602526,
       "text": "攞啦嘛 咁多位坐低我哋坐低傾",
       "fontSize": 54,
       "fontFamily": "Noto Sans CJK TC",
@@ -44,7 +44,7 @@
     {
       "id": "b0a04e16-bd55-4efd-b949-8e7113b7e5e9",
       "startTime": 11.6725,
-      "endTime": 13.56,
+      "endTime": 14.333249757045674,
       "text": "樣去面對我哋嘅未來",
       "fontSize": 54,
       "fontFamily": "Noto Sans CJK TC",
@@ -406,5 +406,5 @@
       "textAlign": "center"
     }
   ],
-  "updatedAt": "2026-09-03T04:42:07.643Z"
+  "updatedAt": "2026-09-03T07:08:12.597Z"
 }
