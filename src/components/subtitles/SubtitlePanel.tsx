@@ -1,12 +1,5 @@
 import type { Subtitle } from "../../types/subtitle";
 
-import type {
-  TranscriptionEngine,
-  WhisperModel,
-} from "../../services/transcriptionService";
-
-import SubtitleActions from "./SubtitleActions";
-import SubtitleGenerationProgress from "./SubtitleGenerationProgress";
 import SubtitleList from "./SubtitleList";
 
 import "./SubtitlePanel.css";
@@ -21,33 +14,10 @@ type SubtitlePanelProps = {
   onSearchChange: (value: string) => void;
 
   onSelect: (id: string, startTime: number) => void;
-
   onTextChange: (id: string, text: string) => void;
 
   onAdd: () => void;
   onDelete: (id: string) => void;
-
-  onImport: () => void | Promise<void>;
-  onExport: () => void | Promise<void>;
-  onSaveProject: () => void | Promise<void>;
-
-  onGenerate: () => void | Promise<void>;
-  isGenerating: boolean;
-
-  generationStatus: string;
-  generationPercent: number;
-  modelDownloadPercent: number;
-  generationError: string;
-
-  whisperModel: WhisperModel;
-
-  onWhisperModelChange: (model: WhisperModel) => void;
-
-  transcriptionEngine: TranscriptionEngine;
-
-  onTranscriptionEngineChange: (engine: TranscriptionEngine) => void;
-
-  onExportStyledVideo: () => void | Promise<void>;
 };
 
 function SubtitlePanel({
@@ -60,56 +30,42 @@ function SubtitlePanel({
   onTextChange,
   onAdd,
   onDelete,
-  onImport,
-  onExport,
-  onSaveProject,
-  onGenerate,
-  isGenerating,
-  generationStatus,
-  generationPercent,
-  modelDownloadPercent,
-  generationError,
-  whisperModel,
-  onWhisperModelChange,
-  transcriptionEngine,
-  onTranscriptionEngineChange,
-  onExportStyledVideo,
 }: SubtitlePanelProps) {
   return (
     <aside className="subtitle-panel">
       <div className="subtitle-panel-header">
         <h2>Subtitles</h2>
 
-        <SubtitleActions
-          onAdd={onAdd}
-          onImport={onImport}
-          onExport={onExport}
-          onSaveProject={onSaveProject}
-          onGenerate={onGenerate}
-          isGenerating={isGenerating}
-          generationStatus={generationStatus}
-          whisperModel={whisperModel}
-          onWhisperModelChange={onWhisperModelChange}
-          transcriptionEngine={transcriptionEngine}
-          onTranscriptionEngineChange={onTranscriptionEngineChange}
-          onExportStyledVideo={onExportStyledVideo}
-        />
+        <div className="subtitle-panel-tools">
+          <div className="subtitle-search-wrap">
+            <svg
+              className="subtitle-search-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4 4" />
+            </svg>
 
-        <SubtitleGenerationProgress
-          isGenerating={isGenerating}
-          generationStatus={generationStatus}
-          generationPercent={generationPercent}
-          modelDownloadPercent={modelDownloadPercent}
-          generationError={generationError}
-        />
+            <input
+              type="text"
+              className="subtitle-search"
+              placeholder="Search subtitles"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+            />
+          </div>
 
-        <input
-          type="text"
-          className="subtitle-search"
-          placeholder="Search subtitles"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
+          <button
+            type="button"
+            className="subtitle-add-button"
+            onClick={onAdd}
+            aria-label="Add subtitle"
+            title="Add subtitle"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <SubtitleList

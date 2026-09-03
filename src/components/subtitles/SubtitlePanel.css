@@ -1,4 +1,4 @@
-/* ==========================================================================
+/* ========================================================================== 
    Panel layout
    ========================================================================== */
 
@@ -10,6 +10,9 @@
   min-height: 0;
 
   overflow: hidden;
+
+  border-left: 1px solid #303030;
+  background: #1b1b1b;
 }
 
 .subtitle-panel-header {
@@ -17,33 +20,113 @@
 
   padding: 14px;
 
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #303030;
 }
 
 .subtitle-panel-header h2 {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 
   font-size: 16px;
+  font-weight: 600;
 }
 
-/* ==========================================================================
-   Search
+/* ========================================================================== 
+   Search + add
    ========================================================================== */
+
+.subtitle-panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subtitle-search-wrap {
+  position: relative;
+
+  flex: 1;
+  min-width: 0;
+}
+
+.subtitle-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+
+  width: 15px;
+  height: 15px;
+
+  transform: translateY(-50%);
+
+  fill: none;
+  stroke: #777;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+
+  pointer-events: none;
+}
 
 .subtitle-search {
   width: 100%;
+  height: 34px;
 
-  padding: 8px 10px;
+  padding: 0 10px 0 32px;
 
-  border: 1px solid #444;
-  border-radius: 6px;
+  border: 1px solid #3b3b3b;
+  border-radius: 7px;
 
-  background: #181818;
-  color: white;
+  background: #151515;
+  color: #f2f2f2;
+
+  font-size: 13px;
 
   outline: none;
+
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.subtitle-search::placeholder {
+  color: #737373;
+}
+
+.subtitle-search:hover {
+  border-color: #4a4a4a;
 }
 
 .subtitle-search:focus {
-  border-color: #777;
+  border-color: #666;
+  background: #181818;
+}
+
+.subtitle-add-button {
+  flex: 0 0 34px;
+
+  width: 34px;
+  height: 34px;
+
+  padding: 0 0 2px;
+
+  border: 1px solid #424242;
+  border-radius: 7px;
+
+  background: #262626;
+  color: #f2f2f2;
+
+  font-size: 21px;
+  font-weight: 300;
+  line-height: 1;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.subtitle-add-button:hover {
+  border-color: #5a5a5a;
+  background: #303030;
+}
+
+.subtitle-add-button:active {
+  background: #202020;
 }

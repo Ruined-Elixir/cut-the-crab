@@ -79,3 +79,22 @@ button {
 
   font-size: 12px;
 }
+
+/* ========================================================================== 
+   App-level transcription status
+   ========================================================================== */
+
+.app-transcription-status {
+  flex-shrink: 0;
+
+  padding: 8px 16px 0;
+
+  border-top: 1px solid #2d2d2d;
+  background: #181818;
+}
+
+.app-transcription-status .subtitle-generation-status,
+.app-transcription-status .subtitle-generation-progress,
+.app-transcription-status .subtitle-generation-error {
+  margin-bottom: 8px;
+}

@@ -6,6 +6,7 @@ import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
+import SubtitleGenerationProgress from "./components/subtitles/SubtitleGenerationProgress";
 
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
 import { useTranscription } from "./hooks/useTranscription";
@@ -181,13 +182,6 @@ function App() {
     generationPercent,
     modelDownloadPercent,
     generationError,
-
-    whisperModel,
-    setWhisperModel,
-
-    transcriptionEngine,
-    setTranscriptionEngine,
-
     generateSubtitles,
   } = useTranscription({
     onGenerated: replaceWithGeneratedSubtitles,
@@ -518,52 +512,28 @@ function App() {
 
         <SubtitlePanel
           subtitles={filteredSubtitles}
-
           selectedSubtitleId={selectedSubtitleId}
-
           activeSubtitleId={activeSubtitleId}
-
           search={subtitleSearch}
-
           onSearchChange={setSubtitleSearch}
-
           onSelect={handleSubtitleSelect}
-
           onTextChange={updateSubtitleText}
-
           onAdd={() => addSubtitle(currentTime)}
-
           onDelete={deleteSubtitle}
-
-          onImport={handleImportSrt}
-
-          onExport={handleExportSrt}
-
-          onSaveProject={handleSaveProject}
-
-          onGenerate={() => generateSubtitles(videoPath)}
-
-          isGenerating={isGenerating}
-
-          generationStatus={generationStatus}
-
-          generationPercent={generationPercent}
-
-          modelDownloadPercent={modelDownloadPercent}
-
-          whisperModel={whisperModel}
-
-          onWhisperModelChange={setWhisperModel}
-
-          transcriptionEngine={transcriptionEngine}
-
-          onTranscriptionEngineChange={setTranscriptionEngine}
-
-          generationError={generationError}
-
-          onExportStyledVideo={handleExportStyledVideo}
         />
       </div>
+
+      {(isGenerating || generationError) && (
+        <div className="app-transcription-status">
+          <SubtitleGenerationProgress
+            isGenerating={isGenerating}
+            generationStatus={generationStatus}
+            generationPercent={generationPercent}
+            modelDownloadPercent={modelDownloadPercent}
+            generationError={generationError}
+          />
+        </div>
+      )}
 
       <Timeline
         duration={videoDuration}
