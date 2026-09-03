@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 
@@ -16,10 +15,12 @@ type SeekRequest = {
 };
 
 type VideoPlayerProps = {
+  videoPath: string | null;
+  videoName: string | null;
+  onChooseVideo?: () => void | Promise<void>;
+
   onDurationChange?: (duration: number) => void;
   onTimeChange?: (currentTime: number) => void;
-  onVideoNameChange?: (name: string) => void;
-  onVideoPathChange?: (path: string) => void | Promise<void>;
 
   seekRequest?: SeekRequest | null;
 
@@ -43,10 +44,11 @@ type VideoPlayerProps = {
 };
 
 function VideoPlayer({
+  videoPath,
+  videoName,
+  onChooseVideo,
   onDurationChange,
   onTimeChange,
-  onVideoNameChange,
-  onVideoPathChange,
   seekRequest,
   subtitles,
   currentTime,
@@ -57,9 +59,6 @@ function VideoPlayer({
   onSubtitleStyleChange,
   onAllSubtitleStylesChange,
 }: VideoPlayerProps) {
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoName, setVideoName] = useState<string | null>(null);
-
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -68,37 +67,18 @@ function VideoPlayer({
 
   const skipSeconds = 10;
 
-  // Video loading
-  const chooseVideo = async () => {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      filters: [
-        {
-          name: "Video",
-          extensions: ["mp4", "mov", "webm", "mkv"],
-        },
-      ],
-    });
+  const videoUrl = useMemo(
+    () => (videoPath ? convertFileSrc(videoPath) : null),
+    [videoPath],
+  );
 
-    if (!selected || Array.isArray(selected)) {
-      return;
-    }
-
-    const name = selected.split(/[\\/]/).pop() ?? "Unknown video";
-
-    setVideoName(name);
-    setVideoUrl(convertFileSrc(selected));
-
+  useEffect(() => {
     setDuration(0);
     setIsPlaying(false);
 
-    onVideoNameChange?.(name);
     onTimeChange?.(0);
     onDurationChange?.(0);
-
-    await onVideoPathChange?.(selected);
-  };
+  }, [videoPath, onDurationChange, onTimeChange]);
 
   // Playback
   const togglePlayPause = () => {
@@ -232,7 +212,10 @@ function VideoPlayer({
   return (
     <div className="video-player">
       <div className="video-player-toolbar">
-        <button className="video-file-button" onClick={chooseVideo}>
+        <button
+          className="video-file-button"
+          onClick={() => void onChooseVideo?.()}
+        >
           {videoUrl ? "Change video" : "Choose video"}
         </button>
 
@@ -246,6 +229,7 @@ function VideoPlayer({
       {videoUrl ? (
         <div ref={shellRef} className="video-shell">
           <video
+            key={videoPath ?? undefined}
             ref={videoRef}
             src={videoUrl}
             className="video-element"
@@ -280,7 +264,10 @@ function VideoPlayer({
           />
         </div>
       ) : (
-        <button className="video-placeholder" onClick={chooseVideo}>
+        <button
+          className="video-placeholder"
+          onClick={() => void onChooseVideo?.()}
+        >
           <span className="video-placeholder-icon">▶</span>
           <span>Choose a video to begin</span>
         </button>

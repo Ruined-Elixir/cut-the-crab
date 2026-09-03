@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { open } from "@tauri-apps/plugin-dialog";
+
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline from "./components/timeline/Timeline";
@@ -23,11 +25,17 @@ import {
 import "./App.css";
 
 import { exportStyledVideo } from "./services/videoExport";
+import {
+  useAppMenuCommands,
+  type AppMenuCommand,
+} from "./services/appMenu";
 
 type SeekRequest = {
   time: number;
   id: number;
 };
+
+const AUTOSAVE_DEBOUNCE_MS = 3000;
 
 function App() {
   // ==========================================================================
@@ -156,7 +164,7 @@ function App() {
       } finally {
         setIsSavingProject(false);
       }
-    }, 1500);
+    }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeout);
@@ -203,8 +211,12 @@ function App() {
   const handleVideoPathChange = async (path: string) => {
     isLoadingVideoRef.current = true;
 
-    setHasUnsavedChanges(false);
+    const name = path.split(/[\\/]/).pop() ?? "Unknown video";
 
+    setHasUnsavedChanges(false);
+    setCurrentTime(0);
+    setVideoDuration(0);
+    setVideoName(name);
     setVideoPath(path);
 
     replaceSubtitles([]);
@@ -271,6 +283,25 @@ function App() {
     } finally {
       isLoadingVideoRef.current = false;
     }
+  };
+
+  const handleChooseVideo = async () => {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: "Video",
+          extensions: ["mp4", "mov", "webm", "mkv"],
+        },
+      ],
+    });
+
+    if (!selected || Array.isArray(selected)) {
+      return;
+    }
+
+    await handleVideoPathChange(selected);
   };
 
   // ==========================================================================
@@ -373,6 +404,66 @@ function App() {
   };
 
   // ==========================================================================
+  // Application command dispatch
+  // ==========================================================================
+
+  const handleAppMenuCommand = async (command: AppMenuCommand) => {
+    switch (command) {
+      case "file.open-video":
+        await handleChooseVideo();
+        return;
+
+      case "file.save-project":
+        await handleSaveProject();
+        return;
+
+      case "file.import-srt":
+        await handleImportSrt();
+        return;
+
+      case "file.export-srt":
+        await handleExportSrt();
+        return;
+
+      case "file.export-video":
+        await handleExportStyledVideo();
+        return;
+
+      case "edit.add-subtitle":
+        addSubtitle(currentTime);
+        return;
+
+      case "edit.delete-subtitle":
+        if (selectedSubtitleId) {
+          deleteSubtitle(selectedSubtitleId);
+        }
+        return;
+
+      case "transcription.whisper-base":
+        await generateSubtitles(videoPath, {
+          engine: "whisper",
+          model: "base",
+        });
+        return;
+
+      case "transcription.whisper-small":
+        await generateSubtitles(videoPath, {
+          engine: "whisper",
+          model: "small",
+        });
+        return;
+
+      case "transcription.sensevoice":
+        await generateSubtitles(videoPath, {
+          engine: "sensevoice",
+        });
+        return;
+    }
+  };
+
+  useAppMenuCommands(handleAppMenuCommand);
+
+  // ==========================================================================
   // UI
   // ==========================================================================
 
@@ -395,13 +486,15 @@ function App() {
       <div className="workspace">
         <section className="preview-panel">
           <VideoPlayer
+            videoPath={videoPath}
+
+            videoName={videoName}
+
+            onChooseVideo={handleChooseVideo}
+
             onDurationChange={setVideoDuration}
 
             onTimeChange={setCurrentTime}
-
-            onVideoNameChange={setVideoName}
-
-            onVideoPathChange={handleVideoPathChange}
 
             seekRequest={seekRequest}
 

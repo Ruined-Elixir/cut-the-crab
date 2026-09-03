@@ -18,6 +18,11 @@ type UseTranscriptionOptions = {
   ) => void;
 };
 
+export type GenerateSubtitlesOptions = {
+  engine?: TranscriptionEngine;
+  model?: WhisperModel;
+};
+
 export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -34,11 +39,27 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
   const [transcriptionEngine, setTranscriptionEngine] =
     useState<TranscriptionEngine>("whisper");
 
-  const generateSubtitles = async (videoPath: string | null) => {
+  const generateSubtitles = async (
+    videoPath: string | null,
+    options: GenerateSubtitlesOptions = {},
+  ) => {
     if (!videoPath) {
       setGenerationError("Please choose a video first.");
 
       return;
+    }
+
+    if (isGenerating) {
+      return;
+    }
+
+    const engine = options.engine ?? transcriptionEngine;
+    const model = options.model ?? whisperModel;
+
+    setTranscriptionEngine(engine);
+
+    if (engine === "whisper") {
+      setWhisperModel(model);
     }
 
     setIsGenerating(true);
@@ -48,11 +69,7 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
     setModelDownloadPercent(0);
 
     try {
-      const result = await transcribeVideo(
-        videoPath,
-        transcriptionEngine,
-        whisperModel,
-      );
+      const result = await transcribeVideo(videoPath, engine, model);
 
       onGenerated(result.segments);
 

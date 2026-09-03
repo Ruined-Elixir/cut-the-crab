@@ -1,26 +1,22 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// @ts-expect-error process is a nodejs global
+// @ts-expect-error process is a Node.js global provided by the Tauri/Vite environment.
 const host = process.env.TAURI_DEV_HOST;
 
-
-
-// https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  // libass-wasm should be loaded directly rather than pre-bundled by Vite.
   optimizeDeps: {
     exclude: ["@biliblitz/libass-wasm"],
   },
 
-
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
+  // Keep Rust errors visible in the terminal.
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+
   server: {
+    // Tauri expects a fixed development port.
     port: 1420,
     strictPort: true,
     host: host || false,
@@ -32,10 +28,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
+      // Rust changes are handled by Tauri/Cargo rather than Vite.
       ignored: ["**/src-tauri/**"],
     },
   },
 }));
-
-

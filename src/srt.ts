@@ -1,4 +1,4 @@
-import type { Subtitle } from "../types/subtitle";
+import type { Subtitle } from "./types/subtitle";
 
 const parseTimestamp = (timestamp: string) => {
   const normalized = timestamp.trim().replace(".", ",");

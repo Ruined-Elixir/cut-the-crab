@@ -6,7 +6,10 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
+    Emitter, Manager, PhysicalPosition, PhysicalSize,
+};
 
 use crate::ffmpeg_paths::get_ffmpeg_path;
 
@@ -16,6 +19,320 @@ mod sensevoice_engine;
 mod sensevoice_paths;
 mod transcription;
 mod whisper_paths;
+
+const APP_MENU_COMMAND_EVENT: &str = "app-menu-command";
+
+#[derive(Clone, Copy, Debug)]
+struct WindowFrame {
+    position: PhysicalPosition<i32>,
+    outer_size: PhysicalSize<u32>,
+}
+
+fn main_window(app_handle: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    app_handle.get_webview_window("main")
+}
+
+fn prepare_for_manual_layout(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    if window.is_fullscreen()? {
+        window.set_fullscreen(false)?;
+    }
+
+    if window.is_maximized()? {
+        window.unmaximize()?;
+    }
+
+    if window.is_minimized()? {
+        window.unminimize()?;
+    }
+
+    Ok(())
+}
+
+fn set_outer_frame(
+    window: &tauri::WebviewWindow,
+    position: PhysicalPosition<i32>,
+    outer_size: PhysicalSize<u32>,
+) -> tauri::Result<()> {
+    prepare_for_manual_layout(window)?;
+
+    // Tauri's set_size() targets the inner/content size while macOS window
+    // tiling is expressed in outer-frame coordinates. Compensate for the
+    // title bar/border so the outer frame lands inside the monitor work area.
+    let current_outer = window.outer_size()?;
+    let current_inner = window.inner_size()?;
+
+    let chrome_width = current_outer.width.saturating_sub(current_inner.width);
+    let chrome_height = current_outer.height.saturating_sub(current_inner.height);
+
+    let inner_width = outer_size.width.saturating_sub(chrome_width).max(1);
+    let inner_height = outer_size.height.saturating_sub(chrome_height).max(1);
+
+    window.set_position(position)?;
+    window.set_size(PhysicalSize::new(inner_width, inner_height))?;
+    window.set_focus()?;
+
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum WindowLayout {
+    Fill,
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+fn layout_frame(
+    work_position: PhysicalPosition<i32>,
+    work_size: PhysicalSize<u32>,
+    layout: WindowLayout,
+) -> WindowFrame {
+    let x = work_position.x;
+    let y = work_position.y;
+    let width = work_size.width;
+    let height = work_size.height;
+
+    let left_width = width / 2;
+    let right_width = width - left_width;
+    let top_height = height / 2;
+    let bottom_height = height - top_height;
+
+    match layout {
+        WindowLayout::Fill => WindowFrame {
+            position: PhysicalPosition::new(x, y),
+            outer_size: PhysicalSize::new(width, height),
+        },
+        WindowLayout::Left => WindowFrame {
+            position: PhysicalPosition::new(x, y),
+            outer_size: PhysicalSize::new(left_width, height),
+        },
+        WindowLayout::Right => WindowFrame {
+            position: PhysicalPosition::new(x + left_width as i32, y),
+            outer_size: PhysicalSize::new(right_width, height),
+        },
+        WindowLayout::Top => WindowFrame {
+            position: PhysicalPosition::new(x, y),
+            outer_size: PhysicalSize::new(width, top_height),
+        },
+        WindowLayout::Bottom => WindowFrame {
+            position: PhysicalPosition::new(x, y + top_height as i32),
+            outer_size: PhysicalSize::new(width, bottom_height),
+        },
+    }
+}
+
+fn apply_window_layout(app_handle: &tauri::AppHandle, layout: WindowLayout) -> tauri::Result<()> {
+    let Some(window) = main_window(app_handle) else {
+        return Ok(());
+    };
+
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+
+    let work_area = monitor.work_area();
+    let frame = layout_frame(work_area.position, work_area.size, layout);
+
+    set_outer_frame(&window, frame.position, frame.outer_size)
+}
+
+fn center_main_window(app_handle: &tauri::AppHandle) -> tauri::Result<()> {
+    let Some(window) = main_window(app_handle) else {
+        return Ok(());
+    };
+
+    prepare_for_manual_layout(&window)?;
+    window.center()?;
+    window.set_focus()?;
+
+    Ok(())
+}
+
+fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
+    let open_video = MenuItemBuilder::with_id("file.open-video", "Open Video…")
+        .accelerator("CmdOrCtrl+O")
+        .build(app)?;
+
+    let save_project = MenuItemBuilder::with_id("file.save-project", "Save Project")
+        .accelerator("CmdOrCtrl+S")
+        .build(app)?;
+
+    let import_srt = MenuItemBuilder::with_id("file.import-srt", "Import SRT…").build(app)?;
+    let export_srt = MenuItemBuilder::with_id("file.export-srt", "Export SRT…").build(app)?;
+    let export_video =
+        MenuItemBuilder::with_id("file.export-video", "Export Styled Video…").build(app)?;
+
+    let add_subtitle =
+        MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
+    let delete_subtitle =
+        MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
+
+    let whisper_base = MenuItemBuilder::with_id(
+        "transcription.whisper-base",
+        "Generate with Whisper Base",
+    )
+    .build(app)?;
+
+    let whisper_small = MenuItemBuilder::with_id(
+        "transcription.whisper-small",
+        "Generate with Whisper Small",
+    )
+    .build(app)?;
+
+    let sensevoice = MenuItemBuilder::with_id(
+        "transcription.sensevoice",
+        "Generate with SenseVoice",
+    )
+    .build(app)?;
+
+    let view_placeholder =
+        MenuItemBuilder::with_id("view.timeline-placeholder", "Timeline controls coming next")
+            .enabled(false)
+            .build(app)?;
+
+    // -------------------------------------------------------------------------
+    // Simplified macOS-style Window menu
+    //
+    // Tauri/muda does not expose the macOS Fn/Globe modifier in menu
+    // accelerators, so these are registered as Control shortcuts. macOS users
+    // can still hold Fn as well, but Fn cannot be required/displayed here.
+    // -------------------------------------------------------------------------
+
+    let window_fill = MenuItemBuilder::with_id("window.fill", "Fill")
+        .accelerator("Ctrl+F")
+        .build(app)?;
+
+    let window_center = MenuItemBuilder::with_id("window.center", "Center")
+        .accelerator("Ctrl+C")
+        .build(app)?;
+
+    let window_left = MenuItemBuilder::with_id("window.left", "Left")
+        .accelerator("Ctrl+Left")
+        .build(app)?;
+
+    let window_right = MenuItemBuilder::with_id("window.right", "Right")
+        .accelerator("Ctrl+Right")
+        .build(app)?;
+
+    let window_top = MenuItemBuilder::with_id("window.top", "Top")
+        .accelerator("Ctrl+Up")
+        .build(app)?;
+
+    let window_bottom = MenuItemBuilder::with_id("window.bottom", "Bottom")
+        .accelerator("Ctrl+Down")
+        .build(app)?;
+
+    let move_resize_menu = SubmenuBuilder::new(app, "Move & Resize")
+        .item(&window_left)
+        .item(&window_right)
+        .item(&window_top)
+        .item(&window_bottom)
+        .build()?;
+
+    let native_minimize = PredefinedMenuItem::minimize(app, Some("Minimize"))?;
+
+    // On macOS the first submenu becomes the application menu.
+    let app_menu = SubmenuBuilder::new(app, "Subtitle Editor")
+        .about(None)
+        .separator()
+        .quit()
+        .build()?;
+
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&open_video)
+        .separator()
+        .item(&save_project)
+        .separator()
+        .item(&import_srt)
+        .item(&export_srt)
+        .separator()
+        .item(&export_video)
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .separator()
+        .item(&add_subtitle)
+        .item(&delete_subtitle)
+        .build()?;
+
+    let transcription_menu = SubmenuBuilder::new(app, "Transcription")
+        .item(&whisper_base)
+        .item(&whisper_small)
+        .separator()
+        .item(&sensevoice)
+        .build()?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&view_placeholder)
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .item(&window_fill)
+        .item(&window_center)
+        .item(&move_resize_menu)
+        .separator()
+        .item(&native_minimize)
+        .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .items(&[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &transcription_menu,
+            &view_menu,
+            &window_menu,
+        ])
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(|app_handle, event| {
+        let id = event.id().0.as_str();
+
+        let window_result = match id {
+            "window.fill" => apply_window_layout(app_handle, WindowLayout::Fill),
+            "window.center" => center_main_window(app_handle),
+            "window.left" => apply_window_layout(app_handle, WindowLayout::Left),
+            "window.right" => apply_window_layout(app_handle, WindowLayout::Right),
+            "window.top" => apply_window_layout(app_handle, WindowLayout::Top),
+            "window.bottom" => apply_window_layout(app_handle, WindowLayout::Bottom),
+            _ => Ok(()),
+        };
+
+        if let Err(error) = window_result {
+            eprintln!("Window menu action failed ({id}): {error}");
+        }
+
+        match id {
+            "file.open-video"
+            | "file.save-project"
+            | "file.import-srt"
+            | "file.export-srt"
+            | "file.export-video"
+            | "edit.add-subtitle"
+            | "edit.delete-subtitle"
+            | "transcription.whisper-base"
+            | "transcription.whisper-small"
+            | "transcription.sensevoice" => {
+                if let Err(error) = app_handle.emit(APP_MENU_COMMAND_EVENT, id.to_string()) {
+                    eprintln!("Failed to emit app menu command: {error}");
+                }
+            }
+            _ => {}
+        }
+    });
+
+    Ok(())
+}
 
 #[tauri::command]
 fn extract_waveform(
@@ -305,6 +622,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            install_app_menu(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             extract_waveform,
             transcription::transcribe_video,
