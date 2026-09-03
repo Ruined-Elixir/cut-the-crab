@@ -20,6 +20,8 @@
       "startTime": 2.2566258503401357,
       "endTime": 8.725337220602526,
       "text": "攞啦嘛 咁多位坐低我哋坐低傾",
+      "positionX": 50.44164600486527,
+      "positionY": 83.36374126746507,
       "fontSize": 54,
       "fontFamily": "Noto Sans CJK TC",
       "color": "#ffffff",
@@ -33,6 +35,8 @@
       "startTime": 9.03,
       "endTime": 11.6725,
       "text": "我哋啱 啱喺度討論緊 我哋點",
+      "positionX": 48.1404378742515,
+      "positionY": 82.60666167664671,
       "fontSize": 54,
       "fontFamily": "Noto Sans CJK TC",
       "color": "#ffffff",
@@ -406,5 +410,5 @@
       "textAlign": "center"
     }
   ],
-  "updatedAt": "2026-09-03T07:08:12.597Z"
+  "updatedAt": "2026-09-03T07:16:56.963Z"
 }

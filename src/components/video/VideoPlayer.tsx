@@ -227,31 +227,33 @@ function VideoPlayer({
       </div>
 
       {videoUrl ? (
-        <div ref={shellRef} className="video-shell">
-          <video
-            key={videoPath ?? undefined}
-            ref={videoRef}
-            src={videoUrl}
-            className="video-element"
-            onLoadedMetadata={handleLoadedMetadata}
-            onTimeUpdate={handleTimeUpdate}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-            onClick={togglePlayPause}
-          />
+        <div className="video-monitor">
+          <div ref={shellRef} className="video-shell">
+            <video
+              key={videoPath ?? undefined}
+              ref={videoRef}
+              src={videoUrl}
+              className="video-element"
+              onLoadedMetadata={handleLoadedMetadata}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => setIsPlaying(false)}
+              onClick={togglePlayPause}
+            />
 
-          <VideoSubtitleOverlay
-            subtitles={subtitles}
-            currentTime={currentTime}
-            selectedSubtitleId={selectedSubtitleId}
-            shellRef={shellRef}
-            onSubtitleSelect={onSubtitleSelect}
-            onSubtitlePositionChange={onSubtitlePositionChange}
-            onSubtitleTextChange={onSubtitleTextChange}
-            onSubtitleStyleChange={onSubtitleStyleChange}
-            onAllSubtitleStylesChange={onAllSubtitleStylesChange}
-          />
+            <VideoSubtitleOverlay
+              subtitles={subtitles}
+              currentTime={currentTime}
+              selectedSubtitleId={selectedSubtitleId}
+              shellRef={shellRef}
+              onSubtitleSelect={onSubtitleSelect}
+              onSubtitlePositionChange={onSubtitlePositionChange}
+              onSubtitleTextChange={onSubtitleTextChange}
+              onSubtitleStyleChange={onSubtitleStyleChange}
+              onAllSubtitleStylesChange={onAllSubtitleStylesChange}
+            />
+          </div>
 
           <VideoControls
             currentTime={currentTime}

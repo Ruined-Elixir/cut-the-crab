@@ -163,28 +163,21 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let export_video =
         MenuItemBuilder::with_id("file.export-video", "Export Styled Video…").build(app)?;
 
-    let add_subtitle =
-        MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
+    let add_subtitle = MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
         MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
 
-    let whisper_base = MenuItemBuilder::with_id(
-        "transcription.whisper-base",
-        "Generate with Whisper Base",
-    )
-    .build(app)?;
+    let whisper_base =
+        MenuItemBuilder::with_id("transcription.whisper-base", "Generate with Whisper Base")
+            .build(app)?;
 
-    let whisper_small = MenuItemBuilder::with_id(
-        "transcription.whisper-small",
-        "Generate with Whisper Small",
-    )
-    .build(app)?;
+    let whisper_small =
+        MenuItemBuilder::with_id("transcription.whisper-small", "Generate with Whisper Small")
+            .build(app)?;
 
-    let sensevoice = MenuItemBuilder::with_id(
-        "transcription.sensevoice",
-        "Generate with SenseVoice",
-    )
-    .build(app)?;
+    let sensevoice =
+        MenuItemBuilder::with_id("transcription.sensevoice", "Generate with SenseVoice")
+            .build(app)?;
 
     let view_placeholder =
         MenuItemBuilder::with_id("view.timeline-placeholder", "Timeline controls coming next")
@@ -248,6 +241,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&export_srt)
         .separator()
         .item(&export_video)
+        .separator()
+        .close_window_with_text("Close Window")
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -456,11 +451,7 @@ struct VideoExportProgress {
     status: String,
 }
 
-fn emit_export_progress(
-    app: &tauri::AppHandle,
-    progress: f64,
-    status: impl Into<String>,
-) {
+fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into<String>) {
     let payload = VideoExportProgress {
         progress: progress.clamp(0.0, 100.0),
         status: status.into(),
@@ -489,8 +480,7 @@ async fn export_styled_video(
             .map_err(|error| error.to_string())?
             .as_millis();
 
-        let ass_path =
-            std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
 
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
@@ -550,9 +540,8 @@ async fn export_styled_video(
         let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
-            let line = line.map_err(|error| {
-                format!("Failed to read FFmpeg progress output: {error}")
-            })?;
+            let line =
+                line.map_err(|error| format!("Failed to read FFmpeg progress output: {error}"))?;
 
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
