@@ -12,6 +12,7 @@
 
   pointer-events: none;
 }
+
 .ass-subtitle-canvas {
   position: absolute;
   z-index: 3;
@@ -19,13 +20,21 @@
   display: block;
 
   pointer-events: none;
+
+  /*
+   * Canvas swaps should be atomic. Do not animate opacity/transform here,
+   * otherwise style changes and drag completion can visibly "morph".
+   */
+  transition: none;
+  transform-origin: 0 0;
 }
 
 /*
  * Transparent DOM proxy used only for dragging, right-click styling,
  * double-click editing, and selection.
  *
- * The actual visible subtitle is rendered by libass on the canvas.
+ * It never becomes visible text. That is important because CSS and libass
+ * font metrics are not identical.
  */
 .video-subtitle-interaction {
   position: absolute;
@@ -35,7 +44,12 @@
 
   width: max-content;
 
+  margin: 0;
+  padding: 0;
+
   border: none;
+  appearance: none;
+
   background: transparent;
   color: transparent;
 
@@ -60,8 +74,7 @@
 
 /*
  * Editing remains a DOM textarea because the user must type into it.
- * When editing finishes, the committed subtitle is immediately re-rendered
- * by libass, so the normal preview remains export-identical.
+ * When editing ends, the exact libass back-buffer is rebuilt and swapped in.
  */
 .video-subtitle-editing {
   position: absolute;

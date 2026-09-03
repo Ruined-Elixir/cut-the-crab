@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { createPortal } from "react-dom";
 
@@ -60,6 +60,17 @@ function SubtitleStyleContextMenu({
 }: SubtitleStyleContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  /*
+   * Keep the text field separate from the committed numeric style.
+   * This lets users freely type values such as "48" without the first
+   * keystroke being immediately clamped/reset.
+   */
+  const [fontSizeInput, setFontSizeInput] = useState(String(fontSize));
+
+  useEffect(() => {
+    setFontSizeInput(String(fontSize));
+  }, [fontSize]);
+
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -91,14 +102,23 @@ function SubtitleStyleContextMenu({
 
   const top = Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8));
 
-  const handleFontSizeChange = (value: number) => {
+  const commitFontSize = () => {
+    const value = Number(fontSizeInput);
+
     if (!Number.isFinite(value)) {
+      setFontSizeInput(String(fontSize));
       return;
     }
 
-    onStyleChange({
-      fontSize: Math.max(10, Math.min(96, value)),
-    });
+    const clamped = Math.max(10, Math.min(96, Math.round(value)));
+
+    setFontSizeInput(String(clamped));
+
+    if (clamped !== fontSize) {
+      onStyleChange({
+        fontSize: clamped,
+      });
+    }
   };
 
   const effectiveFontFamily = FONT_OPTIONS.includes(fontFamily)
@@ -144,10 +164,24 @@ function SubtitleStyleContextMenu({
             type="number"
             min={10}
             max={96}
-            value={fontSize}
-            onChange={(event) =>
-              handleFontSizeChange(Number(event.target.value))
-            }
+            step={1}
+            inputMode="numeric"
+            value={fontSizeInput}
+            onChange={(event) => setFontSizeInput(event.target.value)}
+            onBlur={commitFontSize}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitFontSize();
+                event.currentTarget.blur();
+              }
+
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setFontSizeInput(String(fontSize));
+                event.currentTarget.blur();
+              }
+            }}
           />
         </label>
 

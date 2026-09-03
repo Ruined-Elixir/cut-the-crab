@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline from "./components/timeline/Timeline";
+import ExportProgressModal from "./components/export/ExportProgressModal";
 
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
 import { useTranscription } from "./hooks/useTranscription";
@@ -42,6 +43,14 @@ function App() {
   const [videoPath, setVideoPath] = useState<string | null>(null);
 
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
+
+  // ==========================================================================
+  // Video export UI
+  // ==========================================================================
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatus, setExportStatus] = useState("Preparing export...");
 
   // ==========================================================================
   // Project save state
@@ -330,18 +339,36 @@ function App() {
   // =====================
 
   const handleExportStyledVideo = async () => {
-    if (!videoPath) {
+    if (!videoPath || isExporting) {
       return;
     }
 
     try {
-      const outputPath = await exportStyledVideo(videoPath, subtitles);
+      const outputPath = await exportStyledVideo(videoPath, subtitles, {
+        videoDuration,
+
+        onStart: () => {
+          setExportProgress(0);
+          setExportStatus("Preparing video export...");
+          setIsExporting(true);
+        },
+
+        onProgress: ({ progress, status }) => {
+          setExportProgress(progress);
+          setExportStatus(status);
+        },
+      });
 
       if (outputPath) {
+        setExportProgress(100);
+        setExportStatus("Export complete.");
+
         console.log("Styled video exported:", outputPath);
       }
     } catch (error) {
       console.error("Styled video export failed:", error);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -466,6 +493,10 @@ function App() {
 
         onSeek={requestSeek}
       />
+
+      {isExporting && (
+        <ExportProgressModal progress={exportProgress} status={exportStatus} />
+      )}
     </main>
   );
 }

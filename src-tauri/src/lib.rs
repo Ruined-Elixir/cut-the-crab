@@ -1,8 +1,12 @@
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
+
+use serde::Serialize;
+use tauri::Emitter;
 
 use crate::ffmpeg_paths::get_ffmpeg_path;
 
@@ -128,76 +132,147 @@ fn development_fonts_dir() -> Option<PathBuf> {
     None
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoExportProgress {
+    progress: f64,
+    status: String,
+}
+
+fn emit_export_progress(
+    app: &tauri::AppHandle,
+    progress: f64,
+    status: impl Into<String>,
+) {
+    let payload = VideoExportProgress {
+        progress: progress.clamp(0.0, 100.0),
+        status: status.into(),
+    };
+
+    if let Err(error) = app.emit("video-export-progress", payload) {
+        eprintln!("Failed to emit export progress: {error}");
+    }
+}
+
 #[tauri::command]
-fn export_styled_video(
+async fn export_styled_video(
     app: tauri::AppHandle,
     video_path: String,
     output_path: String,
     ass_content: String,
+    video_duration: f64,
 ) -> Result<(), String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-    let ffmpeg_path = get_ffmpeg_path(&app)?;
+        let ffmpeg_path = get_ffmpeg_path(&app)?;
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_millis();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_millis();
 
-    let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path =
+            std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
 
-    fs::write(&ass_path, ass_content)
-        .map_err(|error| format!("Failed to create temporary ASS file: {}", error))?;
+        fs::write(&ass_path, ass_content)
+            .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
 
-    let ass_path_string = escape_ffmpeg_filter_path(&ass_path);
+        let ass_path_string = escape_ffmpeg_filter_path(&ass_path);
 
-    let video_filter = if let Some(fonts_dir) = development_fonts_dir() {
-        let fonts_dir_string = escape_ffmpeg_filter_path(&fonts_dir);
+        let video_filter = if let Some(fonts_dir) = development_fonts_dir() {
+            let fonts_dir_string = escape_ffmpeg_filter_path(&fonts_dir);
 
-        format!(
-            "ass=filename='{}':fontsdir='{}'",
-            ass_path_string, fonts_dir_string,
-        )
-    } else {
-        format!("ass=filename='{}'", ass_path_string,)
-    };
+            format!(
+                "ass=filename='{}':fontsdir='{}'",
+                ass_path_string, fonts_dir_string,
+            )
+        } else {
+            format!("ass=filename='{}'", ass_path_string)
+        };
 
-    println!("Exporting with FFmpeg: {}", ffmpeg_path.display());
+        println!("Exporting with FFmpeg: {}", ffmpeg_path.display());
+        println!("ASS filter: {}", video_filter);
 
-    println!("ASS filter: {}", video_filter);
+        emit_export_progress(&app, 0.0, "Starting FFmpeg...");
 
-    let result = Command::new(&ffmpeg_path)
-        .args([
-            "-y",
-            "-i",
-            &video_path,
-            "-vf",
-            &video_filter,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            "18",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            &output_path,
-        ])
-        .status();
+        let mut child = Command::new(&ffmpeg_path)
+            .args([
+                "-y",
+                "-i",
+                &video_path,
+                "-vf",
+                &video_filter,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "18",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-progress",
+                "pipe:1",
+                "-nostats",
+                &output_path,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|error| format!("Failed to start FFmpeg: {error}"))?;
 
-    let _ = fs::remove_file(&ass_path);
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to read FFmpeg progress output.".to_string())?;
 
-    let status = result.map_err(|error| format!("Failed to start FFmpeg: {}", error))?;
+        let reader = BufReader::new(stdout);
 
-    if !status.success() {
-        return Err(format!("FFmpeg export failed with status: {}", status));
-    }
+        for line in reader.lines() {
+            let line = line.map_err(|error| {
+                format!("Failed to read FFmpeg progress output: {error}")
+            })?;
 
-    Ok(())
+            if let Some(value) = line.strip_prefix("out_time_us=") {
+                if let Ok(microseconds) = value.parse::<f64>() {
+                    if video_duration > 0.0 {
+                        let seconds = microseconds / 1_000_000.0;
+                        let percent = (seconds / video_duration) * 100.0;
+
+                        emit_export_progress(
+                            &app,
+                            percent.min(99.0),
+                            "Rendering subtitles and encoding video...",
+                        );
+                    }
+                }
+            }
+
+            if line == "progress=end" {
+                emit_export_progress(&app, 100.0, "Finishing export...");
+            }
+        }
+
+        let status = child
+            .wait()
+            .map_err(|error| format!("Failed while waiting for FFmpeg: {error}"))?;
+
+        let _ = fs::remove_file(&ass_path);
+
+        if !status.success() {
+            return Err(format!("FFmpeg export failed with status: {status}"));
+        }
+
+        emit_export_progress(&app, 100.0, "Export complete.");
+
+        Ok(())
+    })
+    .await
+    .map_err(|error| format!("Export task failed: {error}"))?
 }
 
 fn matching_project_path(video_path: &Path) -> PathBuf {

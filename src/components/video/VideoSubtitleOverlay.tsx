@@ -55,11 +55,15 @@ type VideoSubtitleOverlayProps = {
 
 type DraftPosition = {
   subtitleId: string;
+
+  // Position baked into the currently visible/front libass canvas.
+  originX: number;
+  originY: number;
+
+  // Live/current drag destination.
   positionX: number;
   positionY: number;
 };
-
-const RENDERER_REFRESH_DELAY_MS = 60;
 
 function VideoSubtitleOverlay({
   subtitles,
@@ -75,103 +79,102 @@ function VideoSubtitleOverlay({
   const [editingSubtitleId, setEditingSubtitleId] = useState<string | null>(
     null,
   );
-
   const [editingText, setEditingText] = useState("");
 
   const [styleMenu, setStyleMenu] = useState<{ x: number; y: number } | null>(
     null,
   );
-
   const [styleScope, setStyleScope] = useState<SubtitleStyleScope>("current");
 
   const [renderedVideoRect, setRenderedVideoRect] =
     useState<RenderedVideoRect | null>(null);
 
-  const [isDragging, setIsDragging] = useState(false);
-  const [draftPosition, setDraftPosition] = useState<DraftPosition | null>(null);
-  const [draftStyle, setDraftStyle] = useState<SubtitleStyle>({});
-  const [waitingForLibass, setWaitingForLibass] = useState(false);
-
-  const styleScopeRef = useRef<SubtitleStyleScope>("current");
-  const interactionButtonRef = useRef<HTMLButtonElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rendererRef = useRef<SubtitlesOctopus | null>(null);
-
-  const draftPositionRef = useRef<DraftPosition | null>(null);
+  /*
+   * Two canvases are used as a front/back buffer:
+   * - front canvas stays visible with the current exact libass frame
+   * - back canvas renders the next ASS track invisibly
+   * - when the back renderer is ready, the canvases swap atomically
+   *
+   * This removes the blank/glitchy transition during style changes.
+   */
+  const [frontCanvasIndex, setFrontCanvasIndex] = useState<0 | 1>(0);
 
   /*
-   * Every local visual change increments this revision. A renderer that
-   * finishes later is only allowed to clear the CSS draft if it represents
-   * the newest revision.
+   * During drag we DO NOT replace libass with CSS text.
+   * We keep the exact libass canvas visible and temporarily translate it.
+   * That avoids the font-size jump caused by CSS and libass having different
+   * font metrics.
    */
-  const visualRevisionRef = useRef(0);
+  const [draftPosition, setDraftPosition] = useState<DraftPosition | null>(
+    null,
+  );
+
+  const styleScopeRef = useRef<SubtitleStyleScope>("current");
+
+  const interactionButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const canvas0Ref = useRef<HTMLCanvasElement | null>(null);
+  const canvas1Ref = useRef<HTMLCanvasElement | null>(null);
+
+  const renderer0Ref = useRef<SubtitlesOctopus | null>(null);
+  const renderer1Ref = useRef<SubtitlesOctopus | null>(null);
+
+  const frontCanvasIndexRef = useRef<0 | 1>(0);
+  const renderRevisionRef = useRef(0);
+
+  const draftPositionRef = useRef<DraftPosition | null>(null);
 
   const activeSubtitle = useMemo(
     () =>
       subtitles.find(
         (subtitle) =>
-          currentTime >= subtitle.startTime &&
-          currentTime <= subtitle.endTime,
+          currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
       ),
     [subtitles, currentTime],
   );
 
-  const displaySubtitle = useMemo(() => {
-    if (!activeSubtitle) {
-      return null;
-    }
+  const isEditing = !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
 
-    const position =
-      draftPosition?.subtitleId === activeSubtitle.id
+  const previewScale = (renderedVideoRect?.height ?? ASS_HEIGHT) / ASS_HEIGHT;
+
+  const effectivePosition =
+    activeSubtitle && draftPosition?.subtitleId === activeSubtitle.id
+      ? {
+          positionX: draftPosition.positionX,
+          positionY: draftPosition.positionY,
+        }
+      : activeSubtitle
         ? {
-            positionX: draftPosition.positionX,
-            positionY: draftPosition.positionY,
+            positionX: activeSubtitle.positionX ?? 50,
+            positionY: activeSubtitle.positionY ?? 80,
           }
-        : {};
+        : null;
 
-    return {
-      ...activeSubtitle,
-      ...draftStyle,
-      ...position,
-    };
-  }, [activeSubtitle, draftPosition, draftStyle]);
+  const positionStyle =
+    activeSubtitle && effectivePosition
+      ? {
+          left: renderedVideoRect
+            ? `${
+                renderedVideoRect.left +
+                renderedVideoRect.width * (effectivePosition.positionX / 100)
+              }px`
+            : `${effectivePosition.positionX}%`,
 
-  const isEditing =
-    !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
+          top: renderedVideoRect
+            ? `${
+                renderedVideoRect.top +
+                renderedVideoRect.height * (effectivePosition.positionY / 100)
+              }px`
+            : `${effectivePosition.positionY}%`,
+        }
+      : undefined;
 
   /*
-   * While the user is dragging or waiting for a freshly rendered ASS frame,
-   * show an immediate CSS draft and hide the old libass frame. Once libass
-   * reports ready, the CSS draft disappears and the exact ASS rendering takes
-   * over again.
+   * This transparent DOM button is interaction-only.
+   * Its text is never used as a visual substitute for libass.
    */
-  const showImmediateDraft = isDragging || waitingForLibass;
-
-  const previewScale =
-    (renderedVideoRect?.height ?? ASS_HEIGHT) / ASS_HEIGHT;
-
-  const positionStyle = displaySubtitle
-    ? {
-        left: renderedVideoRect
-          ? `${
-              renderedVideoRect.left +
-              renderedVideoRect.width *
-                ((displaySubtitle.positionX ?? 50) / 100)
-            }px`
-          : `${displaySubtitle.positionX ?? 50}%`,
-
-        top: renderedVideoRect
-          ? `${
-              renderedVideoRect.top +
-              renderedVideoRect.height *
-                ((displaySubtitle.positionY ?? 80) / 100)
-            }px`
-          : `${displaySubtitle.positionY ?? 80}%`,
-      }
-    : undefined;
-
   const interactionStyle =
-    displaySubtitle && positionStyle
+    activeSubtitle && positionStyle
       ? ({
           ...positionStyle,
 
@@ -179,49 +182,26 @@ function VideoSubtitleOverlay({
             ? `${renderedVideoRect.width * 0.8}px`
             : "80%",
 
-          fontSize: `${(displaySubtitle.fontSize ?? 24) * previewScale}px`,
-
-          fontFamily:
-            displaySubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
-
-          fontWeight: displaySubtitle.isBold ? 700 : 400,
-
+          fontSize: `${(activeSubtitle.fontSize ?? 24) * previewScale}px`,
+          fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
+          fontWeight: activeSubtitle.isBold ? 700 : 400,
           lineHeight: 1.35,
-
           padding: `${8 * previewScale}px`,
+          textAlign: activeSubtitle.textAlign ?? "center",
 
-          textAlign: displaySubtitle.textAlign ?? "center",
-
-          /*
-           * Normally the interaction button is invisible. It becomes the
-           * instant visual draft only while libass catches up.
-           */
-          color: showImmediateDraft
-            ? (displaySubtitle.color ?? "#ffffff")
-            : "transparent",
-
-          backgroundColor: showImmediateDraft
-            ? (displaySubtitle.backgroundColor ?? "transparent")
-            : "transparent",
-
-          textDecoration:
-            showImmediateDraft && displaySubtitle.isUnderlined
-              ? "underline"
-              : "none",
-
-          textShadow: showImmediateDraft
-            ? `
-              ${-2 * previewScale}px ${-2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-              ${2 * previewScale}px ${-2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-              ${-2 * previewScale}px ${2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-              ${2 * previewScale}px ${2 * previewScale}px 0 rgba(0, 0, 0, 0.9)
-            `
-            : "none",
+          color: "transparent",
+          backgroundColor: "transparent",
+          textDecoration: "none",
+          textShadow: "none",
         } as CSSProperties)
       : undefined;
 
+  /*
+   * Text editing still needs a real DOM textarea.
+   * This is only shown while actively typing.
+   */
   const editingStyle =
-    displaySubtitle && positionStyle
+    activeSubtitle && positionStyle
       ? ({
           ...positionStyle,
 
@@ -229,20 +209,17 @@ function VideoSubtitleOverlay({
             ? `${renderedVideoRect.width * 0.8}px`
             : "80%",
 
-          fontSize: `${(displaySubtitle.fontSize ?? 24) * previewScale}px`,
-          fontFamily:
-            displaySubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
-          fontWeight: displaySubtitle.isBold ? 700 : 400,
+          fontSize: `${(activeSubtitle.fontSize ?? 24) * previewScale}px`,
+          fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
+          fontWeight: activeSubtitle.isBold ? 700 : 400,
           lineHeight: 1.35,
           padding: `${8 * previewScale}px`,
-          textAlign: displaySubtitle.textAlign ?? "center",
+          textAlign: activeSubtitle.textAlign ?? "center",
 
-          color: displaySubtitle.color ?? "#ffffff",
-          backgroundColor:
-            displaySubtitle.backgroundColor ?? "transparent",
-          textDecoration: displaySubtitle.isUnderlined
-            ? "underline"
-            : "none",
+          color: activeSubtitle.color ?? "#ffffff",
+          backgroundColor: activeSubtitle.backgroundColor ?? "transparent",
+
+          textDecoration: activeSubtitle.isUnderlined ? "underline" : "none",
 
           textShadow: `
             ${-2 * previewScale}px ${-2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
@@ -253,26 +230,73 @@ function VideoSubtitleOverlay({
         } as CSSProperties)
       : undefined;
 
-  const canvasStyle = renderedVideoRect
+  /*
+   * Translate the exact libass canvas during drag instead of showing CSS text.
+   * Translation stays active after pointer-up until the rebuilt ASS renderer
+   * is ready, preventing a snap back to the old position.
+   */
+  const dragCanvasTransform = useMemo(() => {
+    if (
+      !activeSubtitle ||
+      !draftPosition ||
+      draftPosition.subtitleId !== activeSubtitle.id ||
+      !renderedVideoRect
+    ) {
+      return "translate(0px, 0px)";
+    }
+
+    /*
+     * The parent commits the new position immediately on pointer-up.
+     * activeSubtitle.positionX/Y therefore changes before the replacement
+     * libass renderer is ready, while the visible front canvas still contains
+     * the OLD position.
+     *
+     * Use the position baked into the front canvas as the transform origin.
+     * This keeps the translated front canvas at the dropped position until
+     * the back-buffer swaps in.
+     */
+    const deltaX =
+      ((draftPosition.positionX - draftPosition.originX) / 100) *
+      renderedVideoRect.width;
+
+    const deltaY =
+      ((draftPosition.positionY - draftPosition.originY) / 100) *
+      renderedVideoRect.height;
+
+    return `translate(${deltaX}px, ${deltaY}px)`;
+  }, [activeSubtitle, draftPosition, renderedVideoRect]);
+
+  const baseCanvasStyle: CSSProperties = renderedVideoRect
     ? {
         left: `${renderedVideoRect.left}px`,
         top: `${renderedVideoRect.top}px`,
         width: `${renderedVideoRect.width}px`,
         height: `${renderedVideoRect.height}px`,
-        opacity: isEditing || showImmediateDraft ? 0 : 1,
       }
     : {
         left: "0px",
         top: "0px",
         width: "100%",
         height: "100%",
-        opacity: isEditing || showImmediateDraft ? 0 : 1,
       };
 
-  const markVisualUpdatePending = () => {
-    visualRevisionRef.current += 1;
-    setWaitingForLibass(true);
+  const canvas0Style: CSSProperties = {
+    ...baseCanvasStyle,
+    opacity: frontCanvasIndex === 0 && !isEditing ? 1 : 0,
+    transform:
+      frontCanvasIndex === 0 ? dragCanvasTransform : "translate(0px, 0px)",
   };
+
+  const canvas1Style: CSSProperties = {
+    ...baseCanvasStyle,
+    opacity: frontCanvasIndex === 1 && !isEditing ? 1 : 0,
+    transform:
+      frontCanvasIndex === 1 ? dragCanvasTransform : "translate(0px, 0px)",
+  };
+
+  useEffect(() => {
+    frontCanvasIndexRef.current = frontCanvasIndex;
+  }, [frontCanvasIndex]);
 
   useEffect(() => {
     if (editingSubtitleId && !activeSubtitle) {
@@ -298,7 +322,6 @@ function VideoSubtitleOverlay({
     }
 
     if (editingText !== activeSubtitle.text) {
-      markVisualUpdatePending();
       onSubtitleTextChange?.(activeSubtitle.id, editingText);
     }
 
@@ -329,15 +352,21 @@ function VideoSubtitleOverlay({
     const subtitleId = activeSubtitle.id;
     const shell = shellRef.current;
 
+    const initialX = activeSubtitle.positionX ?? 50;
+    const initialY = activeSubtitle.positionY ?? 80;
+
     const initialDraft: DraftPosition = {
       subtitleId,
-      positionX: activeSubtitle.positionX ?? 50,
-      positionY: activeSubtitle.positionY ?? 80,
+
+      originX: initialX,
+      originY: initialY,
+
+      positionX: initialX,
+      positionY: initialY,
     };
 
     draftPositionRef.current = initialDraft;
     setDraftPosition(initialDraft);
-    setIsDragging(true);
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const video = shell.querySelector<HTMLVideoElement>("video");
@@ -372,8 +401,17 @@ function VideoSubtitleOverlay({
         y = Math.max(0, Math.min(100, y));
       }
 
+      const currentDraft = draftPositionRef.current;
+
       const nextDraft: DraftPosition = {
         subtitleId,
+
+        // Preserve the original front-canvas position for the entire drag
+        // and while the replacement libass renderer is loading.
+        originX: currentDraft?.originX ?? activeSubtitle.positionX ?? 50,
+
+        originY: currentDraft?.originY ?? activeSubtitle.positionY ?? 80,
+
         positionX: x,
         positionY: y,
       };
@@ -388,15 +426,15 @@ function VideoSubtitleOverlay({
 
       const finalDraft = draftPositionRef.current;
 
-      setIsDragging(false);
-
       if (
         finalDraft &&
         (finalDraft.positionX !== (activeSubtitle.positionX ?? 50) ||
           finalDraft.positionY !== (activeSubtitle.positionY ?? 80))
       ) {
-        markVisualUpdatePending();
-
+        /*
+         * Keep draftPosition until the new libass back-buffer finishes.
+         * This keeps the old exact canvas translated at the final position.
+         */
         onSubtitlePositionChange?.(
           finalDraft.subtitleId,
           finalDraft.positionX,
@@ -452,12 +490,6 @@ function VideoSubtitleOverlay({
       const currentStyle = getCurrentSubtitleStyle();
 
       if (currentStyle) {
-        setDraftStyle((current) => ({
-          ...current,
-          ...currentStyle,
-        }));
-
-        markVisualUpdatePending();
         onAllSubtitleStylesChange?.(currentStyle);
       }
     }
@@ -468,17 +500,6 @@ function VideoSubtitleOverlay({
       return;
     }
 
-    /*
-     * Update the DOM draft immediately. The exact libass rendering will
-     * replace it once the rebuilt ASS track is ready.
-     */
-    setDraftStyle((current) => ({
-      ...current,
-      ...style,
-    }));
-
-    markVisualUpdatePending();
-
     if (styleScopeRef.current === "all") {
       onAllSubtitleStylesChange?.(style);
       return;
@@ -488,8 +509,8 @@ function VideoSubtitleOverlay({
   };
 
   /*
-   * Keep the libass canvas aligned with the actual rendered video picture,
-   * excluding letterbox/pillarbox space.
+   * Keep canvases aligned to the actual displayed video image rather than the
+   * whole shell (which may contain letterbox/pillarbox space).
    */
   useEffect(() => {
     const shell = shellRef.current;
@@ -528,15 +549,15 @@ function VideoSubtitleOverlay({
   }, [shellRef]);
 
   /*
-   * Browser preview and FFmpeg export both consume the same complete ASS
-   * track. This package version has no setTrack(), so changes are rebuilt
-   * after a short debounce.
+   * Double-buffered libass refresh.
+   *
+   * The currently visible renderer is never disposed before the replacement
+   * renderer is ready. This is what prevents style-change flicker.
    */
   useEffect(() => {
     const shell = shellRef.current;
-    const canvas = canvasRef.current;
 
-    if (!shell || !canvas) {
+    if (!shell) {
       return;
     }
 
@@ -546,68 +567,122 @@ function VideoSubtitleOverlay({
       return;
     }
 
-    const revisionAtScheduleTime = visualRevisionRef.current;
+    const backIndex: 0 | 1 = frontCanvasIndexRef.current === 0 ? 1 : 0;
 
-    const timeoutId = window.setTimeout(() => {
-      const assContent = buildAssTrack(subtitles);
+    const canvas = backIndex === 0 ? canvas0Ref.current : canvas1Ref.current;
 
-      const fontUrl = new URL(
-        DEFAULT_ASS_FONT_URL,
-        window.location.origin,
-      ).href;
+    if (!canvas) {
+      return;
+    }
 
-      rendererRef.current?.dispose();
+    renderRevisionRef.current += 1;
+    const revision = renderRevisionRef.current;
 
-      const renderer = new SubtitlesOctopus({
-        video,
-        canvas,
-        subContent: assContent,
+    const assContent = buildAssTrack(subtitles);
 
-        fonts: [fontUrl],
-        fallbackFont: fontUrl,
+    const fontUrl = new URL(DEFAULT_ASS_FONT_URL, window.location.origin).href;
 
-        renderMode: "wasm-blend",
+    /*
+     * Dispose only the renderer already attached to the BACK canvas.
+     * The visible/front renderer stays alive.
+     */
+    if (backIndex === 0) {
+      renderer0Ref.current?.dispose();
+      renderer0Ref.current = null;
+    } else {
+      renderer1Ref.current?.dispose();
+      renderer1Ref.current = null;
+    }
 
-        prescaleHeightLimit: ASS_HEIGHT,
-        maxRenderHeight: ASS_HEIGHT,
+    let renderer: SubtitlesOctopus;
 
-        onReady: () => {
-          /*
-           * Only the newest renderer is allowed to hand control back from
-           * the instant CSS draft to libass.
-           */
-          if (revisionAtScheduleTime === visualRevisionRef.current) {
-            setWaitingForLibass(false);
-            setDraftStyle({});
-            setDraftPosition(null);
-            draftPositionRef.current = null;
-          }
-        },
+    renderer = new SubtitlesOctopus({
+      video,
+      canvas,
+      subContent: assContent,
 
-        onError: (error: Error) => {
-          console.error("libass preview renderer failed:", error);
+      fonts: [fontUrl],
+      fallbackFont: fontUrl,
 
-          if (revisionAtScheduleTime === visualRevisionRef.current) {
-            setWaitingForLibass(false);
-          }
-        },
-      });
+      renderMode: "wasm-blend",
 
-      rendererRef.current = renderer;
-    }, RENDERER_REFRESH_DELAY_MS);
+      prescaleHeightLimit: ASS_HEIGHT,
+      maxRenderHeight: ASS_HEIGHT,
 
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
+      onReady: () => {
+        /*
+         * onReady means the new worker/libass instance is initialized, but it
+         * does NOT necessarily mean the new subtitle frame has already been
+         * painted into the back canvas.
+         *
+         * Swapping canvases immediately here can therefore expose a blank
+         * back canvas for a moment, which looks like a flash.
+         *
+         * Give the new renderer a couple of browser frames plus a short paint
+         * grace period before making it visible. The old front canvas remains
+         * visible and translated at the dropped position during this time.
+         */
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            window.setTimeout(() => {
+              /*
+               * Ignore stale workers if another subtitle change happened
+               * while this renderer was starting/painting.
+               */
+              if (revision !== renderRevisionRef.current) {
+                renderer.dispose();
+                return;
+              }
+
+              const oldFrontIndex = frontCanvasIndexRef.current;
+
+              frontCanvasIndexRef.current = backIndex;
+              setFrontCanvasIndex(backIndex);
+
+              /*
+               * The replacement ASS renderer now contains the committed drag
+               * position, so the temporary translation is no longer needed.
+               */
+              setDraftPosition(null);
+              draftPositionRef.current = null;
+
+              /*
+               * Wait one more frame before disposing the old renderer so the
+               * newly visible canvas has definitely been composited.
+               */
+              window.requestAnimationFrame(() => {
+                if (oldFrontIndex === 0) {
+                  renderer0Ref.current?.dispose();
+                  renderer0Ref.current = null;
+                } else {
+                  renderer1Ref.current?.dispose();
+                  renderer1Ref.current = null;
+                }
+              });
+            }, 50);
+          });
+        });
+      },
+
+      onError: (error: Error) => {
+        console.error("libass preview renderer failed:", error);
+      },
+    });
+
+    if (backIndex === 0) {
+      renderer0Ref.current = renderer;
+    } else {
+      renderer1Ref.current = renderer;
+    }
   }, [subtitles, shellRef]);
 
-  /*
-   * Dispose the active worker only when the overlay itself unmounts.
-   */
   useEffect(() => {
     return () => {
-      rendererRef.current?.dispose();
-      rendererRef.current = null;
+      renderer0Ref.current?.dispose();
+      renderer1Ref.current?.dispose();
+
+      renderer0Ref.current = null;
+      renderer1Ref.current = null;
     };
   }, []);
 
@@ -615,15 +690,22 @@ function VideoSubtitleOverlay({
     <>
       <div className="video-subtitle-layer">
         <canvas
-          ref={canvasRef}
+          ref={canvas0Ref}
           className="ass-subtitle-canvas"
           width={ASS_WIDTH}
           height={ASS_HEIGHT}
-          style={canvasStyle}
+          style={canvas0Style}
+        />
+
+        <canvas
+          ref={canvas1Ref}
+          className="ass-subtitle-canvas"
+          width={ASS_WIDTH}
+          height={ASS_HEIGHT}
+          style={canvas1Style}
         />
 
         {activeSubtitle &&
-          displaySubtitle &&
           (isEditing && editingStyle ? (
             <textarea
               className="video-subtitle-editing"
@@ -664,7 +746,7 @@ function VideoSubtitleOverlay({
               type="button"
               aria-label={`Edit subtitle: ${activeSubtitle.text}`}
             >
-              {displaySubtitle.text}
+              {activeSubtitle.text}
             </button>
           ) : null)}
       </div>
@@ -673,33 +755,13 @@ function VideoSubtitleOverlay({
         <SubtitleStyleContextMenu
           x={styleMenu.x}
           y={styleMenu.y}
-          fontSize={displaySubtitle?.fontSize ?? activeSubtitle.fontSize ?? 24}
-          fontFamily={
-            displaySubtitle?.fontFamily ??
-            activeSubtitle.fontFamily ??
-            DEFAULT_ASS_FONT_FAMILY
-          }
-          color={
-            displaySubtitle?.color ?? activeSubtitle.color ?? "#ffffff"
-          }
-          backgroundColor={
-            displaySubtitle?.backgroundColor ??
-            activeSubtitle.backgroundColor ??
-            "transparent"
-          }
-          isBold={
-            displaySubtitle?.isBold ?? activeSubtitle.isBold ?? false
-          }
-          isUnderlined={
-            displaySubtitle?.isUnderlined ??
-            activeSubtitle.isUnderlined ??
-            false
-          }
-          textAlign={
-            displaySubtitle?.textAlign ??
-            activeSubtitle.textAlign ??
-            "center"
-          }
+          fontSize={activeSubtitle.fontSize ?? 24}
+          fontFamily={activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY}
+          color={activeSubtitle.color ?? "#ffffff"}
+          backgroundColor={activeSubtitle.backgroundColor ?? "transparent"}
+          isBold={activeSubtitle.isBold ?? false}
+          isUnderlined={activeSubtitle.isUnderlined ?? false}
+          textAlign={activeSubtitle.textAlign ?? "center"}
           scope={styleScope}
           onScopeChange={handleStyleScopeChange}
           onStyleChange={handleStyleChange}
