@@ -2,18 +2,32 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
+import type {
+  ProjectLanguage,
+  ProjectMetadata,
+} from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 2;
+export const CURRENT_PROJECT_VERSION = 3;
 
 export type SubtitleProject = {
   version: number;
   videoPath: string;
+  title: string;
+  languages: ProjectLanguage[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   updatedAt: string;
 };
 
 type UnknownRecord = Record<string, unknown>;
+
+const PROJECT_LANGUAGES = new Set<ProjectLanguage>([
+  "english",
+  "cantonese",
+  "mandarin",
+  "french",
+  "mixed",
+]);
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,6 +57,24 @@ function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
   }
 
   return undefined;
+}
+
+function parseLanguages(value: unknown): ProjectLanguage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (language): language is ProjectLanguage =>
+      typeof language === "string" &&
+      PROJECT_LANGUAGES.has(language as ProjectLanguage),
+  );
+}
+
+function defaultTitleFromVideoPath(videoPath: string) {
+  const fileName = videoPath.split(/[\\/]/).pop() ?? "Untitled Project";
+
+  return fileName.replace(/\.[^/.\\]+$/, "") || "Untitled Project";
 }
 
 function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
@@ -119,6 +151,9 @@ function normalizeProject(
     throw new Error("Project file does not contain a valid subtitles array.");
   }
 
+  const videoPath =
+    typeof value.videoPath === "string" ? value.videoPath : fallbackVideoPath;
+
   const subtitles = value.subtitles
     .map((subtitle, index) => normalizeSubtitle(subtitle, index))
     .filter((subtitle): subtitle is Subtitle => subtitle !== null)
@@ -133,8 +168,12 @@ function normalizeProject(
 
   return {
     version: CURRENT_PROJECT_VERSION,
-    videoPath:
-      typeof value.videoPath === "string" ? value.videoPath : fallbackVideoPath,
+    videoPath,
+    title:
+      typeof value.title === "string" && value.title.trim().length > 0
+        ? value.title.trim()
+        : defaultTitleFromVideoPath(videoPath),
+    languages: parseLanguages(value.languages),
     subtitles,
     markers,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
@@ -172,10 +211,13 @@ export async function saveProjectFile(
   videoPath: string,
   subtitles: Subtitle[],
   markers: TimelineMarker[],
+  metadata?: ProjectMetadata,
 ): Promise<void> {
   const project: SubtitleProject = {
     version: CURRENT_PROJECT_VERSION,
     videoPath,
+    title: metadata?.title ?? defaultTitleFromVideoPath(videoPath),
+    languages: metadata?.languages ?? [],
     subtitles,
     markers: [...markers].sort((a, b) => a.time - b.time),
     updatedAt: new Date().toISOString(),

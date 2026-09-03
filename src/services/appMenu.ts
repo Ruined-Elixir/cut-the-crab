@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 export const APP_MENU_COMMAND_EVENT = "app-menu-command";
 
 export type AppMenuCommand =
+  | "file.new-project"
+  | "file.show-home"
   | "file.open-video"
   | "file.save-project"
   | "file.import-srt"

@@ -73,12 +73,20 @@ function VideoPlayer({
   );
 
   useEffect(() => {
+    /*
+     * Reset playback state only when the selected video changes.
+     *
+     * Do not depend on onDurationChange/onTimeChange here. App-level callback
+     * functions may receive a new identity during ordinary React renders
+     * (for example when currentTime changes). Treating that as a video change
+     * repeatedly resets currentTime/duration to zero while playback is running.
+     */
     setDuration(0);
     setIsPlaying(false);
 
     onTimeChange?.(0);
     onDurationChange?.(0);
-  }, [videoPath, onDurationChange, onTimeChange]);
+  }, [videoPath]);
 
   // Playback
   const togglePlayPause = () => {

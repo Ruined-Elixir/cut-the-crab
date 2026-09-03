@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
+import HomeScreen from "./components/home/HomeScreen";
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
@@ -26,7 +27,12 @@ import {
   saveProjectFile,
 } from "./services/projectFiles";
 
-import "./App.css";
+import {
+  loadRecentProjects,
+  removeRecentProject,
+  upsertRecentProject,
+  videoPathExists,
+} from "./services/projectRegistry";
 
 import { exportStyledVideo } from "./services/videoExport";
 import {
@@ -35,27 +41,76 @@ import {
 } from "./services/appMenu";
 
 import type { TimelineMarker } from "./types/timeline";
+import type {
+  ProjectLanguage,
+  ProjectMetadata,
+  RecentProject,
+} from "./types/project";
+
+import "./App.css";
 
 type SeekRequest = {
   time: number;
   id: number;
 };
 
+type AppScreen = "home" | "editor";
+
 const AUTOSAVE_DEBOUNCE_MS = 3000;
 
+function getVideoTitle(path: string) {
+  const fileName = path.split(/[\\/]/).pop() ?? "Untitled Project";
+
+  return fileName.replace(/\.[^/.\\]+$/, "") || "Untitled Project";
+}
+
+function transcriptionOptionsForLanguage(language: ProjectLanguage) {
+  switch (language) {
+    case "cantonese":
+      return {
+        engine: "sensevoice" as const,
+      };
+
+    case "mixed":
+      return {
+        engine: "whisper" as const,
+        model: "small" as const,
+      };
+
+    case "english":
+    case "mandarin":
+    case "french":
+    default:
+      return {
+        engine: "whisper" as const,
+        model: "base" as const,
+      };
+  }
+}
+
 function App() {
+  // ==========================================================================
+  // Application / Home
+  // ==========================================================================
+
+  const [screen, setScreen] = useState<AppScreen>("home");
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [homeError, setHomeError] = useState("");
+  const [pendingNewProjectPath, setPendingNewProjectPath] = useState<
+    string | null
+  >(null);
+  const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(
+    null,
+  );
+
   // ==========================================================================
   // Video
   // ==========================================================================
 
   const [videoDuration, setVideoDuration] = useState(0);
-
   const [currentTime, setCurrentTime] = useState(0);
-
   const [videoName, setVideoName] = useState<string | null>(null);
-
   const [videoPath, setVideoPath] = useState<string | null>(null);
-
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
 
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
@@ -74,24 +129,10 @@ function App() {
   // ==========================================================================
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
   const [isSavingProject, setIsSavingProject] = useState(false);
 
-  /*
-   * Prevent subtitle changes caused by loading
-   * a new video/project from being treated as
-   * user edits.
-   */
   const isLoadingVideoRef = useRef(false);
 
-  /*
-   * Stores the subtitle state that was last
-   * loaded or successfully saved.
-   *
-   * Comparing against this is more reliable
-   * than marking every subtitle state update
-   * as dirty.
-   */
   const lastSavedSnapshotRef = useRef<string>(
     JSON.stringify({ subtitles: [], markers: [] }),
   );
@@ -130,6 +171,34 @@ function App() {
   } = useSubtitleEditor(currentTime, videoDuration);
 
   // ==========================================================================
+  // Recent projects
+  // ==========================================================================
+
+  const refreshRecentProjects = async () => {
+    setRecentProjects(await loadRecentProjects());
+  };
+
+  useEffect(() => {
+    void refreshRecentProjects();
+  }, []);
+
+  const recordRecentProject = async (
+    path: string,
+    metadata: ProjectMetadata,
+    duration = 0,
+  ) => {
+    await upsertRecentProject({
+      videoPath: path,
+      title: metadata.title,
+      languages: metadata.languages,
+      lastOpenedAt: new Date().toISOString(),
+      duration,
+    });
+
+    await refreshRecentProjects();
+  };
+
+  // ==========================================================================
   // Dirty-state detection
   // ==========================================================================
 
@@ -161,14 +230,14 @@ function App() {
       try {
         setIsSavingProject(true);
 
-        await saveProjectFile(videoPath, subtitles, markers);
+        await saveProjectFile(
+          videoPath,
+          subtitles,
+          markers,
+          projectMetadata ?? undefined,
+        );
 
-        /*
-         * Only mark this exact subtitle
-         * state as saved.
-         */
         lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
-
         setHasUnsavedChanges(false);
       } catch (error) {
         console.error("Autosave failed:", error);
@@ -180,7 +249,13 @@ function App() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [videoPath, subtitles, markers, hasUnsavedChanges]);
+  }, [
+    videoPath,
+    subtitles,
+    markers,
+    projectMetadata,
+    hasUnsavedChanges,
+  ]);
 
   // ==========================================================================
   // Transcription
@@ -209,13 +284,20 @@ function App() {
   };
 
   // ==========================================================================
-  // Video loading
+  // Video / project loading
   // ==========================================================================
 
-  const handleVideoPathChange = async (path: string) => {
+  const handleVideoPathChange = async (
+    path: string,
+    preferredMetadata?: ProjectMetadata,
+  ) => {
     isLoadingVideoRef.current = true;
 
     const name = path.split(/[\\/]/).pop() ?? "Unknown video";
+    const fallbackMetadata: ProjectMetadata = preferredMetadata ?? {
+      title: getVideoTitle(path),
+      languages: [],
+    };
 
     setHasUnsavedChanges(false);
     setCurrentTime(0);
@@ -227,22 +309,30 @@ function App() {
     setMarkers([]);
     setSubtitleSearch("");
     setTimelineZoom(1);
+    setProjectMetadata(fallbackMetadata);
 
     void generateWaveform(path);
 
-    try {
-      // --------------------------------------------------------------
-      // 1. Prefer subtitle project
-      // --------------------------------------------------------------
+    let resolvedMetadata = fallbackMetadata;
 
+    try {
       const matchingProject = await loadMatchingProjectFile(path);
 
       if (matchingProject) {
         const loadedSubtitles = matchingProject.subtitles;
         const loadedMarkers = matchingProject.markers;
 
+        resolvedMetadata = {
+          title: matchingProject.title,
+          languages:
+            matchingProject.languages.length > 0
+              ? matchingProject.languages
+              : fallbackMetadata.languages,
+        };
+
         replaceSubtitles(loadedSubtitles);
         setMarkers(loadedMarkers);
+        setProjectMetadata(resolvedMetadata);
 
         lastSavedSnapshotRef.current = JSON.stringify({
           subtitles: loadedSubtitles,
@@ -250,47 +340,25 @@ function App() {
         });
 
         setHasUnsavedChanges(false);
+      } else {
+        const matchingSubtitles = await loadMatchingSrtFile(path);
 
-        return;
-      }
+        if (matchingSubtitles) {
+          replaceSubtitles(matchingSubtitles);
 
-      // --------------------------------------------------------------
-      // 2. Fall back to matching SRT
-      // --------------------------------------------------------------
-
-      const matchingSubtitles = await loadMatchingSrtFile(path);
-
-      if (matchingSubtitles) {
-        replaceSubtitles(matchingSubtitles);
-
-        /*
-         * Treat the imported SRT as the
-         * initial clean state.
-         *
-         * A project JSON will only be
-         * created after editing/autosaving
-         * or pressing Save Project.
-         */
-        lastSavedSnapshotRef.current = JSON.stringify({
-          subtitles: matchingSubtitles,
-          markers: [],
-        });
+          lastSavedSnapshotRef.current = JSON.stringify({
+            subtitles: matchingSubtitles,
+            markers: [],
+          });
+        } else {
+          lastSavedSnapshotRef.current = JSON.stringify({
+            subtitles: [],
+            markers: [],
+          });
+        }
 
         setHasUnsavedChanges(false);
-
-        return;
       }
-
-      // --------------------------------------------------------------
-      // 3. No project or SRT
-      // --------------------------------------------------------------
-
-      lastSavedSnapshotRef.current = JSON.stringify({
-        subtitles: [],
-        markers: [],
-      });
-
-      setHasUnsavedChanges(false);
     } catch (error) {
       console.error("Failed to load subtitle data:", error);
 
@@ -303,9 +371,18 @@ function App() {
     } finally {
       isLoadingVideoRef.current = false;
     }
+
+    setScreen("editor");
+    setHomeError("");
+
+    try {
+      await recordRecentProject(path, resolvedMetadata);
+    } catch (error) {
+      console.error("Failed to update recent projects:", error);
+    }
   };
 
-  const handleChooseVideo = async () => {
+  const chooseVideoPath = async () => {
     const selected = await open({
       multiple: false,
       directory: false,
@@ -318,10 +395,102 @@ function App() {
     });
 
     if (!selected || Array.isArray(selected)) {
+      return null;
+    }
+
+    return selected;
+  };
+
+  const handleChooseVideo = async () => {
+    const selected = await chooseVideoPath();
+
+    if (!selected) {
       return;
     }
 
     await handleVideoPathChange(selected);
+  };
+
+  const handleChooseNewProjectVideo = async () => {
+    const selected = await chooseVideoPath();
+
+    if (!selected) {
+      return;
+    }
+
+    setHomeError("");
+    setPendingNewProjectPath(selected);
+  };
+
+  const handleCreateProject = async (language: ProjectLanguage) => {
+    if (!pendingNewProjectPath) {
+      return;
+    }
+
+    const path = pendingNewProjectPath;
+    const metadata: ProjectMetadata = {
+      title: getVideoTitle(path),
+      languages: [language],
+    };
+
+    try {
+      await saveProjectFile(path, [], [], metadata);
+      setPendingNewProjectPath(null);
+
+      await handleVideoPathChange(path, metadata);
+
+      void generateSubtitles(path, transcriptionOptionsForLanguage(language));
+    } catch (error) {
+      console.error("Failed to create project:", error);
+      setHomeError(
+        error instanceof Error ? error.message : "Failed to create project.",
+      );
+    }
+  };
+
+  const handleOpenRecentProject = async (project: RecentProject) => {
+    try {
+      const exists = await videoPathExists(project.videoPath);
+
+      if (!exists) {
+        setHomeError(
+          `The video for "${project.title}" could not be found. ` +
+            "The file may have been moved or deleted.",
+        );
+        return;
+      }
+
+      await handleVideoPathChange(project.videoPath, {
+        title: project.title,
+        languages: project.languages,
+      });
+    } catch (error) {
+      console.error("Failed to open recent project:", error);
+      setHomeError("Failed to open the selected recent project.");
+    }
+  };
+
+  const handleRemoveRecentProject = async (project: RecentProject) => {
+    try {
+      await removeRecentProject(project.videoPath);
+      await refreshRecentProjects();
+    } catch (error) {
+      console.error("Failed to remove recent project:", error);
+    }
+  };
+
+  const handleVideoDurationChange = (duration: number) => {
+    setVideoDuration(duration);
+
+    if (!videoPath || !projectMetadata || duration <= 0) {
+      return;
+    }
+
+    void recordRecentProject(videoPath, projectMetadata, duration).catch(
+      (error) => {
+        console.error("Failed to update recent-project duration:", error);
+      },
+    );
   };
 
   // ==========================================================================
@@ -336,11 +505,23 @@ function App() {
     try {
       setIsSavingProject(true);
 
-      await saveProjectFile(videoPath, subtitles, markers);
+      await saveProjectFile(
+        videoPath,
+        subtitles,
+        markers,
+        projectMetadata ?? undefined,
+      );
 
       lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
-
       setHasUnsavedChanges(false);
+
+      if (projectMetadata) {
+        await recordRecentProject(
+          videoPath,
+          projectMetadata,
+          videoDuration,
+        );
+      }
 
       console.log("Project saved.");
     } catch (error) {
@@ -356,7 +537,6 @@ function App() {
 
   const handleSubtitleSelect = (id: string, startTime: number) => {
     selectSubtitle(id);
-
     requestSeek(startTime);
   };
 
@@ -369,15 +549,6 @@ function App() {
 
     if (importedSubtitles) {
       replaceSubtitles(importedSubtitles);
-
-      /*
-       * Importing an SRT changes the
-       * current project content, so it
-       * should be considered unsaved.
-       *
-       * We intentionally DO NOT update
-       * lastSavedSnapshotRef here.
-       */
     }
   };
 
@@ -385,9 +556,9 @@ function App() {
     await exportSrtFile(subtitles, videoPath);
   };
 
-  // =====================
+  // ==========================================================================
   // Exporting
-  // =====================
+  // ==========================================================================
 
   const handleExportStyledVideo = async () => {
     if (!videoPath || isExporting) {
@@ -429,6 +600,17 @@ function App() {
 
   const handleAppMenuCommand = async (command: AppMenuCommand) => {
     switch (command) {
+      case "file.new-project":
+        setScreen("home");
+        await handleChooseNewProjectVideo();
+        return;
+
+      case "file.show-home":
+        setScreen("home");
+        setHomeError("");
+        await refreshRecentProjects();
+        return;
+
       case "file.open-video":
         await handleChooseVideo();
         return;
@@ -450,11 +632,13 @@ function App() {
         return;
 
       case "edit.add-subtitle":
-        addSubtitle(currentTime);
+        if (screen === "editor") {
+          addSubtitle(currentTime);
+        }
         return;
 
       case "edit.delete-subtitle":
-        if (selectedSubtitleId) {
+        if (screen === "editor" && selectedSubtitleId) {
           deleteSubtitle(selectedSubtitleId);
         }
         return;
@@ -500,13 +684,49 @@ function App() {
   useAppMenuCommands(handleAppMenuCommand);
 
   // ==========================================================================
-  // UI
+  // Home UI
+  // ==========================================================================
+
+  if (screen === "home") {
+    return (
+      <HomeScreen
+        projects={recentProjects}
+        pendingVideoPath={pendingNewProjectPath}
+        errorMessage={homeError}
+        onChooseNewVideo={handleChooseNewProjectVideo}
+        onCancelNewProject={() => setPendingNewProjectPath(null)}
+        onCreateProject={handleCreateProject}
+        onOpenProject={handleOpenRecentProject}
+        onRemoveProject={handleRemoveRecentProject}
+      />
+    );
+  }
+
+  // ==========================================================================
+  // Editor UI
   // ==========================================================================
 
   return (
     <main className="app">
       <header className="topbar">
-        <h1>Subtitle Editor</h1>
+        <button
+          type="button"
+          className="topbar-home-button"
+          onClick={() => {
+            setScreen("home");
+            setHomeError("");
+            void refreshRecentProjects();
+          }}
+          aria-label="Back to Home"
+          title="Home"
+        >
+          ‹
+        </button>
+
+        <div className="topbar-project-title">
+          <h1>{projectMetadata?.title ?? videoName ?? "Untitled Project"}</h1>
+          <span className="topbar-app-name">Subtitle Editor</span>
+        </div>
 
         {videoPath && (
           <span className="project-save-status">
@@ -523,31 +743,18 @@ function App() {
         <section className="preview-panel">
           <VideoPlayer
             videoPath={videoPath}
-
             videoName={videoName}
-
             onChooseVideo={handleChooseVideo}
-
-            onDurationChange={setVideoDuration}
-
+            onDurationChange={handleVideoDurationChange}
             onTimeChange={setCurrentTime}
-
             seekRequest={seekRequest}
-
             subtitles={subtitles}
-
             currentTime={currentTime}
-
             selectedSubtitleId={selectedSubtitleId}
-
             onSubtitleSelect={selectSubtitle}
-
             onSubtitlePositionChange={updateSubtitlePosition}
-
             onSubtitleTextChange={updateSubtitleText}
-
             onSubtitleStyleChange={updateSubtitleStyle}
-
             onAllSubtitleStylesChange={updateAllSubtitleStyles}
           />
         </section>
@@ -579,31 +786,18 @@ function App() {
 
       <Timeline
         duration={videoDuration}
-
         currentTime={currentTime}
-
         videoName={videoName}
-
         waveform={waveform}
-
         subtitles={subtitles}
-
         markers={markers}
-
         zoom={timelineZoom}
-
         selectedSubtitleId={selectedSubtitleId}
-
         onSubtitleSelect={selectSubtitle}
-
         onSubtitleMove={moveSubtitle}
-
         onSubtitleResize={resizeSubtitle}
-
         onMarkersChange={setMarkers}
-
         onZoomChange={setTimelineZoom}
-
         onSeek={requestSeek}
       />
 

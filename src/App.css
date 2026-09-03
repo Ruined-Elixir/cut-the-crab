@@ -39,13 +39,50 @@ button {
   height: 56px;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 20px;
   border-bottom: 1px solid #333;
 }
 
+.topbar-home-button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #373737;
+  border-radius: 6px;
+  background: #232323;
+  color: #aaa;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.topbar-home-button:hover {
+  border-color: #505050;
+  background: #2a2a2a;
+  color: #eee;
+}
+
+.topbar-project-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
 .topbar h1 {
   margin: 0;
+  overflow: hidden;
   font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-app-name {
+  flex-shrink: 0;
+  color: #777;
+  font-size: 11px;
 }
 
 .workspace {
@@ -74,9 +111,7 @@ button {
 
 .project-save-status {
   margin-left: auto;
-
   color: #999;
-
   font-size: 12px;
 }
 
@@ -86,9 +121,7 @@ button {
 
 .app-transcription-status {
   flex-shrink: 0;
-
   padding: 8px 16px 0;
-
   border-top: 1px solid #2d2d2d;
   background: #181818;
 }
