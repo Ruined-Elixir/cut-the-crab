@@ -6,6 +6,8 @@ import {
   type RecentProject,
 } from "../../types/project";
 
+import { getProjectThumbnailUrl } from "../../services/projectThumbnails";
+
 import "./HomeScreen.css";
 
 type HomeScreenProps = {
@@ -82,11 +84,50 @@ function HomeScreen({
   const [selectedLanguage, setSelectedLanguage] =
     useState<ProjectLanguage>("english");
 
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (pendingVideoPath) {
       setSelectedLanguage("english");
     }
   }, [pendingVideoPath]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadThumbnails = async () => {
+      for (const project of projects) {
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          const thumbnailUrl = await getProjectThumbnailUrl(
+            project.videoPath,
+            project.duration,
+          );
+
+          if (!cancelled) {
+            setThumbnailUrls((current) => ({
+              ...current,
+              [project.videoPath]: thumbnailUrl,
+            }));
+          }
+        } catch (error) {
+          console.warn(
+            `Unable to create thumbnail for ${project.videoPath}:`,
+            error,
+          );
+        }
+      }
+    };
+
+    void loadThumbnails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projects]);
 
   const pendingVideoName = useMemo(
     () => (pendingVideoPath ? getFileName(pendingVideoPath) : ""),
@@ -143,11 +184,30 @@ function HomeScreen({
                       className="project-card-main"
                       onClick={() => void onOpenProject(project)}
                     >
-                      <div className="project-thumbnail-placeholder">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <rect x="3" y="5" width="18" height="14" rx="2" />
-                          <path d="m10 9 5 3-5 3Z" />
-                        </svg>
+                      <div className="project-thumbnail">
+                        {thumbnailUrls[project.videoPath] ? (
+                          <img
+                            src={thumbnailUrls[project.videoPath]}
+                            alt=""
+                            aria-hidden="true"
+                            draggable={false}
+                          />
+                        ) : (
+                          <div
+                            className="project-thumbnail-placeholder"
+                            aria-hidden="true"
+                          >
+                            <svg viewBox="0 0 24 24">
+                              <rect x="3" y="5" width="18" height="14" rx="2" />
+                              <path d="m10 9 5 3-5 3Z" />
+                            </svg>
+                          </div>
+                        )}
+
+                        <div
+                          className="project-thumbnail-shade"
+                          aria-hidden="true"
+                        />
 
                         {duration && (
                           <span className="project-duration">{duration}</span>

@@ -149,7 +149,6 @@ fn center_main_window(app_handle: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecentProject {
@@ -199,8 +198,7 @@ fn write_recent_projects_file(
     let content = serde_json::to_string_pretty(projects)
         .map_err(|error| format!("Failed to serialize recent projects: {error}"))?;
 
-    fs::write(path, content)
-        .map_err(|error| format!("Failed to save recent projects: {error}"))
+    fs::write(path, content).map_err(|error| format!("Failed to save recent projects: {error}"))
 }
 
 #[tauri::command]
@@ -209,10 +207,7 @@ fn read_recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, Str
 }
 
 #[tauri::command]
-fn upsert_recent_project(
-    app: tauri::AppHandle,
-    project: RecentProject,
-) -> Result<(), String> {
+fn upsert_recent_project(app: tauri::AppHandle, project: RecentProject) -> Result<(), String> {
     let mut projects = read_recent_projects_file(&app)?;
 
     projects.retain(|existing| existing.video_path != project.video_path);
@@ -257,37 +252,29 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let export_video =
         MenuItemBuilder::with_id("file.export-video", "Export Styled Video…").build(app)?;
 
-    let add_subtitle =
-        MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
+    let add_subtitle = MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
         MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
 
-    let whisper_base = MenuItemBuilder::with_id(
-        "transcription.whisper-base",
-        "Generate with Whisper Base",
-    )
-    .build(app)?;
+    let whisper_base =
+        MenuItemBuilder::with_id("transcription.whisper-base", "Generate with Whisper Base")
+            .build(app)?;
 
-    let whisper_small = MenuItemBuilder::with_id(
-        "transcription.whisper-small",
-        "Generate with Whisper Small",
-    )
-    .build(app)?;
+    let whisper_small =
+        MenuItemBuilder::with_id("transcription.whisper-small", "Generate with Whisper Small")
+            .build(app)?;
 
-    let sensevoice = MenuItemBuilder::with_id(
-        "transcription.sensevoice",
-        "Generate with SenseVoice",
-    )
-    .build(app)?;
+    let sensevoice =
+        MenuItemBuilder::with_id("transcription.sensevoice", "Generate with SenseVoice")
+            .build(app)?;
 
     let timeline_zoom_in = MenuItemBuilder::with_id("view.timeline-zoom-in", "Zoom In Timeline")
         .accelerator("CmdOrCtrl+=")
         .build(app)?;
 
-    let timeline_zoom_out =
-        MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
-            .accelerator("CmdOrCtrl+-")
-            .build(app)?;
+    let timeline_zoom_out = MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
 
     let timeline_zoom_reset =
         MenuItemBuilder::with_id("view.timeline-zoom-reset", "Reset Timeline Zoom")
@@ -572,11 +559,7 @@ struct VideoExportProgress {
     status: String,
 }
 
-fn emit_export_progress(
-    app: &tauri::AppHandle,
-    progress: f64,
-    status: impl Into<String>,
-) {
+fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into<String>) {
     let payload = VideoExportProgress {
         progress: progress.clamp(0.0, 100.0),
         status: status.into(),
@@ -605,8 +588,7 @@ async fn export_styled_video(
             .map_err(|error| error.to_string())?
             .as_millis();
 
-        let ass_path =
-            std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
 
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
@@ -666,9 +648,8 @@ async fn export_styled_video(
         let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
-            let line = line.map_err(|error| {
-                format!("Failed to read FFmpeg progress output: {error}")
-            })?;
+            let line =
+                line.map_err(|error| format!("Failed to read FFmpeg progress output: {error}"))?;
 
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
@@ -706,6 +687,94 @@ async fn export_styled_video(
     })
     .await
     .map_err(|error| format!("Export task failed: {error}"))?
+}
+
+fn stable_path_hash(value: &str) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+
+    for byte in value.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    hash
+}
+
+fn project_thumbnails_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to locate app data directory: {error}"))?;
+
+    let thumbnails = app_data.join("thumbnails");
+
+    fs::create_dir_all(&thumbnails)
+        .map_err(|error| format!("Failed to create thumbnail cache directory: {error}"))?;
+
+    Ok(thumbnails)
+}
+
+#[tauri::command]
+async fn get_project_thumbnail(
+    app: tauri::AppHandle,
+    video_path: String,
+    duration: f64,
+) -> Result<String, String> {
+    let source = PathBuf::from(&video_path);
+
+    if !source.exists() {
+        return Err("The source video could not be found.".to_string());
+    }
+
+    let thumbnail_dir = project_thumbnails_dir(&app)?;
+    let cache_key = stable_path_hash(&video_path);
+    let thumbnail_path = thumbnail_dir.join(format!("{cache_key:016x}.jpg"));
+
+    if thumbnail_path.exists() {
+        return Ok(thumbnail_path.to_string_lossy().into_owned());
+    }
+
+    let ffmpeg_path = get_ffmpeg_path(&app)?;
+    let output_path = thumbnail_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let seek_seconds = if duration.is_finite() && duration > 0.0 {
+            (duration * 0.10).clamp(0.10, 5.0)
+        } else {
+            0.50
+        };
+
+        let status = Command::new(ffmpeg_path)
+            .arg("-hide_banner")
+            .arg("-loglevel")
+            .arg("error")
+            .arg("-ss")
+            .arg(format!("{seek_seconds:.3}"))
+            .arg("-i")
+            .arg(&source)
+            .arg("-frames:v")
+            .arg("1")
+            .arg("-vf")
+            .arg("scale=640:360:force_original_aspect_ratio=increase,crop=640:360")
+            .arg("-q:v")
+            .arg("3")
+            .arg("-y")
+            .arg(&output_path)
+            .status()
+            .map_err(|error| format!("Failed to start FFmpeg for thumbnail: {error}"))?;
+
+        if !status.success() {
+            let _ = fs::remove_file(&output_path);
+
+            return Err(format!(
+                "FFmpeg thumbnail generation failed with status: {status}"
+            ));
+        }
+
+        Ok(output_path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| format!("Thumbnail task failed: {error}"))?
 }
 
 fn matching_project_path(video_path: &Path) -> PathBuf {
@@ -752,6 +821,7 @@ pub fn run() {
             upsert_recent_project,
             remove_recent_project,
             path_exists,
+            get_project_thumbnail,
             export_styled_video
         ])
         .run(tauri::generate_context!())
