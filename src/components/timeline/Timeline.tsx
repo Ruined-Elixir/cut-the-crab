@@ -27,6 +27,7 @@ type TimelineProps = {
   selectedSubtitleIds: string[];
 
   onSeek?: (time: number) => void;
+  onClearSubtitleSelection?: () => void;
   onSubtitleSelect?: (
     id: string,
     mode?: "single" | "toggle" | "range",
@@ -65,6 +66,7 @@ function Timeline({
   selectedSubtitleId,
   selectedSubtitleIds,
   onSeek,
+  onClearSubtitleSelection,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
@@ -215,7 +217,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            Shift-click range · Cmd/Ctrl-click toggle · drag selected clips as a group
+            Shift-click range · Cmd/Ctrl-click toggle · Option/Alt+←/→ nudge
           </span>
         </div>
 
@@ -264,7 +266,24 @@ function Timeline({
         >
           <TimelineRuler duration={duration} zoom={zoom} />
 
-          <div className="timeline-track-stack" onDoubleClick={addMarkerAtEvent}>
+          <div
+            className="timeline-track-stack"
+            onDoubleClick={addMarkerAtEvent}
+            onMouseDown={(event) => {
+              const target = event.target as HTMLElement;
+
+              if (
+                target.closest(".subtitle-clip") ||
+                target.closest(".timeline-user-marker") ||
+                target.closest("button") ||
+                target.closest("input")
+              ) {
+                return;
+              }
+
+              onClearSubtitleSelection?.();
+            }}
+          >
             <WaveformTrack
               duration={duration}
               videoName={videoName}

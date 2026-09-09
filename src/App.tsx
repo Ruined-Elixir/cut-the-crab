@@ -159,6 +159,8 @@ function App() {
     setSubtitleSearch,
     selectSubtitle,
     selectAllSubtitles,
+    focusSelectedSubtitle,
+    clearSubtitleSelection,
 
     updateSubtitleText,
     updateSubtitlePosition,
@@ -168,10 +170,10 @@ function App() {
 
     moveSubtitle,
     moveSubtitleGroup,
+    nudgeSelectedSubtitles,
     resizeSubtitle,
     addSubtitle,
     splitSubtitle,
-    deleteSubtitle,
     deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
@@ -921,6 +923,18 @@ function App() {
         }
         return;
 
+      case "edit.select-all-subtitles":
+        if (screen === "editor") {
+          selectAllSubtitles();
+        }
+        return;
+
+      case "edit.deselect-all-subtitles":
+        if (screen === "editor") {
+          clearSubtitleSelection();
+        }
+        return;
+
       case "edit.add-subtitle":
         if (screen === "editor") {
           addSubtitleWithHistory(currentTime);
@@ -988,6 +1002,86 @@ function App() {
         target.tagName === "INPUT" ||
         target.tagName === "TEXTAREA" ||
         target.isContentEditable;
+
+      if (!isEditingText && event.key === "Escape") {
+        if (selectedSubtitleIds.length > 0) {
+          event.preventDefault();
+          clearSubtitleSelection();
+        }
+
+        return;
+      }
+
+      if (
+        !isEditingText &&
+        event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        (event.key === "ArrowLeft" ||
+          event.key === "ArrowRight")
+      ) {
+        if (selectedSubtitleIds.length === 0) {
+          return;
+        }
+
+        event.preventDefault();
+
+        const step = event.shiftKey ? 1 : 0.1;
+        const direction =
+          event.key === "ArrowLeft" ? -1 : 1;
+
+        nudgeSelectedSubtitles(step * direction);
+        return;
+      }
+
+      if (
+        !isEditingText &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "[" || event.key === "]")
+      ) {
+        if (selectedSubtitleIds.length === 0) {
+          return;
+        }
+
+        const orderedSelected = subtitles
+          .filter((subtitle) =>
+            selectedSubtitleIds.includes(subtitle.id),
+          )
+          .sort((a, b) => a.startTime - b.startTime);
+
+        if (orderedSelected.length === 0) {
+          return;
+        }
+
+        event.preventDefault();
+
+        const currentIndex = orderedSelected.findIndex(
+          (subtitle) =>
+            subtitle.id === selectedSubtitleId,
+        );
+
+        const delta = event.key === "[" ? -1 : 1;
+        const fallbackIndex =
+          delta > 0 ? -1 : orderedSelected.length;
+
+        const nextIndex =
+          ((
+            (currentIndex >= 0
+              ? currentIndex
+              : fallbackIndex) +
+            delta
+          ) +
+            orderedSelected.length) %
+          orderedSelected.length;
+
+        const nextSubtitle = orderedSelected[nextIndex];
+
+        focusSelectedSubtitle(nextSubtitle.id);
+        requestSeek(nextSubtitle.startTime);
+        return;
+      }
 
       if (
         !isEditingText &&
@@ -1066,6 +1160,9 @@ function App() {
     undo,
     redo,
     selectAllSubtitles,
+    clearSubtitleSelection,
+    focusSelectedSubtitle,
+    nudgeSelectedSubtitles,
     currentTime,
     selectedSubtitleId,
     selectedSubtitleIds,
@@ -1188,6 +1285,7 @@ function App() {
         zoom={timelineZoom}
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
+        onClearSubtitleSelection={clearSubtitleSelection}
         onSubtitleSelect={selectSubtitle}
         onSubtitleMove={moveSubtitle}
         onSubtitleGroupMove={moveSubtitleGroup}

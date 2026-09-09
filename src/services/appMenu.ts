@@ -15,6 +15,8 @@ export type AppMenuCommand =
   | "edit.undo"
   | "edit.redo"
   | "edit.split-subtitle"
+  | "edit.select-all-subtitles"
+  | "edit.deselect-all-subtitles"
   | "edit.add-subtitle"
   | "edit.delete-subtitle"
   | "transcription.whisper-base"

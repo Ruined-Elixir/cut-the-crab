@@ -114,6 +114,98 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     selectionAnchorIdRef.current = orderedIds[0] ?? null;
   };
 
+  const focusSelectedSubtitle = (id: string) => {
+    if (!selectedSubtitleIds.includes(id)) {
+      return;
+    }
+
+    setSelectedSubtitleId(id);
+  };
+
+  const nudgeSelectedSubtitles = (requestedDelta: number) => {
+    if (
+      selectedSubtitleIds.length === 0 ||
+      requestedDelta === 0
+    ) {
+      return;
+    }
+
+    const selectedIds = new Set(selectedSubtitleIds);
+
+    setSubtitles((current) => {
+      const selected = current.filter((subtitle) =>
+        selectedIds.has(subtitle.id),
+      );
+
+      if (selected.length === 0) {
+        return current;
+      }
+
+      const unselected = current.filter(
+        (subtitle) => !selectedIds.has(subtitle.id),
+      );
+
+      const minStart = Math.min(
+        ...selected.map((subtitle) => subtitle.startTime),
+      );
+
+      const maxEnd = Math.max(
+        ...selected.map((subtitle) => subtitle.endTime),
+      );
+
+      let minimumDelta = -minStart;
+      let maximumDelta =
+        videoDuration > 0
+          ? videoDuration - maxEnd
+          : Number.POSITIVE_INFINITY;
+
+      if (requestedDelta > 0) {
+        for (const moving of selected) {
+          for (const obstacle of unselected) {
+            if (obstacle.startTime >= moving.endTime) {
+              maximumDelta = Math.min(
+                maximumDelta,
+                obstacle.startTime - moving.endTime,
+              );
+            }
+          }
+        }
+      } else {
+        for (const moving of selected) {
+          for (const obstacle of unselected) {
+            if (obstacle.endTime <= moving.startTime) {
+              minimumDelta = Math.max(
+                minimumDelta,
+                obstacle.endTime - moving.startTime,
+              );
+            }
+          }
+        }
+      }
+
+      const safeDelta = Math.max(
+        minimumDelta,
+        Math.min(maximumDelta, requestedDelta),
+      );
+
+      if (Math.abs(safeDelta) < 0.000001) {
+        return current;
+      }
+
+      return sortSubtitles(
+        current.map((subtitle) =>
+          selectedIds.has(subtitle.id)
+            ? {
+                ...subtitle,
+                startTime: subtitle.startTime + safeDelta,
+                endTime: subtitle.endTime + safeDelta,
+              }
+            : subtitle,
+        ),
+      );
+    });
+  };
+
   const clearSubtitleSelection = () => {
     setSelectedSubtitleIds([]);
     setSelectedSubtitleId(null);
@@ -399,6 +491,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     setSubtitleSearch,
     selectSubtitle,
     selectAllSubtitles,
+    focusSelectedSubtitle,
     clearSubtitleSelection,
 
     updateSubtitleText,
@@ -409,6 +502,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     moveSubtitle,
     moveSubtitleGroup,
+    nudgeSelectedSubtitles,
     resizeSubtitle,
     addSubtitle,
     splitSubtitle,

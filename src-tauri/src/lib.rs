@@ -273,6 +273,21 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+B")
         .build(app)?;
 
+    let select_all_subtitles =
+        MenuItemBuilder::with_id(
+            "edit.select-all-subtitles",
+            "Select All Subtitles",
+        )
+        .build(app)?;
+
+    let deselect_all_subtitles =
+        MenuItemBuilder::with_id(
+            "edit.deselect-all-subtitles",
+            "Deselect All Subtitles",
+        )
+        .accelerator("CmdOrCtrl+Shift+A")
+        .build(app)?;
+
     let add_subtitle =
         MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
@@ -383,6 +398,9 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .paste()
         .select_all()
         .separator()
+        .item(&select_all_subtitles)
+        .item(&deselect_all_subtitles)
+        .separator()
         .item(&split_subtitle)
         .separator()
         .item(&add_subtitle)
@@ -452,6 +470,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "edit.undo"
             | "edit.redo"
             | "edit.split-subtitle"
+            | "edit.select-all-subtitles"
+            | "edit.deselect-all-subtitles"
             | "edit.add-subtitle"
             | "edit.delete-subtitle"
             | "transcription.whisper-base"
