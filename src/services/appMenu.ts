@@ -12,6 +12,8 @@ export type AppMenuCommand =
   | "file.import-srt"
   | "file.export-srt"
   | "file.export-video"
+  | "edit.undo"
+  | "edit.redo"
   | "edit.add-subtitle"
   | "edit.delete-subtitle"
   | "transcription.whisper-base"

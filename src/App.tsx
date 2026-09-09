@@ -12,6 +12,7 @@ import Timeline, {
 import ExportProgressModal from "./components/export/ExportProgressModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
 
+import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
 import { useTranscription } from "./hooks/useTranscription";
 import { useWaveform } from "./hooks/useWaveform";
@@ -171,6 +172,67 @@ function App() {
   } = useSubtitleEditor(currentTime, videoDuration);
 
   // ==========================================================================
+  // Undo / Redo history
+  // ==========================================================================
+
+  const {
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    resetHistory,
+    markNextChangeImmediate,
+  } = useEditorHistory({
+    snapshot: {
+      subtitles,
+      markers,
+    },
+    enabled:
+      screen === "editor" &&
+      !!videoPath &&
+      !isLoadingVideoRef.current,
+    onApply: (snapshot) => {
+      replaceSubtitles(snapshot.subtitles);
+      setMarkers(snapshot.markers);
+    },
+  });
+
+  const addSubtitleWithHistory = (time: number) => {
+    markNextChangeImmediate();
+    addSubtitle(time);
+  };
+
+  const deleteSubtitleWithHistory = (id: string) => {
+    markNextChangeImmediate();
+    deleteSubtitle(id);
+  };
+
+  const setMarkersWithHistory = (
+    nextMarkers: TimelineMarker[],
+  ) => {
+    markNextChangeImmediate();
+    setMarkers(nextMarkers);
+  };
+
+  const replaceSubtitlesWithHistory = (
+    nextSubtitles: typeof subtitles,
+  ) => {
+    markNextChangeImmediate();
+    replaceSubtitles(nextSubtitles);
+  };
+
+  const replaceGeneratedSubtitlesWithHistory = (
+    segments: {
+      startTime: number;
+      endTime: number;
+      text: string;
+    }[],
+  ) => {
+    markNextChangeImmediate();
+    replaceWithGeneratedSubtitles(segments);
+  };
+
+  // ==========================================================================
   // Recent projects
   // ==========================================================================
 
@@ -271,7 +333,7 @@ function App() {
     transcriptionEngine,
     generateSubtitles,
   } = useTranscription({
-    onGenerated: replaceWithGeneratedSubtitles,
+    onGenerated: replaceGeneratedSubtitlesWithHistory,
   });
 
   // ==========================================================================
@@ -316,6 +378,10 @@ function App() {
     void generateWaveform(path);
 
     let resolvedMetadata = fallbackMetadata;
+    let loadedHistorySnapshot = {
+      subtitles: [] as typeof subtitles,
+      markers: [] as TimelineMarker[],
+    };
 
     try {
       const matchingProject = await loadMatchingProjectFile(path);
@@ -336,6 +402,11 @@ function App() {
         setMarkers(loadedMarkers);
         setProjectMetadata(resolvedMetadata);
 
+        loadedHistorySnapshot = {
+          subtitles: loadedSubtitles,
+          markers: loadedMarkers,
+        };
+
         lastSavedSnapshotRef.current = JSON.stringify({
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
@@ -347,6 +418,11 @@ function App() {
 
         if (matchingSubtitles) {
           replaceSubtitles(matchingSubtitles);
+
+          loadedHistorySnapshot = {
+            subtitles: matchingSubtitles,
+            markers: [],
+          };
 
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: matchingSubtitles,
@@ -364,6 +440,11 @@ function App() {
     } catch (error) {
       console.error("Failed to load subtitle data:", error);
 
+      loadedHistorySnapshot = {
+        subtitles: [],
+        markers: [],
+      };
+
       lastSavedSnapshotRef.current = JSON.stringify({
         subtitles: [],
         markers: [],
@@ -373,6 +454,8 @@ function App() {
     } finally {
       isLoadingVideoRef.current = false;
     }
+
+    resetHistory(loadedHistorySnapshot);
 
     setScreen("editor");
     setHomeError("");
@@ -659,7 +742,7 @@ function App() {
     const importedSubtitles = await importSrtFile();
 
     if (importedSubtitles) {
-      replaceSubtitles(importedSubtitles);
+      replaceSubtitlesWithHistory(importedSubtitles);
     }
   };
 
@@ -742,15 +825,27 @@ function App() {
         await handleExportStyledVideo();
         return;
 
+      case "edit.undo":
+        if (screen === "editor") {
+          undo();
+        }
+        return;
+
+      case "edit.redo":
+        if (screen === "editor") {
+          redo();
+        }
+        return;
+
       case "edit.add-subtitle":
         if (screen === "editor") {
-          addSubtitle(currentTime);
+          addSubtitleWithHistory(currentTime);
         }
         return;
 
       case "edit.delete-subtitle":
         if (screen === "editor" && selectedSubtitleId) {
-          deleteSubtitle(selectedSubtitleId);
+          deleteSubtitleWithHistory(selectedSubtitleId);
         }
         return;
 
@@ -792,6 +887,57 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    const handleUndoRedoKeyDown = (event: KeyboardEvent) => {
+      if (
+        screen !== "editor" ||
+        isGenerating ||
+        isExporting
+      ) {
+        return;
+      }
+
+      const commandModifier =
+        event.metaKey || event.ctrlKey;
+
+      if (
+        !commandModifier ||
+        event.altKey ||
+        event.key.toLowerCase() !== "z"
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (event.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      handleUndoRedoKeyDown,
+      true,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleUndoRedoKeyDown,
+        true,
+      );
+    };
+  }, [
+    screen,
+    isGenerating,
+    isExporting,
+    undo,
+    redo,
+  ]);
+
   useAppMenuCommands(handleAppMenuCommand);
 
   // ==========================================================================
@@ -820,7 +966,11 @@ function App() {
   // ==========================================================================
 
   return (
-    <main className="app">
+    <main
+      className="app"
+      data-can-undo={canUndo}
+      data-can-redo={canRedo}
+    >
       <header className="topbar">
         <button
           type="button"
@@ -880,8 +1030,8 @@ function App() {
           onSearchChange={setSubtitleSearch}
           onSelect={handleSubtitleSelect}
           onTextChange={updateSubtitleText}
-          onAdd={() => addSubtitle(currentTime)}
-          onDelete={deleteSubtitle}
+          onAdd={() => addSubtitleWithHistory(currentTime)}
+          onDelete={deleteSubtitleWithHistory}
         />
       </div>
 
@@ -897,7 +1047,7 @@ function App() {
         onSubtitleSelect={selectSubtitle}
         onSubtitleMove={moveSubtitle}
         onSubtitleResize={resizeSubtitle}
-        onMarkersChange={setMarkers}
+        onMarkersChange={setMarkersWithHistory}
         onZoomChange={setTimelineZoom}
         onSeek={requestSeek}
       />

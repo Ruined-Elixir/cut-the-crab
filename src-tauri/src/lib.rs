@@ -149,6 +149,7 @@ fn center_main_window(app_handle: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecentProject {
@@ -198,7 +199,8 @@ fn write_recent_projects_file(
     let content = serde_json::to_string_pretty(projects)
         .map_err(|error| format!("Failed to serialize recent projects: {error}"))?;
 
-    fs::write(path, content).map_err(|error| format!("Failed to save recent projects: {error}"))
+    fs::write(path, content)
+        .map_err(|error| format!("Failed to save recent projects: {error}"))
 }
 
 #[tauri::command]
@@ -207,7 +209,10 @@ fn read_recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, Str
 }
 
 #[tauri::command]
-fn upsert_recent_project(app: tauri::AppHandle, project: RecentProject) -> Result<(), String> {
+fn upsert_recent_project(
+    app: tauri::AppHandle,
+    project: RecentProject,
+) -> Result<(), String> {
     let mut projects = read_recent_projects_file(&app)?;
 
     projects.retain(|existing| existing.video_path != project.video_path);
@@ -252,29 +257,45 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let export_video =
         MenuItemBuilder::with_id("file.export-video", "Export Styled Video…").build(app)?;
 
-    let add_subtitle = MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
+    let undo_editor = MenuItemBuilder::with_id("edit.undo", "Undo")
+        .accelerator("CmdOrCtrl+Z")
+        .build(app)?;
+
+    let redo_editor = MenuItemBuilder::with_id("edit.redo", "Redo")
+        .accelerator("CmdOrCtrl+Shift+Z")
+        .build(app)?;
+
+    let add_subtitle =
+        MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
         MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
 
-    let whisper_base =
-        MenuItemBuilder::with_id("transcription.whisper-base", "Generate with Whisper Base")
-            .build(app)?;
+    let whisper_base = MenuItemBuilder::with_id(
+        "transcription.whisper-base",
+        "Generate with Whisper Base",
+    )
+    .build(app)?;
 
-    let whisper_small =
-        MenuItemBuilder::with_id("transcription.whisper-small", "Generate with Whisper Small")
-            .build(app)?;
+    let whisper_small = MenuItemBuilder::with_id(
+        "transcription.whisper-small",
+        "Generate with Whisper Small",
+    )
+    .build(app)?;
 
-    let sensevoice =
-        MenuItemBuilder::with_id("transcription.sensevoice", "Generate with SenseVoice")
-            .build(app)?;
+    let sensevoice = MenuItemBuilder::with_id(
+        "transcription.sensevoice",
+        "Generate with SenseVoice",
+    )
+    .build(app)?;
 
     let timeline_zoom_in = MenuItemBuilder::with_id("view.timeline-zoom-in", "Zoom In Timeline")
         .accelerator("CmdOrCtrl+=")
         .build(app)?;
 
-    let timeline_zoom_out = MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
-        .accelerator("CmdOrCtrl+-")
-        .build(app)?;
+    let timeline_zoom_out =
+        MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
+            .accelerator("CmdOrCtrl+-")
+            .build(app)?;
 
     let timeline_zoom_reset =
         MenuItemBuilder::with_id("view.timeline-zoom-reset", "Reset Timeline Zoom")
@@ -346,8 +367,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
+        .item(&undo_editor)
+        .item(&redo_editor)
         .separator()
         .cut()
         .copy()
@@ -418,6 +439,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "file.import-srt"
             | "file.export-srt"
             | "file.export-video"
+            | "edit.undo"
+            | "edit.redo"
             | "edit.add-subtitle"
             | "edit.delete-subtitle"
             | "transcription.whisper-base"
@@ -559,7 +582,11 @@ struct VideoExportProgress {
     status: String,
 }
 
-fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into<String>) {
+fn emit_export_progress(
+    app: &tauri::AppHandle,
+    progress: f64,
+    status: impl Into<String>,
+) {
     let payload = VideoExportProgress {
         progress: progress.clamp(0.0, 100.0),
         status: status.into(),
@@ -588,7 +615,8 @@ async fn export_styled_video(
             .map_err(|error| error.to_string())?
             .as_millis();
 
-        let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path =
+            std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
 
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
@@ -648,8 +676,9 @@ async fn export_styled_video(
         let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
-            let line =
-                line.map_err(|error| format!("Failed to read FFmpeg progress output: {error}"))?;
+            let line = line.map_err(|error| {
+                format!("Failed to read FFmpeg progress output: {error}")
+            })?;
 
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
@@ -755,7 +784,9 @@ async fn get_project_thumbnail(
             .arg("-frames:v")
             .arg("1")
             .arg("-vf")
-            .arg("scale=640:360:force_original_aspect_ratio=increase,crop=640:360")
+            .arg(
+                "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+            )
             .arg("-q:v")
             .arg("3")
             .arg("-y")
@@ -777,29 +808,95 @@ async fn get_project_thumbnail(
     .map_err(|error| format!("Thumbnail task failed: {error}"))?
 }
 
-fn matching_project_path(video_path: &Path) -> PathBuf {
+fn legacy_matching_project_path(video_path: &Path) -> PathBuf {
     video_path.with_extension("subtitle-project.json")
 }
 
-#[tauri::command]
-fn read_matching_project(video_path: String) -> Result<Option<String>, String> {
-    let project_path = matching_project_path(Path::new(&video_path));
+fn managed_projects_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to locate app data directory: {error}"))?;
 
-    if !project_path.exists() {
-        return Ok(None);
+    let projects_dir = app_data.join("projects");
+
+    fs::create_dir_all(&projects_dir)
+        .map_err(|error| format!("Failed to create managed projects directory: {error}"))?;
+
+    Ok(projects_dir)
+}
+
+fn managed_project_path(
+    app: &tauri::AppHandle,
+    video_path: &str,
+) -> Result<PathBuf, String> {
+    let projects_dir = managed_projects_dir(app)?;
+    let cache_key = stable_path_hash(video_path);
+
+    Ok(projects_dir.join(format!("{cache_key:016x}.subtitle-project.json")))
+}
+
+fn write_managed_project(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    project_json: &str,
+) -> Result<(), String> {
+    let project_path = managed_project_path(app, video_path)?;
+    let temporary_path = project_path.with_extension("json.tmp");
+
+    fs::write(&temporary_path, project_json)
+        .map_err(|error| format!("Failed to write temporary project file: {error}"))?;
+
+    if project_path.exists() {
+        fs::remove_file(&project_path)
+            .map_err(|error| format!("Failed to replace existing project file: {error}"))?;
     }
 
-    fs::read_to_string(&project_path)
-        .map(Some)
-        .map_err(|error| format!("Failed to read subtitle project: {}", error))
+    fs::rename(&temporary_path, &project_path)
+        .map_err(|error| format!("Failed to finalize project save: {error}"))
 }
 
 #[tauri::command]
-fn save_subtitle_project(video_path: String, project_json: String) -> Result<(), String> {
-    let project_path = matching_project_path(Path::new(&video_path));
+fn read_matching_project(
+    app: tauri::AppHandle,
+    video_path: String,
+) -> Result<Option<String>, String> {
+    let managed_path = managed_project_path(&app, &video_path)?;
 
-    fs::write(&project_path, project_json)
-        .map_err(|error| format!("Failed to save subtitle project: {}", error))
+    if managed_path.exists() {
+        return fs::read_to_string(&managed_path)
+            .map(Some)
+            .map_err(|error| format!("Failed to read managed subtitle project: {error}"));
+    }
+
+    /*
+     * Backward compatibility:
+     *
+     * Older builds stored `*.subtitle-project.json` beside the source video.
+     * If one exists, read it and immediately copy it into managed app storage.
+     * The legacy sidecar is intentionally left untouched.
+     */
+    let legacy_path = legacy_matching_project_path(Path::new(&video_path));
+
+    if !legacy_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&legacy_path)
+        .map_err(|error| format!("Failed to read legacy subtitle project: {error}"))?;
+
+    write_managed_project(&app, &video_path, &content)?;
+
+    Ok(Some(content))
+}
+
+#[tauri::command]
+fn save_subtitle_project(
+    app: tauri::AppHandle,
+    video_path: String,
+    project_json: String,
+) -> Result<(), String> {
+    write_managed_project(&app, &video_path, &project_json)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

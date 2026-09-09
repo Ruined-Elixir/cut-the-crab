@@ -180,6 +180,13 @@ function normalizeProject(
   };
 }
 
+/*
+ * Project persistence is managed by Rust inside the app-data directory.
+ *
+ * `videoPath` remains the lookup key at this API boundary so existing editor
+ * code does not need to know where project files live. The backend also
+ * migrates legacy sidecar projects automatically on first load.
+ */
 export async function loadMatchingProjectFile(
   videoPath: string,
 ): Promise<SubtitleProject | null> {
