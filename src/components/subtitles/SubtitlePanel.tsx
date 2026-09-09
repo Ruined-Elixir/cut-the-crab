@@ -1,20 +1,36 @@
-import type { Subtitle } from "../../types/subtitle";
+import { useState } from "react";
 
+import type {
+  Subtitle,
+  SubtitleStyle,
+} from "../../types/subtitle";
+
+import SubtitleInspector from "./SubtitleInspector";
 import SubtitleList from "./SubtitleList";
 
 import "./SubtitlePanel.css";
 
 type SubtitlePanelProps = {
   subtitles: Subtitle[];
-
+  selectedSubtitle: Subtitle | null;
   selectedSubtitleId: string | null;
+  selectedSubtitleIds: string[];
+  selectedSubtitleCount: number;
   activeSubtitleId: string | null;
 
   search: string;
   onSearchChange: (value: string) => void;
 
-  onSelect: (id: string, startTime: number) => void;
+  onSelect: (
+    id: string,
+    startTime: number,
+    mode?: "single" | "toggle" | "range",
+  ) => void;
   onTextChange: (id: string, text: string) => void;
+  onStyleChange: (
+    id: string,
+    style: SubtitleStyle,
+  ) => void;
 
   onAdd: () => void;
   onDelete: (id: string) => void;
@@ -22,61 +38,140 @@ type SubtitlePanelProps = {
 
 function SubtitlePanel({
   subtitles,
+  selectedSubtitle,
   selectedSubtitleId,
+  selectedSubtitleIds,
+  selectedSubtitleCount,
   activeSubtitleId,
   search,
   onSearchChange,
   onSelect,
   onTextChange,
+  onStyleChange,
   onAdd,
   onDelete,
 }: SubtitlePanelProps) {
+  const [isInspectorExpanded, setIsInspectorExpanded] =
+    useState(false);
+
   return (
-    <aside className="subtitle-panel">
-      <div className="subtitle-panel-header">
-        <h2>Subtitles</h2>
+    <aside
+      className={[
+        "subtitle-panel",
+        isInspectorExpanded
+          ? "inspector-expanded"
+          : "inspector-collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <section className="subtitle-browser">
+        <div className="subtitle-panel-header">
+          <div className="subtitle-panel-title-row">
+            <div>
+              <span className="subtitle-panel-eyebrow">
+                Browser
+              </span>
 
-        <div className="subtitle-panel-tools">
-          <div className="subtitle-search-wrap">
-            <svg
-              className="subtitle-search-icon"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="6.5" />
-              <path d="m16 16 4 4" />
-            </svg>
+              <h2>Subtitles</h2>
+            </div>
 
-            <input
-              type="text"
-              className="subtitle-search"
-              placeholder="Search subtitles"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-            />
+            <span className="subtitle-panel-count">
+              {subtitles.length}
+            </span>
           </div>
 
-          <button
-            type="button"
-            className="subtitle-add-button"
-            onClick={onAdd}
-            aria-label="Add subtitle"
-            title="Add subtitle"
-          >
-            +
-          </button>
-        </div>
-      </div>
+          <div className="subtitle-panel-tools">
+            <div className="subtitle-search-wrap">
+              <svg
+                className="subtitle-search-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="m16 16 4 4" />
+              </svg>
 
-      <SubtitleList
-        subtitles={subtitles}
-        selectedSubtitleId={selectedSubtitleId}
-        activeSubtitleId={activeSubtitleId}
-        search={search}
-        onSelect={onSelect}
-        onTextChange={onTextChange}
-        onDelete={onDelete}
+              <input
+                type="text"
+                className="subtitle-search"
+                placeholder="Search subtitles"
+                value={search}
+                onChange={(event) =>
+                  onSearchChange(event.target.value)
+                }
+              />
+            </div>
+
+            <button
+              type="button"
+              className="subtitle-add-button"
+              onClick={onAdd}
+              aria-label="Add subtitle"
+              title="Add Subtitle"
+            >
+              <svg
+                viewBox="0 0 18 18"
+                aria-hidden="true"
+              >
+                <path d="M9 3.5v11M3.5 9h11" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <SubtitleList
+          subtitles={subtitles}
+          selectedSubtitleId={selectedSubtitleId}
+          selectedSubtitleIds={selectedSubtitleIds}
+          activeSubtitleId={activeSubtitleId}
+          search={search}
+          onSelect={onSelect}
+          onTextChange={onTextChange}
+          onDelete={onDelete}
+        />
+      </section>
+
+      <div
+        className="subtitle-panel-divider"
+        aria-hidden="true"
       />
+
+      <section className="subtitle-inspector-disclosure">
+        <button
+          type="button"
+          className="subtitle-inspector-disclosure-button"
+          aria-expanded={isInspectorExpanded}
+          onClick={() =>
+            setIsInspectorExpanded((current) => !current)
+          }
+        >
+          <svg
+            className="subtitle-inspector-disclosure-chevron"
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+          >
+            <path d="M4 2.5 8 6 4 9.5" />
+          </svg>
+
+          <span>Inspector</span>
+
+          {selectedSubtitleCount > 0 && (
+            <span className="subtitle-inspector-disclosure-count">
+              {selectedSubtitleCount}
+            </span>
+          )}
+        </button>
+
+        {isInspectorExpanded && (
+          <SubtitleInspector
+            subtitle={selectedSubtitle}
+            selectedCount={selectedSubtitleCount}
+            onTextChange={onTextChange}
+            onStyleChange={onStyleChange}
+          />
+        )}
+      </section>
     </aside>
   );
 }

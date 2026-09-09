@@ -8,11 +8,16 @@ type SubtitleListProps = {
   subtitles: Subtitle[];
 
   selectedSubtitleId: string | null;
+  selectedSubtitleIds: string[];
   activeSubtitleId: string | null;
 
   search: string;
 
-  onSelect: (id: string, startTime: number) => void;
+  onSelect: (
+    id: string,
+    startTime: number,
+    mode?: "single" | "toggle" | "range",
+  ) => void;
 
   onTextChange: (id: string, text: string) => void;
 
@@ -22,6 +27,7 @@ type SubtitleListProps = {
 function SubtitleList({
   subtitles,
   selectedSubtitleId,
+  selectedSubtitleIds,
   activeSubtitleId,
   search,
   onSelect,
@@ -55,9 +61,12 @@ function SubtitleList({
         </p>
       ) : (
         subtitles.map((subtitle) => {
-          const isSelected = selectedSubtitleId === subtitle.id;
-
-          const isActive = activeSubtitleId === subtitle.id;
+          const isSelected =
+            selectedSubtitleIds.includes(subtitle.id);
+          const isPrimary =
+            selectedSubtitleId === subtitle.id;
+          const isActive =
+            activeSubtitleId === subtitle.id;
 
           return (
             <div
@@ -66,11 +75,25 @@ function SubtitleList({
               className={[
                 "subtitle-row",
                 isSelected ? "selected" : "",
+                isPrimary ? "primary-selected" : "",
                 isActive ? "active" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={() => onSelect(subtitle.id, subtitle.startTime)}
+              onClick={(event) => {
+                const mode =
+                  event.shiftKey
+                    ? "range"
+                    : event.metaKey || event.ctrlKey
+                      ? "toggle"
+                      : "single";
+
+                onSelect(
+                  subtitle.id,
+                  subtitle.startTime,
+                  mode,
+                );
+              }}
             >
               <span className="subtitle-row-time">
                 {formatSubtitleTime(subtitle.startTime)}
@@ -80,7 +103,13 @@ function SubtitleList({
                 className="subtitle-row-text"
                 value={subtitle.text}
                 onClick={(event) => event.stopPropagation()}
-                onFocus={() => onSelect(subtitle.id, subtitle.startTime)}
+                onFocus={() =>
+                  onSelect(
+                    subtitle.id,
+                    subtitle.startTime,
+                    "single",
+                  )
+                }
                 onChange={(event) =>
                   onTextChange(subtitle.id, event.target.value)
                 }

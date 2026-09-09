@@ -158,6 +158,7 @@ function App() {
 
     setSubtitleSearch,
     selectSubtitle,
+    selectAllSubtitles,
 
     updateSubtitleText,
     updateSubtitlePosition,
@@ -799,9 +800,16 @@ function App() {
   // Subtitle selection
   // ==========================================================================
 
-  const handleSubtitleSelect = (id: string, startTime: number) => {
-    selectSubtitle(id);
-    requestSeek(startTime);
+  const handleSubtitleSelect = (
+    id: string,
+    startTime: number,
+    mode: "single" | "toggle" | "range" = "single",
+  ) => {
+    selectSubtitle(id, mode);
+
+    if (mode === "single") {
+      requestSeek(startTime);
+    }
   };
 
   // ==========================================================================
@@ -1018,6 +1026,16 @@ function App() {
         return;
       }
 
+      if (key === "a" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
+        event.preventDefault();
+        selectAllSubtitles();
+        return;
+      }
+
       if (key === "b" && !event.shiftKey) {
         if (isEditingText) {
           return;
@@ -1047,6 +1065,7 @@ function App() {
     isExporting,
     undo,
     redo,
+    selectAllSubtitles,
     currentTime,
     selectedSubtitleId,
     selectedSubtitleIds,
@@ -1054,6 +1073,11 @@ function App() {
   ]);
 
   useAppMenuCommands(handleAppMenuCommand);
+
+  const selectedSubtitle =
+    subtitles.find(
+      (subtitle) => subtitle.id === selectedSubtitleId,
+    ) ?? null;
 
   // ==========================================================================
   // Home UI
@@ -1139,12 +1163,16 @@ function App() {
 
         <SubtitlePanel
           subtitles={filteredSubtitles}
+          selectedSubtitle={selectedSubtitle}
           selectedSubtitleId={selectedSubtitleId}
+          selectedSubtitleIds={selectedSubtitleIds}
+          selectedSubtitleCount={selectedSubtitleIds.length}
           activeSubtitleId={activeSubtitleId}
           search={subtitleSearch}
           onSearchChange={setSubtitleSearch}
           onSelect={handleSubtitleSelect}
           onTextChange={updateSubtitleText}
+          onStyleChange={updateSubtitleStyleWithSelection}
           onAdd={() => addSubtitleWithHistory(currentTime)}
           onDelete={deleteSubtitleWithHistory}
         />

@@ -1,85 +1,164 @@
 .subtitle-list {
-  flex:1 1 0;
-  min-height:0;
-  overflow-x:hidden;
-  overflow-y:auto;
-  scroll-behavior:smooth;
-  padding:6px 6px 8px
+  flex: 1 1 0;
+  min-height: 0;
+
+  overflow-x: hidden;
+  overflow-y: auto;
+
+  scroll-behavior: smooth;
+
+  padding: 2px 6px 8px;
 }
 
 .subtitle-row {
-  display:grid;
-  grid-template-columns:56px minmax(0,1fr) 28px;
-  align-items:center;
-  min-height:38px;
-  padding:3px 7px;
-  border-radius:8px;
-  cursor:pointer
+  display: grid;
+  grid-template-columns:
+    52px
+    minmax(0, 1fr)
+    26px;
+
+  align-items: center;
+
+  min-height: 34px;
+
+  padding: 2px 6px;
+
+  border-radius: 7px;
+
+  cursor: pointer;
+
+  transition:
+    background 0.12s ease;
 }
 
-.subtitle-row+.subtitle-row {
-  margin-top:1px
+.subtitle-row + .subtitle-row {
+  margin-top: 1px;
 }
 
 .subtitle-row:hover {
-  background:var(--control-fill-hover)
+  background: var(--control-fill-hover);
 }
 
 .subtitle-row.active {
-  background:rgba(255,255,255,.055)
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .subtitle-row.selected {
-  background:rgba(10,132,255,.18)
+  background: rgba(10, 132, 255, 0.17);
 }
 
 .subtitle-row.active.selected {
-  background:rgba(10,132,255,.24)
+  background: rgba(10, 132, 255, 0.23);
 }
 
 .subtitle-row-time {
-  color:var(--tertiary-label);
-  font-family:"SFMono-Regular",ui-monospace,Menlo,Monaco,Consolas,monospace;
-  font-size:11px;
-  font-variant-numeric:tabular-nums
+  color: var(--tertiary-label);
+
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .subtitle-row-text {
-  width:100%;
-  padding:6px 4px;
-  border:none;
-  background:transparent;
-  color:var(--label);
-  font-size:13px;
-  outline:none
+  width: 100%;
+
+  padding: 5px 3px;
+
+  border: none;
+
+  background: transparent;
+  color: var(--secondary-label);
+
+  font-size: 11px;
+
+  outline: none;
+
+  text-overflow: ellipsis;
+}
+
+.subtitle-row.selected .subtitle-row-text {
+  color: var(--label);
+}
+
+.subtitle-row-text:focus {
+  color: var(--label);
 }
 
 .subtitle-delete {
-  width:26px;
-  height:26px;
-  display:grid;
-  place-items:center;
-  padding:0;
-  border:none;
-  border-radius:7px;
-  background:transparent;
-  color:var(--tertiary-label);
-  font-size:17px;
-  opacity:0
+  width: 24px;
+  height: 24px;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+
+  border: none;
+  border-radius: 6px;
+
+  background: transparent;
+  color: var(--tertiary-label);
+
+  font-size: 15px;
+
+  opacity: 0;
+
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .subtitle-row:hover .subtitle-delete,
 .subtitle-row.selected .subtitle-delete {
-  opacity:1
+  opacity: 1;
 }
 
 .subtitle-delete:hover {
-  background:rgba(255,69,58,.12);
-  color:#ff8a82
+  background: rgba(255, 69, 58, 0.12);
+  color: #ff8a82;
 }
 
 .subtitle-empty {
-  padding:18px 12px;
-  color:var(--tertiary-label);
-  font-size:12px
+  padding: 18px 10px;
+
+  color: var(--tertiary-label);
+
+  font-size: 10px;
+
+  text-align: center;
+}
+
+/* ==========================================================================
+   Multi-selection reflection
+   ========================================================================== */
+
+.subtitle-row.selected {
+  background: rgba(10, 132, 255, 0.15);
+}
+
+.subtitle-row.selected:hover {
+  background: rgba(10, 132, 255, 0.2);
+}
+
+.subtitle-row.primary-selected {
+  background: rgba(10, 132, 255, 0.24);
+  box-shadow:
+    inset 2px 0 0 rgba(10, 132, 255, 0.95);
+}
+
+.subtitle-row.primary-selected:hover {
+  background: rgba(10, 132, 255, 0.28);
+}
+
+.subtitle-row.selected .subtitle-row-time,
+.subtitle-row.selected .subtitle-row-text {
+  color: var(--label);
 }

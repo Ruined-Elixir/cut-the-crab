@@ -104,6 +104,16 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     selectionAnchorIdRef.current = id;
   };
 
+  const selectAllSubtitles = () => {
+    const orderedIds = sortSubtitles(subtitles).map(
+      (subtitle) => subtitle.id,
+    );
+
+    setSelectedSubtitleIds(orderedIds);
+    setSelectedSubtitleId(orderedIds[0] ?? null);
+    selectionAnchorIdRef.current = orderedIds[0] ?? null;
+  };
+
   const clearSubtitleSelection = () => {
     setSelectedSubtitleIds([]);
     setSelectedSubtitleId(null);
@@ -388,6 +398,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     setSubtitleSearch,
     selectSubtitle,
+    selectAllSubtitles,
     clearSubtitleSelection,
 
     updateSubtitleText,
