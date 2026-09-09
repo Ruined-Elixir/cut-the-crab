@@ -450,15 +450,72 @@ function App() {
     }
   };
 
+  const handleRelinkRecentProject = async (project: RecentProject) => {
+    const replacementPath = await chooseVideoPath();
+
+    if (!replacementPath) {
+      return;
+    }
+
+    try {
+      setHomeError("");
+
+      const oldProject = await loadMatchingProjectFile(project.videoPath);
+
+      if (oldProject) {
+        await saveProjectFile(
+          replacementPath,
+          oldProject.subtitles,
+          oldProject.markers,
+          {
+            title: oldProject.title || project.title,
+            languages:
+              oldProject.languages.length > 0
+                ? oldProject.languages
+                : project.languages,
+          },
+        );
+      }
+
+      await removeRecentProject(project.videoPath);
+
+      await upsertRecentProject({
+        videoPath: replacementPath,
+        title: oldProject?.title || project.title,
+        languages:
+          oldProject && oldProject.languages.length > 0
+            ? oldProject.languages
+            : project.languages,
+        lastOpenedAt: new Date().toISOString(),
+        duration: project.duration,
+      });
+
+      await refreshRecentProjects();
+
+      await handleVideoPathChange(replacementPath, {
+        title: oldProject?.title || project.title,
+        languages:
+          oldProject && oldProject.languages.length > 0
+            ? oldProject.languages
+            : project.languages,
+      });
+    } catch (error) {
+      console.error("Failed to relink project media:", error);
+
+      setHomeError(
+        error instanceof Error
+          ? error.message
+          : "Failed to relink the selected project.",
+      );
+    }
+  };
+
   const handleOpenRecentProject = async (project: RecentProject) => {
     try {
       const exists = await videoPathExists(project.videoPath);
 
       if (!exists) {
-        setHomeError(
-          `The video for "${project.title}" could not be found. ` +
-            "The file may have been moved or deleted.",
-        );
+        await handleRelinkRecentProject(project);
         return;
       }
 
@@ -699,6 +756,7 @@ function App() {
         onCancelNewProject={() => setPendingNewProjectPath(null)}
         onCreateProject={handleCreateProject}
         onOpenProject={handleOpenRecentProject}
+        onRelinkProject={handleRelinkRecentProject}
         onRemoveProject={handleRemoveRecentProject}
       />
     );

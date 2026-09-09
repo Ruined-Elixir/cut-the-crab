@@ -7,6 +7,7 @@ import {
 } from "../../types/project";
 
 import { getProjectThumbnailUrl } from "../../services/projectThumbnails";
+import { videoPathExists } from "../../services/projectRegistry";
 
 import "./HomeScreen.css";
 
@@ -20,6 +21,7 @@ type HomeScreenProps = {
   onCreateProject: (language: ProjectLanguage) => void | Promise<void>;
 
   onOpenProject: (project: RecentProject) => void | Promise<void>;
+  onRelinkProject: (project: RecentProject) => void | Promise<void>;
   onRemoveProject: (project: RecentProject) => void | Promise<void>;
 };
 
@@ -79,12 +81,19 @@ function HomeScreen({
   onCancelNewProject,
   onCreateProject,
   onOpenProject,
+  onRelinkProject,
   onRemoveProject,
 }: HomeScreenProps) {
   const [selectedLanguage, setSelectedLanguage] =
     useState<ProjectLanguage>("english");
 
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
+    {},
+  );
+
+  const [projectAvailability, setProjectAvailability] = useState<
+    Record<string, boolean>
+  >({});
 
   useEffect(() => {
     if (pendingVideoPath) {
@@ -95,13 +104,28 @@ function HomeScreen({
   useEffect(() => {
     let cancelled = false;
 
-    const loadThumbnails = async () => {
+    const inspectProjects = async () => {
       for (const project of projects) {
         if (cancelled) {
           return;
         }
 
         try {
+          const exists = await videoPathExists(project.videoPath);
+
+          if (cancelled) {
+            return;
+          }
+
+          setProjectAvailability((current) => ({
+            ...current,
+            [project.videoPath]: exists,
+          }));
+
+          if (!exists) {
+            continue;
+          }
+
           const thumbnailUrl = await getProjectThumbnailUrl(
             project.videoPath,
             project.duration,
@@ -115,14 +139,14 @@ function HomeScreen({
           }
         } catch (error) {
           console.warn(
-            `Unable to create thumbnail for ${project.videoPath}:`,
+            `Unable to inspect recent project ${project.videoPath}:`,
             error,
           );
         }
       }
     };
 
-    void loadThumbnails();
+    void inspectProjects();
 
     return () => {
       cancelled = true;
@@ -172,11 +196,18 @@ function HomeScreen({
             <div className="project-grid">
               {projects.map((project) => {
                 const duration = formatDuration(project.duration);
+                const isMissing =
+                  projectAvailability[project.videoPath] === false;
 
                 return (
                   <article
                     key={project.videoPath}
-                    className="project-card"
+                    className={[
+                      "project-card",
+                      isMissing ? "missing-media" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     onDoubleClick={() => void onOpenProject(project)}
                   >
                     <button
@@ -208,6 +239,22 @@ function HomeScreen({
                           className="project-thumbnail-shade"
                           aria-hidden="true"
                         />
+
+                        {isMissing && (
+                          <div className="project-missing-media-overlay">
+                            <span
+                              className="project-missing-media-icon"
+                              aria-hidden="true"
+                            >
+                              !
+                            </span>
+
+                            <div>
+                              <strong>Missing Media</strong>
+                              <span>Click to relink</span>
+                            </div>
+                          </div>
+                        )}
 
                         {duration && (
                           <span className="project-duration">{duration}</span>
@@ -241,6 +288,20 @@ function HomeScreen({
                         </time>
                       </div>
                     </button>
+
+                    {isMissing && (
+                      <button
+                        type="button"
+                        className="project-relink-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onRelinkProject(project);
+                        }}
+                        title="Relink Media"
+                      >
+                        Relink
+                      </button>
+                    )}
 
                     <button
                       type="button"

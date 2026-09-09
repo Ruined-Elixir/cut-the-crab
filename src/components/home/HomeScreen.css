@@ -499,3 +499,121 @@
 .project-thumbnail .project-duration {
   z-index: 2;
 }
+
+/* ==========================================================================
+   Missing media / relink
+   ========================================================================== */
+
+.project-card.missing-media {
+  background: rgba(255, 69, 58, 0.035);
+}
+
+.project-card.missing-media .project-thumbnail > img {
+  filter: grayscale(0.72) brightness(0.55);
+}
+
+.project-card.missing-media .project-thumbnail-placeholder {
+  filter: brightness(0.72);
+}
+
+.project-missing-media-overlay {
+  position: absolute;
+  inset: 0;
+
+  z-index: 1;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  padding: 18px;
+
+  background: rgba(12, 12, 14, 0.38);
+  backdrop-filter: blur(3px);
+
+  color: var(--label);
+
+  pointer-events: none;
+}
+
+.project-missing-media-icon {
+  width: 28px;
+  height: 28px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 9px;
+
+  background: rgba(255, 69, 58, 0.18);
+  color: #ff8a82;
+
+  box-shadow: inset 0 0 0 1px rgba(255, 69, 58, 0.28);
+
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.project-missing-media-overlay > div {
+  display: flex;
+  flex-direction: column;
+
+  min-width: 0;
+}
+
+.project-missing-media-overlay strong {
+  color: var(--label);
+
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.project-missing-media-overlay span:not(.project-missing-media-icon) {
+  margin-top: 2px;
+
+  color: var(--secondary-label);
+
+  font-size: 10px;
+}
+
+.project-relink-button {
+  position: absolute;
+  right: 42px;
+  top: 9px;
+
+  z-index: 3;
+
+  min-height: 28px;
+
+  padding: 0 9px;
+
+  border: none;
+  border-radius: 9px;
+
+  background: rgba(28, 28, 30, 0.72);
+  backdrop-filter: blur(12px);
+
+  color: rgba(255, 255, 255, 0.86);
+
+  font-size: 10px;
+  font-weight: 600;
+
+  opacity: 0;
+
+  transition:
+    opacity 0.14s ease,
+    background 0.14s ease;
+}
+
+.project-card.missing-media .project-relink-button,
+.project-card:hover .project-relink-button {
+  opacity: 1;
+}
+
+.project-relink-button:hover {
+  background: var(--system-blue);
+  color: white;
+}
