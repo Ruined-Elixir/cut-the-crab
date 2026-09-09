@@ -1,210 +1,124 @@
-/* ==========================================================================
-   Program-monitor playback controls
-   ========================================================================== */
-
 .video-monitor-controls {
-  flex-shrink: 0;
-
-  display: flex;
-  flex-direction: column;
-
-  border-top: 1px solid #303030;
-
-  background: #1b1b1b;
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  background:rgba(28,28,30,.94);
+  backdrop-filter:blur(18px) saturate(130%);
+  box-shadow:inset 0 1px var(--separator-soft)
 }
 
 .video-monitor-scrubber-wrap {
-  height: 22px;
-
-  display: flex;
-  align-items: center;
-
-  padding: 0 12px;
+  height:20px;
+  display:flex;
+  align-items:center;
+  padding:0 12px
 }
 
 .video-monitor-scrubber {
-  --video-progress: 0%;
-
-  width: 100%;
-  height: 14px;
-
-  margin: 0;
-
-  appearance: none;
-  -webkit-appearance: none;
-
-  background: transparent;
-
-  cursor: pointer;
+  --video-progress:0%;
+  width:100%;
+  height:14px;
+  margin:0;
+  appearance:none;
+  -webkit-appearance:none;
+  background:transparent;
+  cursor:pointer
 }
 
 .video-monitor-scrubber::-webkit-slider-runnable-track {
-  height: 3px;
-
-  border-radius: 999px;
-
-  background: linear-gradient(
-    to right,
-    #5da9ff 0,
-    #5da9ff var(--video-progress),
-    #4b4b4b var(--video-progress),
-    #4b4b4b 100%
-  );
+  height:3px;
+  border-radius:999px;
+  background:linear-gradient(to right,var(--system-blue) 0,var(--system-blue) var(--video-progress),rgba(255,255,255,.18) var(--video-progress),rgba(255,255,255,.18) 100%)
 }
 
 .video-monitor-scrubber::-webkit-slider-thumb {
-  width: 10px;
-  height: 10px;
-
-  margin-top: -3.5px;
-
-  border: none;
-  border-radius: 50%;
-
-  -webkit-appearance: none;
-  appearance: none;
-
-  background: #d8d8d8;
-
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-}
-
-.video-monitor-scrubber::-moz-range-track {
-  height: 3px;
-
-  border-radius: 999px;
-
-  background: #4b4b4b;
-}
-
-.video-monitor-scrubber::-moz-range-progress {
-  height: 3px;
-
-  border-radius: 999px;
-
-  background: #5da9ff;
-}
-
-.video-monitor-scrubber::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
-
-  border: none;
-  border-radius: 50%;
-
-  background: #d8d8d8;
+  width:9px;
+  height:9px;
+  margin-top:-3px;
+  border:none;
+  border-radius:50%;
+  -webkit-appearance:none;
+  background:rgba(255,255,255,.92)
 }
 
 .video-monitor-control-row {
-  min-height: 45px;
-
-  display: grid;
-  grid-template-columns: minmax(122px, 1fr) auto minmax(122px, 1fr);
-  align-items: center;
-  gap: 14px;
-
-  padding: 3px 12px 7px;
+  min-height:43px;
+  display:grid;
+  grid-template-columns:minmax(122px,1fr) auto minmax(122px,1fr);
+  align-items:center;
+  gap:12px;
+  padding:2px 12px 6px
 }
 
 .video-monitor-time {
-  color: #bdbdbd;
-
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-
-  white-space: nowrap;
-  user-select: none;
+  color:var(--secondary-label);
+  font-family:"SFMono-Regular",ui-monospace,Menlo,Monaco,Consolas,monospace;
+  font-size:11px;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap
 }
 
 .video-monitor-time-current {
-  justify-self: start;
-
-  color: #e7e7e7;
+  justify-self:start;
+  color:var(--label)
 }
 
 .video-monitor-time-duration {
-  justify-self: end;
+  justify-self:end
 }
 
 .video-monitor-transport {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:2px
 }
 
 .video-monitor-button {
-  position: relative;
-
-  width: 34px;
-  height: 30px;
-
-  display: grid;
-  place-items: center;
-
-  padding: 0;
-
-  border: none;
-  border-radius: 4px;
-
-  background: transparent;
-  color: #c8c8c8;
-
-  cursor: pointer;
-
-  transition:
-    background 0.1s ease,
-    color 0.1s ease;
+  position:relative;
+  width:34px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:none;
+  border-radius:8px;
+  background:transparent;
+  color:var(--secondary-label)
 }
 
 .video-monitor-button:hover {
-  background: #343434;
-  color: #fff;
+  background:var(--control-fill-hover);
+  color:var(--label)
 }
 
 .video-monitor-button:active {
-  background: #414141;
+  background:var(--control-fill-active);
+  transform:scale(.98)
 }
 
 .video-monitor-button svg {
-  width: 18px;
-  height: 18px;
-
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  width:18px;
+  height:18px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round
 }
 
 .video-monitor-play-button {
-  color: #f0f0f0;
+  color:var(--label)
 }
 
 .video-monitor-play-button svg {
-  width: 20px;
-  height: 20px;
+  width:20px;
+  height:20px
 }
 
 .video-monitor-skip-button span {
-  position: absolute;
-
-  font-size: 7px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-@media (max-width: 720px) {
-  .video-monitor-control-row {
-    grid-template-columns: 1fr auto 1fr;
-    gap: 6px;
-
-    padding-inline: 8px;
-  }
-
-  .video-monitor-time {
-    font-size: 10px;
-  }
+  position:absolute;
+  font-size:7px;
+  font-weight:700;
+  line-height:1
 }

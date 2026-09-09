@@ -1,99 +1,81 @@
 .export-progress-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 5000;
-
-  display: grid;
-  place-items: center;
-
-  padding: 24px;
-
-  background: rgba(8, 8, 8, 0.66);
-  backdrop-filter: grayscale(0.85) brightness(0.58);
-
-  cursor: wait;
+  position:fixed;
+  inset:0;
+  z-index:5000;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(0,0,0,.34);
+  backdrop-filter:blur(24px) saturate(140%);
+  cursor:wait
 }
 
 .export-progress-modal {
-  width: min(420px, calc(100vw - 48px));
-
-  padding: 28px;
-
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-
-  background: #1b1b1b;
-  color: #f4f4f4;
-
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
-
-  text-align: center;
+  width:min(420px,calc(100vw - 48px));
+  padding:28px;
+  border:none;
+  border-radius:20px;
+  background:rgba(38,38,40,.9);
+  backdrop-filter:blur(28px) saturate(160%);
+  color:var(--label);
+  box-shadow:var(--shadow-floating);
+  text-align:center
 }
 
 .export-progress-modal h2 {
-  margin: 14px 0 8px;
-
-  font-size: 20px;
+  margin:14px 0 8px;
+  color:var(--label);
+  font-size:18px;
+  font-weight:650
 }
 
 .export-progress-modal p {
-  margin: 0;
-
-  color: #b8b8b8;
+  margin:0;
+  color:var(--secondary-label);
+  font-size:12px;
+  line-height:1.5
 }
 
 .export-progress-spinner {
-  width: 32px;
-  height: 32px;
-
-  margin: 0 auto;
-
-  border: 3px solid rgba(255, 255, 255, 0.18);
-  border-top-color: rgba(255, 255, 255, 0.9);
-  border-radius: 50%;
-
-  animation: export-progress-spin 0.8s linear infinite;
+  width:30px;
+  height:30px;
+  margin:0 auto;
+  border:3px solid rgba(255,255,255,.14);
+  border-top-color:rgba(255,255,255,.92);
+  border-radius:50%;
+  animation:export-progress-spin .8s linear infinite
 }
 
 .export-progress-track {
-  height: 10px;
-
-  margin-top: 22px;
-
-  overflow: hidden;
-
-  border-radius: 999px;
-
-  background: #333;
+  height:8px;
+  margin-top:22px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(255,255,255,.12)
 }
 
 .export-progress-fill {
-  height: 100%;
-
-  border-radius: inherit;
-
-  background: #f0f0f0;
-
-  transition: width 0.16s linear;
+  height:100%;
+  border-radius:inherit;
+  background:var(--system-blue);
+  transition:width .16s linear
 }
 
 .export-progress-percent {
-  margin-top: 10px;
-
-  color: #ddd;
-
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  margin-top:10px;
+  color:var(--secondary-label);
+  font-size:12px
 }
 
 .export-progress-hint {
-  margin-top: 16px !important;
-
-  font-size: 12px;
+  margin-top:16px!important;
+  color:var(--tertiary-label)!important;
+  font-size:11px!important
 }
 
 @keyframes export-progress-spin {
   to {
-    transform: rotate(360deg);
+    transform:rotate(360deg)
   }
+
 }

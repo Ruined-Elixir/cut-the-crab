@@ -1,457 +1,432 @@
-/* ==========================================================================
-   Home / Recent Projects
-   ========================================================================== */
-
 .home-screen {
-  width: 100%;
-  height: 100vh;
-  overflow: auto;
-  background:
-    radial-gradient(circle at 20% -10%, rgba(255, 255, 255, 0.055), transparent 34%),
-    #151515;
-  color: #f4f4f4;
+  width:100%;
+  height:100vh;
+  overflow:auto;
+  background:radial-gradient(circle at top,rgba(255,255,255,.035),transparent 28%),var(--system-background);
+  color:var(--label)
 }
 
 .home-shell {
-  width: min(1180px, calc(100% - 64px));
-  margin: 0 auto;
-  padding: 64px 0 80px;
+  width:min(1120px,calc(100% - 64px));
+  margin:0 auto;
+  padding:56px 0 72px
 }
 
 .home-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px;
-  margin-bottom: 44px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:28px;
+  margin-bottom:34px
 }
 
 .home-eyebrow {
-  margin-bottom: 9px;
-  color: #797979;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  display:none
 }
 
 .home-header h1 {
-  margin: 0;
-  font-size: clamp(32px, 4vw, 52px);
-  font-weight: 650;
-  letter-spacing: -0.04em;
+  margin:0;
+  color:var(--label);
+  font-size:34px;
+  font-weight:650;
+  letter-spacing:-.035em
 }
 
 .home-header p {
-  margin: 12px 0 0;
-  color: #999;
-  font-size: 15px;
+  margin:8px 0 0;
+  color:var(--secondary-label);
+  font-size:14px
 }
 
 .home-new-project-button {
-  flex-shrink: 0;
-  min-height: 42px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  border: 1px solid #626262;
-  border-radius: 8px;
-  background: #eeeeee;
-  color: #151515;
-  font-size: 13px;
-  font-weight: 650;
+  min-height:38px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:0 14px;
+  border:none;
+  border-radius:10px;
+  background:var(--system-blue);
+  color:white;
+  font-size:13px;
+  font-weight:600;
+  box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 1px 2px rgba(0,0,0,.3)
 }
 
 .home-new-project-button:hover {
-  background: #fff;
-}
-
-.home-new-project-button span {
-  font-size: 19px;
-  font-weight: 400;
-  line-height: 1;
+  filter:brightness(1.06)
 }
 
 .home-error {
-  margin: -18px 0 28px;
-  padding: 12px 14px;
-  border: 1px solid rgba(219, 111, 111, 0.38);
-  border-radius: 8px;
-  background: rgba(128, 42, 42, 0.18);
-  color: #f1b2b2;
-  font-size: 13px;
+  margin:-10px 0 24px;
+  padding:11px 13px;
+  border-radius:10px;
+  background:rgba(255,69,58,.12);
+  color:#ffb4ad;
+  box-shadow:inset 0 0 0 1px rgba(255,69,58,.22);
+  font-size:12px
 }
 
 .home-section-heading {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 16px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-bottom:14px
 }
 
 .home-section-heading h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  margin:0;
+  color:var(--secondary-label);
+  font-size:13px;
+  font-weight:600
 }
 
-.home-section-heading > span {
-  min-width: 22px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: #292929;
-  color: #888;
-  text-align: center;
-  font-size: 11px;
+.home-section-heading>span {
+  min-width:20px;
+  padding:2px 6px;
+  border-radius:8px;
+  background:var(--control-fill);
+  color:var(--tertiary-label);
+  font-size:10px;
+  text-align:center
 }
 
 .project-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+  gap:16px
 }
 
 .project-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid #303030;
-  border-radius: 10px;
-  background: #1c1c1c;
-  transition:
-    border-color 0.15s ease,
-    transform 0.15s ease,
-    background 0.15s ease;
+  position:relative;
+  overflow:hidden;
+  border:none;
+  border-radius:16px;
+  background:rgba(255,255,255,.045);
+  box-shadow:inset 0 1px rgba(255,255,255,.035),0 8px 22px rgba(0,0,0,.14);
+  transition:.16s ease
 }
 
 .project-card:hover {
-  border-color: #484848;
-  background: #202020;
-  transform: translateY(-1px);
+  transform:translateY(-2px);
+  background:rgba(255,255,255,.065);
+  box-shadow:inset 0 1px rgba(255,255,255,.04),0 12px 28px rgba(0,0,0,.22)
 }
 
 .project-card-main {
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
+  width:100%;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  text-align:left
 }
 
 .project-thumbnail-placeholder {
-  position: relative;
-  height: 128px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-bottom: 1px solid #303030;
-  background:
-    linear-gradient(135deg, #282828, #1f1f1f 55%, #242424);
+  position:relative;
+  height:138px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  background:linear-gradient(160deg,#252527,#1b1b1d 60%)
 }
 
 .project-thumbnail-placeholder svg {
-  width: 40px;
-  height: 40px;
-  fill: none;
-  stroke: #666;
-  stroke-width: 1.25;
+  width:38px;
+  height:38px;
+  fill:none;
+  stroke:rgba(255,255,255,.32);
+  stroke-width:1.25
 }
 
 .project-duration {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 3px 5px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.75);
-  color: #d8d8d8;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
+  position:absolute;
+  right:9px;
+  bottom:9px;
+  padding:3px 6px;
+  border-radius:6px;
+  background:rgba(0,0,0,.62);
+  backdrop-filter:blur(8px);
+  color:rgba(255,255,255,.82);
+  font-size:10px
 }
 
 .project-card-content {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 13px 14px 15px;
+  display:flex;
+  flex-direction:column;
+  padding:14px 14px 15px
 }
 
 .project-card-content strong {
-  overflow: hidden;
-  color: #ededed;
-  font-size: 14px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--label);
+  font-size:14px;
+  font-weight:600
 }
 
 .project-video-name {
-  margin-top: 4px;
-  overflow: hidden;
-  color: #777;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top:4px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--tertiary-label);
+  font-size:11px
 }
 
 .project-language-badges {
-  min-height: 21px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 12px;
+  min-height:20px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:11px
 }
 
 .project-language-badges span {
-  padding: 3px 6px;
-  border: 1px solid #353535;
-  border-radius: 5px;
-  background: #252525;
-  color: #aaa;
-  font-size: 10px;
+  padding:3px 6px;
+  border:none;
+  border-radius:7px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:10px
 }
 
 .project-card time {
-  margin-top: 10px;
-  color: #696969;
-  font-size: 10px;
+  margin-top:9px;
+  color:var(--tertiary-label);
+  font-size:10px
 }
 
 .project-remove-button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  padding: 0 0 2px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  background: rgba(15, 15, 15, 0.75);
-  color: #aaa;
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    background 0.15s ease;
+  position:absolute;
+  top:9px;
+  right:9px;
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:none;
+  border-radius:9px;
+  background:rgba(0,0,0,.38);
+  backdrop-filter:blur(12px);
+  color:rgba(255,255,255,.72);
+  font-size:17px;
+  opacity:0
 }
 
 .project-card:hover .project-remove-button {
-  opacity: 1;
+  opacity:1
 }
 
 .project-remove-button:hover {
-  background: #3a3a3a;
-  color: #fff;
+  background:rgba(255,255,255,.14);
+  color:white
 }
 
 .home-empty-state {
-  min-height: 310px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  border: 1px dashed #353535;
-  border-radius: 12px;
-  color: #777;
-  text-align: center;
+  min-height:300px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:44px;
+  border:none;
+  border-radius:16px;
+  background:rgba(255,255,255,.028);
+  color:var(--secondary-label);
+  text-align:center
 }
 
 .home-empty-icon {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  margin-bottom: 14px;
-  border-radius: 50%;
-  background: #242424;
-  color: #777;
-  font-size: 15px;
-  padding-left: 2px;
+  width:46px;
+  height:46px;
+  display:grid;
+  place-items:center;
+  margin-bottom:14px;
+  border-radius:14px;
+  background:var(--control-fill);
+  color:var(--secondary-label)
 }
 
 .home-empty-state h3 {
-  margin: 0;
-  color: #c6c6c6;
-  font-size: 15px;
+  margin:0;
+  color:var(--label);
+  font-size:14px
 }
 
 .home-empty-state p {
-  margin: 8px 0 18px;
-  font-size: 12px;
+  margin:7px 0 16px;
+  font-size:12px
 }
 
 .home-empty-state button {
-  padding: 8px 13px;
-  border: 1px solid #444;
-  border-radius: 7px;
-  background: #262626;
-  color: #ddd;
-  font-size: 12px;
+  min-height:34px;
+  padding:0 12px;
+  border:none;
+  border-radius:9px;
+  background:var(--control-fill);
+  color:var(--label);
+  font-size:12px;
+  font-weight:600
 }
 
-/* ==========================================================================
-   New Project dialog
-   ========================================================================== */
-
 .new-project-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 6000;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(8px);
+  position:fixed;
+  inset:0;
+  z-index:6000;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(0,0,0,.34);
+  backdrop-filter:blur(24px) saturate(140%)
 }
 
 .new-project-dialog {
-  width: min(520px, 100%);
-  padding: 22px;
-  border: 1px solid #3a3a3a;
-  border-radius: 12px;
-  background: #1e1e1e;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  width:min(500px,100%);
+  padding:24px;
+  border:none;
+  border-radius:20px;
+  background:rgba(38,38,40,.9);
+  backdrop-filter:blur(28px) saturate(160%);
+  box-shadow:var(--shadow-floating)
+}
+
+.new-project-dialog::before {
+  content:"";
+  display:block;
+  width:42px;
+  height:5px;
+  margin:-8px auto 18px;
+  border-radius:999px;
+  background:rgba(255,255,255,.2)
 }
 
 .new-project-dialog-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:20px
 }
 
-.new-project-dialog-header span {
-  color: #737373;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
+.new-project-dialog-header>div>span {
+  display:none
 }
 
 .new-project-dialog h2 {
-  margin: 5px 0 0;
-  overflow: hidden;
-  color: #ededed;
-  font-size: 18px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--label);
+  font-size:20px;
+  font-weight:650
 }
 
 .new-project-close {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  padding: 0 0 2px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: #888;
-  font-size: 21px;
+  width:30px;
+  height:30px;
+  border:none;
+  border-radius:9px;
+  background:transparent;
+  color:var(--secondary-label);
+  font-size:20px
 }
 
 .new-project-close:hover {
-  background: #2a2a2a;
-  color: #ddd;
+  background:var(--control-fill-hover);
+  color:var(--label)
 }
 
 .new-project-help {
-  margin: 16px 0 18px;
-  color: #929292;
-  font-size: 12px;
-  line-height: 1.55;
+  margin:10px 0 18px;
+  color:var(--secondary-label);
+  font-size:12px;
+  line-height:1.55
 }
 
 .language-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px
 }
 
 .language-option {
-  min-height: 42px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 12px;
-  border: 1px solid #363636;
-  border-radius: 7px;
-  background: #181818;
-  color: #aaa;
-  text-align: left;
-  font-size: 12px;
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:0 12px;
+  border:none;
+  border-radius:10px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:12px
 }
 
 .language-option:hover {
-  border-color: #505050;
-  color: #ddd;
+  background:var(--control-fill-hover);
+  color:var(--label)
 }
 
 .language-option.selected {
-  border-color: #7c7c7c;
-  background: #262626;
-  color: #f2f2f2;
+  background:rgba(10,132,255,.18);
+  color:white;
+  box-shadow:inset 0 0 0 1px rgba(10,132,255,.55)
 }
 
 .language-radio {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  border: 1px solid #666;
-  border-radius: 50%;
+  width:14px;
+  height:14px;
+  border:1.5px solid rgba(255,255,255,.34);
+  border-radius:50%
 }
 
 .language-option.selected .language-radio {
-  border: 4px solid #ededed;
+  border:4px solid var(--system-blue);
+  background:white
 }
 
 .new-project-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 22px;
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:22px
 }
 
 .new-project-actions button {
-  min-height: 36px;
-  padding: 0 13px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 600;
+  min-height:36px;
+  padding:0 13px;
+  border:none;
+  border-radius:10px;
+  font-size:12px;
+  font-weight:600
 }
 
 .new-project-secondary {
-  border: 1px solid #3b3b3b;
-  background: #252525;
-  color: #bbb;
+  background:var(--control-fill);
+  color:var(--label)
 }
 
 .new-project-primary {
-  border: 1px solid #eee;
-  background: #eee;
-  color: #151515;
+  background:var(--system-blue);
+  color:white
 }
 
-.new-project-primary:hover {
-  background: #fff;
-}
-
-@media (max-width: 720px) {
+@media(max-width:720px) {
   .home-shell {
-    width: min(100% - 32px, 1180px);
-    padding-top: 36px;
+    width:min(100% - 32px,1120px);
+    padding-top:36px
   }
 
   .home-header {
-    align-items: flex-start;
-    flex-direction: column;
-    margin-bottom: 32px;
+    align-items:flex-start;
+    flex-direction:column
   }
 
   .language-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns:1fr
   }
+
 }

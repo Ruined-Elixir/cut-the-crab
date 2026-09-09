@@ -1,171 +1,113 @@
-/* ==========================================================================
-   Program monitor layout
-   ========================================================================== */
-
 .video-player {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  width:100%;
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px
 }
 
 .video-player-toolbar {
-  min-height: 30px;
-
-  display: flex;
-  align-items: center;
-  gap: 10px;
-
-  min-width: 0;
-
-  padding: 0 2px;
+  min-height:28px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding:0 2px
 }
 
 .video-player-toolbar::before {
-  content: "Program";
-
-  flex-shrink: 0;
-
-  color: #dedede;
-
-  font-size: 12px;
-  font-weight: 600;
+  content:"Program";
+  flex-shrink:0;
+  color:var(--secondary-label);
+  font-size:11px;
+  font-weight:600
 }
 
 .video-file-button {
-  flex-shrink: 0;
-  order: 3;
-
-  margin-left: auto;
-  padding: 5px 9px;
-
-  border: 1px solid #3b3b3b;
-  border-radius: 4px;
-
-  background: #252525;
-  color: #d8d8d8;
-
-  font-size: 11px;
-
-  cursor: pointer;
-
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease;
+  flex-shrink:0;
+  order:3;
+  margin-left:auto;
+  min-height:28px;
+  padding:0 9px;
+  border:none;
+  border-radius:8px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:11px;
+  font-weight:500
 }
 
 .video-file-button:hover {
-  background: #303030;
-  border-color: #515151;
+  background:var(--control-fill-hover);
+  color:var(--label)
 }
 
 .video-name {
-  min-width: 0;
-
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-
-  color: #8f8f8f;
-  font-size: 11px;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--tertiary-label);
+  font-size:11px
 }
 
-/* ==========================================================================
-   Monitor + transport surface
-   ========================================================================== */
-
 .video-monitor {
-  flex: 1;
-  min-height: 0;
-
-  display: flex;
-  flex-direction: column;
-
-  overflow: hidden;
-
-  border: 1px solid #303030;
-  border-radius: 4px;
-
-  background: #151515;
+  flex:1;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:none;
+  border-radius:12px;
+  background:#101010;
+  box-shadow:inset 0 1px rgba(255,255,255,.025),0 8px 22px rgba(0,0,0,.16)
 }
 
 .video-shell {
-  position: relative;
-
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-
-  overflow: hidden;
-
-  background: #000;
+  position:relative;
+  flex:1;
+  min-height:0;
+  width:100%;
+  overflow:hidden;
+  background:#000
 }
 
 .video-element {
-  display: block;
-
-  width: 100%;
-  height: 100%;
-
-  object-fit: contain;
-
-  background: #000;
-
-  cursor: pointer;
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  background:#000;
+  cursor:pointer
 }
 
-/* ==========================================================================
-   Empty state
-   ========================================================================== */
-
 .video-placeholder {
-  flex: 1;
-
-  width: 100%;
-  min-height: 240px;
-
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-
-  border: 1px dashed #404040;
-  border-radius: 4px;
-
-  background: #151515;
-  color: #999;
-
-  cursor: pointer;
-
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease;
+  flex:1;
+  width:100%;
+  min-height:240px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:11px;
+  border:none;
+  border-radius:12px;
+  background:rgba(255,255,255,.028);
+  color:var(--secondary-label)
 }
 
 .video-placeholder:hover {
-  border-color: #606060;
-  background: #191919;
-  color: #ddd;
+  background:rgba(255,255,255,.045);
+  color:var(--label)
 }
 
 .video-placeholder-icon {
-  width: 42px;
-  height: 42px;
-
-  display: grid;
-  place-items: center;
-
-  border-radius: 50%;
-
-  background: #292929;
-  color: #eee;
-
-  font-size: 16px;
-
-  padding-left: 2px;
+  width:42px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  border-radius:14px;
+  background:var(--control-fill);
+  color:var(--label)
 }
