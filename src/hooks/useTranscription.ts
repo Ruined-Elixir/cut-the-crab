@@ -119,12 +119,18 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
     };
   }, []);
 
+  const clearGenerationError = () => {
+    setGenerationError("");
+    setGenerationStatus("");
+  };
+
   return {
     isGenerating,
     generationStatus,
     generationPercent,
     modelDownloadPercent,
     generationError,
+    clearGenerationError,
 
     whisperModel,
     setWhisperModel,

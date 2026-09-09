@@ -7,426 +7,198 @@
   ],
   "subtitles": [
     {
-      "id": "f6dea0eb-f868-4bc4-b811-2fb467d1abc0",
+      "id": "ca329cd0-08d0-4311-a65d-8f17da135871",
       "startTime": 0,
       "endTime": 1.1400000000000001,
-      "text": "點啊",
-      "positionX": 48.55138356100299,
-      "positionY": 82.19420533932136,
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "點啊"
     },
     {
-      "id": "112fb929-fa87-4112-9b2a-b00a627fb2ea",
+      "id": "e020b35b-3cda-4890-ac9c-aa34e5ab47d5",
       "startTime": 2.93,
       "endTime": 7.09,
-      "text": "攞啦嘛 咁多位坐低我哋坐低傾",
-      "positionX": 51.32713089446108,
-      "positionY": 80.76035429141717,
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "攞啦嘛 咁多位坐低我哋坐低傾"
     },
     {
-      "id": "8f34bd8d-cf24-4b95-b526-5e4a791d9164",
+      "id": "0ab8c267-24f8-429d-9575-84115b65687e",
       "startTime": 9.03,
       "endTime": 11.6725,
-      "text": "我哋啱 啱喺度討論緊 我哋點",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "我哋啱 啱喺度討論緊 我哋點"
     },
     {
-      "id": "e685acc5-2c3c-49c7-8279-7e15666abc53",
+      "id": "d74a9b5f-e073-4d02-8073-66a0bae1c395",
       "startTime": 11.6725,
       "endTime": 13.56,
-      "text": "樣去面對我哋嘅未來",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "樣去面對我哋嘅未來"
     },
     {
-      "id": "ae1ef6fe-c526-4561-908e-12184410a373",
+      "id": "baeeb73d-98e3-41e9-a9f1-4ffeb1019230",
       "startTime": 15.15,
       "endTime": 19.23857142857143,
-      "text": "健康啦 社會啦 我哋每日都面",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "健康啦 社會啦 我哋每日都面"
     },
     {
-      "id": "80069b28-80b9-451f-a877-d723e0ca1dbd",
+      "id": "efd395a5-498a-43a3-9aed-fa02edd33ab9",
       "startTime": 19.23857142857143,
       "endTime": 21.51,
-      "text": "對緊好多挑戰嗯",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "對緊好多挑戰嗯"
     },
     {
-      "id": "7149a567-933a-402b-8487-8f2f9c35d036",
+      "id": "e15ec463-4455-4476-a864-2ed650a5d120",
       "startTime": 23,
       "endTime": 26.367924528301888,
-      "text": "我啱 啱就喺醫院出嚟 啱 啱",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "我啱 啱就喺醫院出嚟 啱 啱"
     },
     {
-      "id": "ebb7d813-92b8-4998-8417-fa7fad10225b",
+      "id": "952ddb57-e486-46da-8aa3-471aed1bf184",
       "startTime": 26.367924528301888,
       "endTime": 30.330188679245285,
-      "text": "喺度討論緊而家呢個社會啊面對",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "喺度討論緊而家呢個社會啊面對"
     },
     {
-      "id": "f13e34ab-0ef5-4a14-ade2-8b1ef28f66bd",
+      "id": "aaf1eef9-76dd-4b97-8418-93fb8956b2f6",
       "startTime": 30.330188679245285,
       "endTime": 34.09433962264151,
-      "text": "咁多問題 系大家其實需要啲乜",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "咁多問題 系大家其實需要啲乜"
     },
     {
-      "id": "f2cd3227-f482-4b13-8604-bb4f41c3985a",
+      "id": "be9eab95-7b0c-419d-b2f0-5b2ff122ca40",
       "startTime": 34.09433962264151,
       "endTime": 37.85849056603774,
-      "text": "嘢咧 即系我覺得我哋唔系啲價",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "嘢咧 即系我覺得我哋唔系啲價"
     },
     {
-      "id": "7fab0860-5031-4d51-92c6-486041b1199e",
+      "id": "b9c4a64b-f7a9-456a-b6dd-cd6722af8406",
       "startTime": 37.85849056603774,
       "endTime": 41.424528301886795,
-      "text": "值型嘅 channel 我覺",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "值型嘅 channel 我覺"
     },
     {
-      "id": "5f786c3e-6397-442a-81ff-f307bb460616",
+      "id": "7a6dc0a9-a98b-4368-a8ff-52aa8c53bd74",
       "startTime": 41.424528301886795,
       "endTime": 44.905660377358494,
-      "text": "得 我最直接可以俾到大家嘅",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "得 我最直接可以俾到大家嘅"
     },
     {
-      "id": "0d0693db-b287-451e-ac5a-c811b2b46c9c",
+      "id": "3204b79f-8cae-4ae2-8c36-20609eab1bec",
       "startTime": 44.905660377358494,
       "endTime": 48.66981132075472,
-      "text": "就係我哋要堅持堅持做落去 要",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "就係我哋要堅持堅持做落去 要"
     },
     {
-      "id": "a160714e-e35f-4bba-8dab-6ca514a6e85e",
+      "id": "8089f7f9-2e9a-4d32-8829-63d077d1f762",
       "startTime": 48.66981132075472,
       "endTime": 52.15094339622642,
-      "text": "盡力去呼吸 每日都要深呼吸",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "盡力去呼吸 每日都要深呼吸"
     },
     {
-      "id": "b3670c5e-01c8-431e-828e-03590529b68a",
+      "id": "d4398502-b267-45ef-8769-8e0ce24b05c0",
       "startTime": 52.15094339622642,
       "endTime": 53,
-      "text": "繼續行",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "繼續行"
     },
     {
-      "id": "b588df46-1ba1-45fe-8f9a-6e32c9a8d10b",
+      "id": "7d3d6c7b-1d84-4cc9-b0d2-d652cc681b6b",
       "startTime": 55.16,
       "endTime": 60.99,
-      "text": "冇錢就慳錢 唔好買咁多件衫",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "冇錢就慳錢 唔好買咁多件衫"
     },
     {
-      "id": "c6bdef43-3425-4940-b860-61bf6b4f8499",
+      "id": "cfbcd3d9-7aa3-44a3-9708-88c1a5f98216",
       "startTime": 61.49,
       "endTime": 64.88,
-      "text": "我呢件衫 co 嗰陣已經着緊",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "我呢件衫 co 嗰陣已經着緊"
     },
     {
-      "id": "4566c2a0-0e40-4809-89cc-ad509b96f7f5",
+      "id": "97dfc6bb-b2a7-466f-ab6d-ca45ee61d233",
       "startTime": 65.37,
       "endTime": 65.99,
-      "text": "お",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "お"
     },
     {
-      "id": "26178d3d-b1dd-43df-8eb7-728b19196539",
+      "id": "c45f6b96-294d-4466-9732-a751057ad4cc",
       "startTime": 65.99,
       "endTime": 68.74000000000001,
-      "text": "到而家都續着緊 如果你俾人炒",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "到而家都續着緊 如果你俾人炒"
     },
     {
-      "id": "1e6d1d18-08fd-4e94-bb7e-c6e84f490e6f",
+      "id": "5eecc44c-de5a-4237-88f6-814a98ce02b7",
       "startTime": 68.74000000000001,
       "endTime": 69.54,
-      "text": "咗嘅",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "咗嘅"
     },
     {
-      "id": "6f85eb8f-2d70-4dd0-be32-2a91962991af",
+      "id": "bbb17e6f-7e3a-4542-a5d4-01e86506a2f4",
       "startTime": 69.95,
       "endTime": 71.27,
-      "text": "加油",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "加油"
     },
     {
-      "id": "9ed7f507-b1d5-4f2f-94c7-e936d8b268ae",
+      "id": "4c2e2076-2c3a-4b1e-8c15-69a46df4d730",
       "startTime": 73.38,
       "endTime": 75.38,
-      "text": "繼續 get車",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "繼續 get車"
     },
     {
-      "id": "d5aee4e3-8b52-4e35-b2e3-d9211cd4e221",
+      "id": "9c685ef0-0eae-426f-9beb-a5f481d2db92",
       "startTime": 75.39,
       "endTime": 77.42,
-      "text": "就算我 see no job",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "就算我 see no job"
     },
     {
-      "id": "9efb572a-8d8a-403e-ba84-5f4c4240afe0",
+      "id": "2e430402-78a5-4840-a5f0-da6cc83f347d",
       "startTime": 77.42,
       "endTime": 80.11,
-      "text": "都要堅持落去",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "都要堅持落去"
     },
     {
-      "id": "3bc163ee-beef-43c1-8cea-13b58d0ef4d4",
+      "id": "8155b654-f388-4950-b5da-ac19558bf8fc",
       "startTime": 81.06,
       "endTime": 83.53135135135135,
-      "text": "有冇啊 我以後就出呢片 如果",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "有冇啊 我以後就出呢片 如果"
     },
     {
-      "id": "5bc228ad-9db1-4e8b-87cb-639d1392d70a",
+      "id": "016bbaed-174a-450d-9d74-df0f44602486",
       "startTime": 83.53135135135135,
       "endTime": 86.14,
-      "text": "你中意嘅話 我每個禮拜出一條",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "你中意嘅話 我每個禮拜出一條"
     },
     {
-      "id": "e6e4011a-b5b9-41eb-b4a3-49bdc60b8596",
+      "id": "4b9b3633-28bd-4953-b52f-74ac9527f16e",
       "startTime": 86.14,
       "endTime": 87.82,
-      "text": "去激勵你哋",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "去激勵你哋"
     },
     {
-      "id": "64032787-b425-4145-ba9b-e4783762091f",
+      "id": "bf2f8484-c12c-41ad-acbb-b0123d822f96",
       "startTime": 88.56,
       "endTime": 90.19966887417219,
-      "text": "我差少少就四十萬啦 大家 s",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "我差少少就四十萬啦 大家 s"
     },
     {
-      "id": "bf806832-2d20-4ba9-beb9-8f3a90b1fa1c",
+      "id": "e18b2505-78b3-4d4e-9acc-8b81874a60c9",
       "startTime": 90.19966887417219,
       "endTime": 91.69,
-      "text": "ubscribe我 chan",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "ubscribe我 chan"
     },
     {
-      "id": "441b2bb1-03b3-4a31-a455-178aecc58494",
+      "id": "d84bf6a4-a1d6-45fb-937c-f1e65b3c3cf1",
       "startTime": 91.69,
       "endTime": 92.49,
-      "text": "nel 啦",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "nel 啦"
     },
     {
-      "id": "44f47b67-f620-4be8-8108-8885cfb69d8a",
+      "id": "d0c4edb0-5ce6-4e36-88fb-f3a02429ad2c",
       "startTime": 94.29,
       "endTime": 95.36,
-      "text": "去總先",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "去總先"
     },
     {
-      "id": "ce3cdc35-9f85-4ecc-a2df-536792b92f78",
+      "id": "f5f3a437-b2c3-4de3-a672-803b08c38277",
       "startTime": 109.9,
       "endTime": 110.49,
-      "text": "Yeah",
-      "fontSize": 50,
-      "fontFamily": "Noto Sans CJK TC",
-      "color": "#ffffff",
-      "backgroundColor": "#919191",
-      "isBold": false,
-      "isUnderlined": false,
-      "textAlign": "center"
+      "text": "Yeah"
     }
   ],
   "markers": [],
-  "updatedAt": "2026-09-03T16:08:25.274Z"
+  "updatedAt": "2026-09-03T20:03:34.128Z"
 }

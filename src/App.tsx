@@ -10,7 +10,7 @@ import Timeline, {
   TIMELINE_ZOOM_STEP,
 } from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
-import SubtitleGenerationProgress from "./components/subtitles/SubtitleGenerationProgress";
+import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
 
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
 import { useTranscription } from "./hooks/useTranscription";
@@ -267,6 +267,8 @@ function App() {
     generationPercent,
     modelDownloadPercent,
     generationError,
+    clearGenerationError,
+    transcriptionEngine,
     generateSubtitles,
   } = useTranscription({
     onGenerated: replaceWithGeneratedSubtitles,
@@ -772,18 +774,6 @@ function App() {
         />
       </div>
 
-      {(isGenerating || generationError) && (
-        <div className="app-transcription-status">
-          <SubtitleGenerationProgress
-            isGenerating={isGenerating}
-            generationStatus={generationStatus}
-            generationPercent={generationPercent}
-            modelDownloadPercent={modelDownloadPercent}
-            generationError={generationError}
-          />
-        </div>
-      )}
-
       <Timeline
         duration={videoDuration}
         currentTime={currentTime}
@@ -800,6 +790,18 @@ function App() {
         onZoomChange={setTimelineZoom}
         onSeek={requestSeek}
       />
+
+      {(isGenerating || generationError) && (
+        <SubtitleGenerationModal
+          isGenerating={isGenerating}
+          generationStatus={generationStatus}
+          generationPercent={generationPercent}
+          modelDownloadPercent={modelDownloadPercent}
+          generationError={generationError}
+          engine={transcriptionEngine}
+          onDismissError={clearGenerationError}
+        />
+      )}
 
       {isExporting && (
         <ExportProgressModal progress={exportProgress} status={exportStatus} />
