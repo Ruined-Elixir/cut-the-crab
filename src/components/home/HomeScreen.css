@@ -617,3 +617,209 @@
   background: var(--system-blue);
   color: white;
 }
+
+/* ==========================================================================
+   Inline project rename
+   ========================================================================== */
+
+.project-card-main {
+  cursor: pointer;
+  outline: none;
+}
+
+.project-card-main:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(10, 132, 255, 0.58);
+}
+
+.project-title {
+  cursor: text;
+}
+
+.project-title-input {
+  width: 100%;
+  height: 26px;
+
+  margin: -4px 0 -2px;
+  padding: 2px 6px;
+
+  border: none;
+  border-radius: 7px;
+
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--label);
+
+  box-shadow:
+    0 0 0 2px rgba(10, 132, 255, 0.55),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+
+  font-size: 14px;
+  font-weight: 600;
+
+  outline: none;
+
+  -webkit-font-smoothing: antialiased;
+}
+
+.project-rename-button {
+  position: absolute;
+  top: 9px;
+  right: 42px;
+
+  z-index: 4;
+
+  width: 28px;
+  height: 28px;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+
+  border: none;
+  border-radius: 9px;
+
+  background: rgba(28, 28, 30, 0.72);
+  backdrop-filter: blur(12px);
+
+  color: rgba(255, 255, 255, 0.76);
+
+  opacity: 0;
+
+  transition:
+    opacity 0.14s ease,
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.project-rename-button svg {
+  width: 14px;
+  height: 14px;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.project-card:hover .project-rename-button,
+.project-rename-button:focus-visible {
+  opacity: 1;
+}
+
+.project-rename-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+}
+
+/*
+ * Missing-media cards already use the upper-right area for Relink.
+ * Shift Rename left so both actions remain visually separated.
+ */
+.project-card.missing-media .project-rename-button {
+  right: 88px;
+}
+
+/* ==========================================================================
+   Recent Project context menu
+   ========================================================================== */
+
+.project-context-menu {
+  position: fixed;
+  z-index: 6500;
+
+  width: 220px;
+
+  padding: 6px;
+
+  border: 0;
+  border-radius: 12px;
+
+  background: rgba(44, 44, 46, 0.9);
+  backdrop-filter: blur(28px) saturate(160%);
+
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.38),
+    inset 0 1px rgba(255, 255, 255, 0.05),
+    0 0 0 0.5px rgba(255, 255, 255, 0.1);
+
+  color: var(--label);
+
+  transform-origin: top left;
+
+  animation: project-context-menu-appear 0.1s ease-out;
+}
+
+.project-context-menu-item {
+  width: 100%;
+  min-height: 32px;
+
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+
+  padding: 0 8px;
+
+  border: none;
+  border-radius: 7px;
+
+  background: transparent;
+  color: var(--label);
+
+  text-align: left;
+
+  font-size: 12px;
+  font-weight: 450;
+
+  outline: none;
+}
+
+.project-context-menu-item:hover,
+.project-context-menu-item:focus-visible {
+  background: var(--system-blue);
+  color: white;
+}
+
+.project-context-menu-item svg {
+  width: 15px;
+  height: 15px;
+
+  justify-self: center;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.project-context-menu-item.destructive {
+  color: #ff7b72;
+}
+
+.project-context-menu-item.destructive:hover,
+.project-context-menu-item.destructive:focus-visible {
+  background: var(--system-red);
+  color: white;
+}
+
+.project-context-menu-separator {
+  height: 1px;
+
+  margin: 5px 7px;
+
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes project-context-menu-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

@@ -1,7 +1,7 @@
 {
   "version": 3,
   "videoPath": "/Users/enochchan/subtitle-editor/testing/Canto_Test.mp4",
-  "title": "Canto_Test",
+  "title": "Canto_Testing_1",
   "languages": [
     "cantonese"
   ],
@@ -205,5 +205,5 @@
       "time": 14.3307831850689
     }
   ],
-  "updatedAt": "2026-09-09T17:56:22.059Z"
+  "updatedAt": "2026-09-09T18:11:10.287Z"
 }

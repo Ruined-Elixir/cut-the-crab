@@ -450,6 +450,58 @@ function App() {
     }
   };
 
+  const handleRenameRecentProject = async (
+    project: RecentProject,
+    nextTitle: string,
+  ) => {
+    const title = nextTitle.trim();
+
+    if (!title || title === project.title) {
+      return;
+    }
+
+    try {
+      setHomeError("");
+
+      const matchingProject = await loadMatchingProjectFile(project.videoPath);
+
+      if (matchingProject) {
+        await saveProjectFile(
+          project.videoPath,
+          matchingProject.subtitles,
+          matchingProject.markers,
+          {
+            title,
+            languages:
+              matchingProject.languages.length > 0
+                ? matchingProject.languages
+                : project.languages,
+          },
+        );
+      }
+
+      await upsertRecentProject({
+        ...project,
+        title,
+      });
+
+      if (videoPath === project.videoPath) {
+        setProjectMetadata((current) => ({
+          title,
+          languages: current?.languages ?? project.languages,
+        }));
+      }
+
+      await refreshRecentProjects();
+    } catch (error) {
+      console.error("Failed to rename project:", error);
+
+      setHomeError(
+        error instanceof Error ? error.message : "Failed to rename project.",
+      );
+    }
+  };
+
   const handleRelinkRecentProject = async (project: RecentProject) => {
     const replacementPath = await chooseVideoPath();
 
@@ -756,6 +808,7 @@ function App() {
         onCancelNewProject={() => setPendingNewProjectPath(null)}
         onCreateProject={handleCreateProject}
         onOpenProject={handleOpenRecentProject}
+        onRenameProject={handleRenameRecentProject}
         onRelinkProject={handleRelinkRecentProject}
         onRemoveProject={handleRemoveRecentProject}
       />

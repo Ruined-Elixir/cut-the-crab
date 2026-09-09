@@ -21,8 +21,18 @@ type HomeScreenProps = {
   onCreateProject: (language: ProjectLanguage) => void | Promise<void>;
 
   onOpenProject: (project: RecentProject) => void | Promise<void>;
+  onRenameProject: (
+    project: RecentProject,
+    title: string,
+  ) => void | Promise<void>;
   onRelinkProject: (project: RecentProject) => void | Promise<void>;
   onRemoveProject: (project: RecentProject) => void | Promise<void>;
+};
+
+type ProjectContextMenuState = {
+  project: RecentProject;
+  x: number;
+  y: number;
 };
 
 const LANGUAGE_OPTIONS: ProjectLanguage[] = [
@@ -81,6 +91,7 @@ function HomeScreen({
   onCancelNewProject,
   onCreateProject,
   onOpenProject,
+  onRenameProject,
   onRelinkProject,
   onRemoveProject,
 }: HomeScreenProps) {
@@ -95,11 +106,51 @@ function HomeScreen({
     Record<string, boolean>
   >({});
 
+  const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(
+    null,
+  );
+  const [renameDraft, setRenameDraft] = useState("");
+
+  const [projectContextMenu, setProjectContextMenu] =
+    useState<ProjectContextMenuState | null>(null);
+
   useEffect(() => {
     if (pendingVideoPath) {
       setSelectedLanguage("english");
     }
   }, [pendingVideoPath]);
+
+  useEffect(() => {
+    if (!projectContextMenu) {
+      return;
+    }
+
+    const dismiss = () => {
+      setProjectContextMenu(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setProjectContextMenu(null);
+
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      }
+    };
+
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", dismiss, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+    };
+  }, [projectContextMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +203,59 @@ function HomeScreen({
       cancelled = true;
     };
   }, [projects]);
+
+  const openProjectContextMenu = (
+    event: React.MouseEvent<HTMLElement>,
+    project: RecentProject,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const menuWidth = 220;
+    const menuHeight = 176;
+    const edgeInset = 10;
+
+    const x = Math.min(
+      event.clientX,
+      window.innerWidth - menuWidth - edgeInset,
+    );
+    const y = Math.min(
+      event.clientY,
+      window.innerHeight - menuHeight - edgeInset,
+    );
+
+    setProjectContextMenu({
+      project,
+      x: Math.max(edgeInset, x),
+      y: Math.max(edgeInset, y),
+    });
+  };
+
+  const dismissProjectContextMenu = () => {
+    setProjectContextMenu(null);
+  };
+
+  const beginRename = (project: RecentProject) => {
+    setRenamingProjectPath(project.videoPath);
+    setRenameDraft(project.title);
+  };
+
+  const cancelRename = () => {
+    setRenamingProjectPath(null);
+    setRenameDraft("");
+  };
+
+  const commitRename = async (project: RecentProject) => {
+    const title = renameDraft.trim();
+
+    if (!title) {
+      cancelRename();
+      return;
+    }
+
+    await onRenameProject(project, title);
+    cancelRename();
+  };
 
   const pendingVideoName = useMemo(
     () => (pendingVideoPath ? getFileName(pendingVideoPath) : ""),
@@ -209,11 +313,28 @@ function HomeScreen({
                       .filter(Boolean)
                       .join(" ")}
                     onDoubleClick={() => void onOpenProject(project)}
+                    onContextMenu={(event) =>
+                      openProjectContextMenu(event, project)
+                    }
                   >
-                    <button
-                      type="button"
+                    <div
                       className="project-card-main"
-                      onClick={() => void onOpenProject(project)}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (renamingProjectPath !== project.videoPath) {
+                          void onOpenProject(project);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          renamingProjectPath !== project.videoPath &&
+                          (event.key === "Enter" || event.key === " ")
+                        ) {
+                          event.preventDefault();
+                          void onOpenProject(project);
+                        }
+                      }}
                     >
                       <div className="project-thumbnail">
                         {thumbnailUrls[project.videoPath] ? (
@@ -262,7 +383,41 @@ function HomeScreen({
                       </div>
 
                       <div className="project-card-content">
-                        <strong title={project.title}>{project.title}</strong>
+                        {renamingProjectPath === project.videoPath ? (
+                          <input
+                            className="project-title-input"
+                            value={renameDraft}
+                            autoFocus
+                            aria-label={`Rename ${project.title}`}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void commitRename(project);
+                              }
+
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelRename();
+                              }
+                            }}
+                            onBlur={() => void commitRename(project)}
+                          />
+                        ) : (
+                          <strong
+                            className="project-title"
+                            title={project.title}
+                            onDoubleClick={(event) => {
+                              event.stopPropagation();
+                              beginRename(project);
+                            }}
+                          >
+                            {project.title}
+                          </strong>
+                        )}
 
                         <span
                           className="project-video-name"
@@ -287,6 +442,22 @@ function HomeScreen({
                           {formatLastOpened(project.lastOpenedAt)}
                         </time>
                       </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="project-rename-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        beginRename(project);
+                      }}
+                      aria-label={`Rename ${project.title}`}
+                      title="Rename Project"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+                        <path d="m13.5 6.5 4 4" />
+                      </svg>
                     </button>
 
                     {isMissing && (
@@ -306,7 +477,10 @@ function HomeScreen({
                     <button
                       type="button"
                       className="project-remove-button"
-                      onClick={() => void onRemoveProject(project)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onRemoveProject(project);
+                      }}
                       aria-label={`Remove ${project.title} from recent projects`}
                       title="Remove from Recent Projects"
                     >
@@ -333,6 +507,92 @@ function HomeScreen({
           )}
         </section>
       </div>
+
+      {projectContextMenu && (
+        <div
+          className="project-context-menu"
+          role="menu"
+          aria-label={`Project actions for ${projectContextMenu.project.title}`}
+          style={{
+            left: projectContextMenu.x,
+            top: projectContextMenu.y,
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="project-context-menu-item"
+            onClick={() => {
+              const project = projectContextMenu.project;
+              dismissProjectContextMenu();
+              void onOpenProject(project);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 4.5h5l2 2H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2Z" />
+            </svg>
+            <span>Open</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            className="project-context-menu-item"
+            onClick={() => {
+              const project = projectContextMenu.project;
+              dismissProjectContextMenu();
+              beginRename(project);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+              <path d="m13.5 6.5 4 4" />
+            </svg>
+            <span>Rename</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            className="project-context-menu-item"
+            onClick={() => {
+              const project = projectContextMenu.project;
+              dismissProjectContextMenu();
+              void onRelinkProject(project);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8.5 15.5 15.5 8.5" />
+              <path d="M7 8.5H5.5a3.5 3.5 0 0 0 0 7H9" />
+              <path d="M15 8.5h3.5a3.5 3.5 0 0 1 0 7H15" />
+            </svg>
+            <span>Relink Media…</span>
+          </button>
+
+          <div className="project-context-menu-separator" role="separator" />
+
+          <button
+            type="button"
+            role="menuitem"
+            className="project-context-menu-item destructive"
+            onClick={() => {
+              const project = projectContextMenu.project;
+              dismissProjectContextMenu();
+              void onRemoveProject(project);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16" />
+              <path d="M9 7V4h6v3" />
+              <path d="m6.5 7 1 13h9l1-13" />
+              <path d="M10 11v5M14 11v5" />
+            </svg>
+            <span>Remove from Recents</span>
+          </button>
+        </div>
+      )}
 
       {pendingVideoPath && (
         <div className="new-project-backdrop">
