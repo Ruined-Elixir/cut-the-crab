@@ -152,6 +152,7 @@ function App() {
     subtitles,
     filteredSubtitles,
     selectedSubtitleId,
+    selectedSubtitleIds,
     subtitleSearch,
     activeSubtitleId,
 
@@ -161,12 +162,16 @@ function App() {
     updateSubtitleText,
     updateSubtitlePosition,
     updateSubtitleStyle,
+    updateSubtitleStyles,
     updateAllSubtitleStyles,
 
     moveSubtitle,
+    moveSubtitleGroup,
     resizeSubtitle,
     addSubtitle,
+    splitSubtitle,
     deleteSubtitle,
+    deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
   } = useSubtitleEditor(currentTime, videoDuration);
@@ -202,9 +207,74 @@ function App() {
     addSubtitle(time);
   };
 
-  const deleteSubtitleWithHistory = (id: string) => {
+  const splitSelectedSubtitleAtPlayhead = () => {
+    if (!selectedSubtitleId) {
+      return;
+    }
+
+    const selectedSubtitle = subtitles.find(
+      (subtitle) => subtitle.id === selectedSubtitleId,
+    );
+
+    if (!selectedSubtitle) {
+      return;
+    }
+
+    const MIN_SPLIT_GAP = 0.05;
+
+    if (
+      currentTime <=
+        selectedSubtitle.startTime + MIN_SPLIT_GAP ||
+      currentTime >=
+        selectedSubtitle.endTime - MIN_SPLIT_GAP
+    ) {
+      return;
+    }
+
     markNextChangeImmediate();
-    deleteSubtitle(id);
+
+    splitSubtitle(
+      selectedSubtitleId,
+      currentTime,
+    );
+  };
+
+  const deleteSubtitleWithHistory = (id: string) => {
+    const idsToDelete =
+      selectedSubtitleIds.includes(id) &&
+      selectedSubtitleIds.length > 1
+        ? selectedSubtitleIds
+        : [id];
+
+    markNextChangeImmediate();
+    deleteSubtitles(idsToDelete);
+  };
+
+  const deleteSelectionWithHistory = () => {
+    if (selectedSubtitleIds.length === 0) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    deleteSubtitles(selectedSubtitleIds);
+  };
+
+  const updateSubtitleStyleWithSelection = (
+    id: string,
+    style: Parameters<typeof updateSubtitleStyle>[1],
+  ) => {
+    if (
+      selectedSubtitleIds.includes(id) &&
+      selectedSubtitleIds.length > 1
+    ) {
+      updateSubtitleStyles(
+        selectedSubtitleIds,
+        style,
+      );
+      return;
+    }
+
+    updateSubtitleStyle(id, style);
   };
 
   const setMarkersWithHistory = (
@@ -837,6 +907,12 @@ function App() {
         }
         return;
 
+      case "edit.split-subtitle":
+        if (screen === "editor") {
+          splitSelectedSubtitleAtPlayhead();
+        }
+        return;
+
       case "edit.add-subtitle":
         if (screen === "editor") {
           addSubtitleWithHistory(currentTime);
@@ -844,8 +920,8 @@ function App() {
         return;
 
       case "edit.delete-subtitle":
-        if (screen === "editor" && selectedSubtitleId) {
-          deleteSubtitleWithHistory(selectedSubtitleId);
+        if (screen === "editor") {
+          deleteSelectionWithHistory();
         }
         return;
 
@@ -888,7 +964,9 @@ function App() {
   };
 
   useEffect(() => {
-    const handleUndoRedoKeyDown = (event: KeyboardEvent) => {
+    const handleEditorShortcutKeyDown = (
+      event: KeyboardEvent,
+    ) => {
       if (
         screen !== "editor" ||
         isGenerating ||
@@ -897,36 +975,69 @@ function App() {
         return;
       }
 
-      const commandModifier =
-        event.metaKey || event.ctrlKey;
+      const target = event.target as HTMLElement;
+      const isEditingText =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
 
       if (
-        !commandModifier ||
-        event.altKey ||
-        event.key.toLowerCase() !== "z"
+        !isEditingText &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "Delete" ||
+          event.key === "Backspace")
       ) {
+        if (selectedSubtitleIds.length > 0) {
+          event.preventDefault();
+          deleteSelectionWithHistory();
+        }
+
         return;
       }
 
-      event.preventDefault();
+      const commandModifier =
+        event.metaKey || event.ctrlKey;
 
-      if (event.shiftKey) {
-        redo();
-      } else {
-        undo();
+      if (!commandModifier || event.altKey) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "z") {
+        event.preventDefault();
+
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+
+        return;
+      }
+
+      if (key === "b" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
+        event.preventDefault();
+        splitSelectedSubtitleAtPlayhead();
       }
     };
 
     window.addEventListener(
       "keydown",
-      handleUndoRedoKeyDown,
+      handleEditorShortcutKeyDown,
       true,
     );
 
     return () => {
       window.removeEventListener(
         "keydown",
-        handleUndoRedoKeyDown,
+        handleEditorShortcutKeyDown,
         true,
       );
     };
@@ -936,6 +1047,10 @@ function App() {
     isExporting,
     undo,
     redo,
+    currentTime,
+    selectedSubtitleId,
+    selectedSubtitleIds,
+    subtitles,
   ]);
 
   useAppMenuCommands(handleAppMenuCommand);
@@ -1017,7 +1132,7 @@ function App() {
             onSubtitleSelect={selectSubtitle}
             onSubtitlePositionChange={updateSubtitlePosition}
             onSubtitleTextChange={updateSubtitleText}
-            onSubtitleStyleChange={updateSubtitleStyle}
+            onSubtitleStyleChange={updateSubtitleStyleWithSelection}
             onAllSubtitleStylesChange={updateAllSubtitleStyles}
           />
         </section>
@@ -1044,8 +1159,10 @@ function App() {
         markers={markers}
         zoom={timelineZoom}
         selectedSubtitleId={selectedSubtitleId}
+        selectedSubtitleIds={selectedSubtitleIds}
         onSubtitleSelect={selectSubtitle}
         onSubtitleMove={moveSubtitle}
+        onSubtitleGroupMove={moveSubtitleGroup}
         onSubtitleResize={resizeSubtitle}
         onMarkersChange={setMarkersWithHistory}
         onZoomChange={setTimelineZoom}

@@ -265,6 +265,14 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+Shift+Z")
         .build(app)?;
 
+    let split_subtitle =
+        MenuItemBuilder::with_id(
+            "edit.split-subtitle",
+            "Split Subtitle at Playhead",
+        )
+        .accelerator("CmdOrCtrl+B")
+        .build(app)?;
+
     let add_subtitle =
         MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
@@ -375,6 +383,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .paste()
         .select_all()
         .separator()
+        .item(&split_subtitle)
+        .separator()
         .item(&add_subtitle)
         .item(&delete_subtitle)
         .build()?;
@@ -441,6 +451,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "file.export-video"
             | "edit.undo"
             | "edit.redo"
+            | "edit.split-subtitle"
             | "edit.add-subtitle"
             | "edit.delete-subtitle"
             | "transcription.whisper-base"

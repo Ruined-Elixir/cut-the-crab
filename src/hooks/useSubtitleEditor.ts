@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { Subtitle, SubtitleStyle } from "../types/subtitle";
 
@@ -28,6 +28,9 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     null,
   );
 
+  const [selectedSubtitleIds, setSelectedSubtitleIds] = useState<string[]>([]);
+  const selectionAnchorIdRef = useRef<string | null>(null);
+
   const [subtitleSearch, setSubtitleSearch] = useState("");
 
   const filteredSubtitles = useMemo(() => {
@@ -48,8 +51,63 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
         currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
     )?.id ?? null;
 
-  const selectSubtitle = (id: string) => {
+  type SelectionMode = "single" | "toggle" | "range";
+
+  const selectSubtitle = (
+    id: string,
+    mode: SelectionMode = "single",
+  ) => {
+    if (mode === "toggle") {
+      setSelectedSubtitleIds((current) => {
+        const isSelected = current.includes(id);
+        const next = isSelected
+          ? current.filter((selectedId) => selectedId !== id)
+          : [...current, id];
+
+        setSelectedSubtitleId(
+          next.includes(id)
+            ? id
+            : next[next.length - 1] ?? null,
+        );
+
+        return next;
+      });
+
+      selectionAnchorIdRef.current = id;
+      return;
+    }
+
+    if (mode === "range") {
+      const orderedIds = sortSubtitles(subtitles).map(
+        (subtitle) => subtitle.id,
+      );
+
+      const anchorId =
+        selectionAnchorIdRef.current ?? selectedSubtitleId ?? id;
+
+      const anchorIndex = orderedIds.indexOf(anchorId);
+      const targetIndex = orderedIds.indexOf(id);
+
+      if (anchorIndex >= 0 && targetIndex >= 0) {
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+        const rangeIds = orderedIds.slice(start, end + 1);
+
+        setSelectedSubtitleIds(rangeIds);
+        setSelectedSubtitleId(id);
+        return;
+      }
+    }
+
+    setSelectedSubtitleIds([id]);
     setSelectedSubtitleId(id);
+    selectionAnchorIdRef.current = id;
+  };
+
+  const clearSubtitleSelection = () => {
+    setSelectedSubtitleIds([]);
+    setSelectedSubtitleId(null);
+    selectionAnchorIdRef.current = null;
   };
 
   const updateSubtitleText = (id: string, text: string) => {
@@ -96,6 +154,38 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     );
   };
 
+  const moveSubtitleGroup = (
+    ids: string[],
+    anchorId: string,
+    newAnchorStartTime: number,
+  ) => {
+    const selectedIds = new Set(ids);
+
+    setSubtitles((current) => {
+      const anchor = current.find(
+        (subtitle) => subtitle.id === anchorId,
+      );
+
+      if (!anchor) {
+        return current;
+      }
+
+      const delta = newAnchorStartTime - anchor.startTime;
+
+      return sortSubtitles(
+        current.map((subtitle) =>
+          selectedIds.has(subtitle.id)
+            ? {
+                ...subtitle,
+                startTime: subtitle.startTime + delta,
+                endTime: subtitle.endTime + delta,
+              }
+            : subtitle,
+        ),
+      );
+    });
+  };
+
   const resizeSubtitle = (
     id: string,
     newStartTime: number,
@@ -134,21 +224,95 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     setSubtitles((current) => sortSubtitles([...current, subtitle]));
 
+    setSelectedSubtitleIds([subtitle.id]);
     setSelectedSubtitleId(subtitle.id);
+    selectionAnchorIdRef.current = subtitle.id;
+  };
+
+  const splitSubtitle = (
+    id: string,
+    splitTime: number,
+  ) => {
+    const MIN_SPLIT_GAP = 0.05;
+
+    setSubtitles((current) => {
+      const target = current.find(
+        (subtitle) => subtitle.id === id,
+      );
+
+      if (!target) {
+        return current;
+      }
+
+      const safeSplitTime = Math.max(
+        target.startTime + MIN_SPLIT_GAP,
+        Math.min(
+          target.endTime - MIN_SPLIT_GAP,
+          splitTime,
+        ),
+      );
+
+      if (
+        safeSplitTime <= target.startTime ||
+        safeSplitTime >= target.endTime
+      ) {
+        return current;
+      }
+
+      const secondSubtitle: Subtitle = {
+        ...target,
+        id: crypto.randomUUID(),
+        startTime: safeSplitTime,
+        endTime: target.endTime,
+      };
+
+      const firstSubtitle: Subtitle = {
+        ...target,
+        endTime: safeSplitTime,
+      };
+
+      const next = current.flatMap((subtitle) =>
+        subtitle.id === id
+          ? [firstSubtitle, secondSubtitle]
+          : [subtitle],
+      );
+
+      window.requestAnimationFrame(() => {
+        setSelectedSubtitleIds([secondSubtitle.id]);
+        setSelectedSubtitleId(secondSubtitle.id);
+        selectionAnchorIdRef.current = secondSubtitle.id;
+      });
+
+      return sortSubtitles(next);
+    });
+  };
+
+  const deleteSubtitles = (ids: string[]) => {
+    const idsToDelete = new Set(ids);
+
+    setSubtitles((current) =>
+      current.filter((subtitle) => !idsToDelete.has(subtitle.id)),
+    );
+
+    setSelectedSubtitleIds((current) =>
+      current.filter((id) => !idsToDelete.has(id)),
+    );
+
+    setSelectedSubtitleId((current) =>
+      current && idsToDelete.has(current) ? null : current,
+    );
+
+    selectionAnchorIdRef.current = null;
   };
 
   const deleteSubtitle = (id: string) => {
-    setSubtitles((current) => current.filter((subtitle) => subtitle.id !== id));
-
-    setSelectedSubtitleId((selectedId) =>
-      selectedId === id ? null : selectedId,
-    );
+    deleteSubtitles([id]);
   };
 
   const replaceSubtitles = (nextSubtitles: Subtitle[]) => {
     setSubtitles(sortSubtitles(nextSubtitles));
 
-    setSelectedSubtitleId(null);
+    clearSubtitleSelection();
   };
 
   const replaceWithGeneratedSubtitles = (
@@ -167,41 +331,35 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     setSubtitles(sortSubtitles(generated));
 
-    setSelectedSubtitleId(generated[0]?.id ?? null);
+    const firstId = generated[0]?.id ?? null;
+
+    setSelectedSubtitleIds(firstId ? [firstId] : []);
+    setSelectedSubtitleId(firstId);
+    selectionAnchorIdRef.current = firstId;
   };
-
-  // Delete selected subtitle with keyboard
-  useEffect(() => {
-    const handleDeleteKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
-        return;
-      }
-
-      if (
-        (event.key === "Delete" || event.key === "Backspace") &&
-        selectedSubtitleId
-      ) {
-        deleteSubtitle(selectedSubtitleId);
-      }
-    };
-
-    window.addEventListener("keydown", handleDeleteKey);
-
-    return () => {
-      window.removeEventListener("keydown", handleDeleteKey);
-    };
-  }, [selectedSubtitleId]);
 
   const updateSubtitleStyle = (id: string, style: SubtitleStyle) => {
     setSubtitles((current) =>
       current.map((subtitle) =>
         subtitle.id === id
+          ? {
+              ...subtitle,
+              ...style,
+            }
+          : subtitle,
+      ),
+    );
+  };
+
+  const updateSubtitleStyles = (
+    ids: string[],
+    style: SubtitleStyle,
+  ) => {
+    const selectedIds = new Set(ids);
+
+    setSubtitles((current) =>
+      current.map((subtitle) =>
+        selectedIds.has(subtitle.id)
           ? {
               ...subtitle,
               ...style,
@@ -224,21 +382,27 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     subtitles,
     filteredSubtitles,
     selectedSubtitleId,
+    selectedSubtitleIds,
     subtitleSearch,
     activeSubtitleId,
 
     setSubtitleSearch,
     selectSubtitle,
+    clearSubtitleSelection,
 
     updateSubtitleText,
     updateSubtitlePosition,
     updateSubtitleStyle,
+    updateSubtitleStyles,
     updateAllSubtitleStyles,
 
     moveSubtitle,
+    moveSubtitleGroup,
     resizeSubtitle,
     addSubtitle,
+    splitSubtitle,
     deleteSubtitle,
+    deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
   };

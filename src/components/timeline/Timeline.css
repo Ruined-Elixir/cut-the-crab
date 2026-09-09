@@ -340,3 +340,31 @@
   background:var(--system-red);
   transform:translateX(-50%)
 }
+
+/* ==========================================================================
+   Multi-selection
+   ========================================================================== */
+
+.subtitle-clip.selected {
+  background: rgba(10, 132, 255, 0.27);
+  box-shadow:
+    inset 0 0 0 1px rgba(10, 132, 255, 0.68),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.subtitle-clip.primary-selected {
+  background: rgba(10, 132, 255, 0.39);
+  box-shadow:
+    inset 0 0 0 1px rgba(10, 132, 255, 0.95),
+    0 0 0 1px rgba(10, 132, 255, 0.16);
+}
+
+.subtitle-clip.selected:not(.primary-selected)
+  .subtitle-resize-handle {
+  pointer-events: none;
+}
+
+.subtitle-clip.selected:not(.primary-selected)
+  .subtitle-resize-handle::after {
+  opacity: 0;
+}

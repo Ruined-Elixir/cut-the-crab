@@ -14,6 +14,7 @@ export type AppMenuCommand =
   | "file.export-video"
   | "edit.undo"
   | "edit.redo"
+  | "edit.split-subtitle"
   | "edit.add-subtitle"
   | "edit.delete-subtitle"
   | "transcription.whisper-base"

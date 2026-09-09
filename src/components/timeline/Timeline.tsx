@@ -24,10 +24,19 @@ type TimelineProps = {
   zoom: number;
 
   selectedSubtitleId: string | null;
+  selectedSubtitleIds: string[];
 
   onSeek?: (time: number) => void;
-  onSubtitleSelect?: (id: string) => void;
+  onSubtitleSelect?: (
+    id: string,
+    mode?: "single" | "toggle" | "range",
+  ) => void;
   onSubtitleMove?: (id: string, newStartTime: number) => void;
+  onSubtitleGroupMove?: (
+    ids: string[],
+    anchorId: string,
+    newAnchorStartTime: number,
+  ) => void;
   onSubtitleResize?: (
     id: string,
     newStartTime: number,
@@ -54,9 +63,11 @@ function Timeline({
   markers,
   zoom,
   selectedSubtitleId,
+  selectedSubtitleIds,
   onSeek,
   onSubtitleSelect,
   onSubtitleMove,
+  onSubtitleGroupMove,
   onSubtitleResize,
   onMarkersChange,
   onZoomChange,
@@ -204,7 +215,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            Double-click or M to add marker · Shift+M removes marker at playhead
+            Shift-click range · Cmd/Ctrl-click toggle · drag selected clips as a group
           </span>
         </div>
 
@@ -265,9 +276,11 @@ function Timeline({
               duration={duration}
               subtitles={subtitles}
               selectedSubtitleId={selectedSubtitleId}
+              selectedSubtitleIds={selectedSubtitleIds}
               markerTimes={markerTimes}
               onSubtitleSelect={onSubtitleSelect}
               onSubtitleMove={onSubtitleMove}
+              onSubtitleGroupMove={onSubtitleGroupMove}
               onSubtitleResize={onSubtitleResize}
               onSeek={onSeek}
             />
