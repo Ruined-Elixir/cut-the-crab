@@ -44,6 +44,8 @@ export type AudioTimelineClip = TimelineClipBase & {
   sourceName: string;
   sourceIn: number;
   sourceOut: number;
+  sourceDuration?: number;
+  linkedVideoClipId?: string;
 };
 
 export type TimelineClip =

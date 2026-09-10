@@ -23,10 +23,8 @@ import "./Timeline.css";
 
 type TimelineProps = {
   duration: number;
-  sourceDuration: number;
   currentTime: number;
-  videoName: string | null;
-  waveform: number[];
+  waveformsBySource: Record<string, number[]>;
   videoClips: VideoTimelineClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
@@ -83,10 +81,8 @@ export function clampTimelineZoom(value: number) {
 
 function Timeline({
   duration,
-  sourceDuration,
   currentTime,
-  videoName,
-  waveform,
+  waveformsBySource,
   videoClips,
   subtitles,
   markers,
@@ -124,15 +120,11 @@ function Timeline({
     () =>
       buildTimelineModel({
         duration,
-        sourceDuration,
-        videoName,
         videoClips,
         subtitles,
       }),
     [
       duration,
-      sourceDuration,
-      videoName,
       videoClips,
       subtitles,
     ],
@@ -309,8 +301,7 @@ function Timeline({
             key={track.id}
             duration={duration}
             track={track}
-            videoName={videoName}
-            waveform={waveform}
+            waveformsBySource={waveformsBySource}
             onSeek={onSeek}
           />
         );
@@ -327,7 +318,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            V1 editable · split · trim · move · copy · paste · duplicate
+            V1 editable · A1 linked · split · trim · move · copy · paste · duplicate
           </span>
         </div>
 

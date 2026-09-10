@@ -8,31 +8,14 @@ import type {
 
 type BuildTimelineModelOptions = {
   duration: number;
-  sourceDuration?: number;
-  videoName: string | null;
-  videoPath?: string | null;
   videoClips: VideoTimelineClip[];
   subtitles: Subtitle[];
 };
 
 export function buildTimelineModel({
-  duration,
-  sourceDuration,
-  videoName,
-  videoPath,
   videoClips,
   subtitles,
 }: BuildTimelineModelOptions): TimelineTrack[] {
-  const safeDuration = Math.max(0, duration);
-  const safeSourceDuration = Math.max(
-    0,
-    sourceDuration ?? safeDuration,
-  );
-  const sourceName = videoName ?? "Source Video";
-  const sourceId =
-    videoPath ?? videoName ?? "current-source-video";
-  const sourcePath = videoPath ?? "";
-
   const subtitleClips: SubtitleTimelineClip[] =
     subtitles.map((subtitle) => ({
       id: `subtitle-clip:${subtitle.id}`,
@@ -43,21 +26,26 @@ export function buildTimelineModel({
       timelineEnd: subtitle.endTime,
     }));
 
-  const audioClip: AudioTimelineClip | null =
-    safeSourceDuration > 0 && videoName
-      ? {
-          id: "audio-source-clip",
-          kind: "audio",
-          trackId: "audio-1",
-          sourceId,
-          sourcePath,
-          sourceName,
-          sourceIn: 0,
-          sourceOut: safeSourceDuration,
-          timelineStart: 0,
-          timelineEnd: safeSourceDuration,
-        }
-      : null;
+  /*
+   * A1 is linked to V1 for now. Every video clip owns a matching audio clip
+   * with identical timeline/source in/out values. That means split, trim,
+   * move, paste, duplicate, and imported-media placement automatically stay
+   * synchronized without maintaining a second editable state tree yet.
+   */
+  const audioClips: AudioTimelineClip[] = videoClips.map((clip) => ({
+    id: `audio:${clip.id}`,
+    kind: "audio",
+    trackId: "audio-1",
+    sourceId: clip.sourceId,
+    sourcePath: clip.sourcePath,
+    sourceName: clip.sourceName,
+    sourceIn: clip.sourceIn,
+    sourceOut: clip.sourceOut,
+    sourceDuration: clip.sourceDuration,
+    linkedVideoClipId: clip.id,
+    timelineStart: clip.timelineStart,
+    timelineEnd: clip.timelineEnd,
+  }));
 
   return [
     {
@@ -84,11 +72,11 @@ export function buildTimelineModel({
       id: "audio-1",
       kind: "audio",
       index: 1,
-      name: "Source Audio",
+      name: "Linked Audio",
       shortLabel: "A1",
       locked: true,
       muted: false,
-      clips: audioClip ? [audioClip] : [],
+      clips: audioClips,
     },
   ];
 }

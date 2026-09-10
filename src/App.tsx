@@ -180,7 +180,13 @@ function App() {
   // Waveform
   // ==========================================================================
 
-  const { waveform, generateWaveform } = useWaveform();
+  const { waveformsBySource, generateWaveform } = useWaveform();
+
+  useEffect(() => {
+    for (const asset of mediaAssets) {
+      void generateWaveform(asset.path);
+    }
+  }, [mediaAssets, generateWaveform]);
 
   // ==========================================================================
   // Subtitles
@@ -238,12 +244,15 @@ function App() {
     sourceDuration: videoDuration,
   });
 
-  const timelineDuration = Math.max(
-    videoDuration,
+  const editedContentEnd = Math.max(
+    0,
     ...videoClips.map((clip) => clip.timelineEnd),
     ...subtitles.map((subtitle) => subtitle.endTime),
     ...markers.map((marker) => marker.time),
   );
+
+  const timelineDuration =
+    editedContentEnd > 0 ? editedContentEnd : videoDuration;
 
   // ==========================================================================
   // Undo / Redo history
@@ -1765,10 +1774,8 @@ function App() {
 
       <Timeline
         duration={timelineDuration}
-        sourceDuration={videoDuration}
         currentTime={currentTime}
-        videoName={videoName}
-        waveform={waveform}
+        waveformsBySource={waveformsBySource}
         videoClips={videoClips}
         subtitles={subtitles}
         markers={markers}

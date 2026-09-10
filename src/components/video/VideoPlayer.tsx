@@ -91,6 +91,7 @@ function VideoPlayer({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
   const currentTimeRef = useRef(currentTime);
@@ -103,6 +104,7 @@ function VideoPlayer({
   const onDurationChangeRef = useRef(onDurationChange);
 
   const activeClipIdRef = useRef<string | null>(null);
+  const activeAudioClipIdRef = useRef<string | null>(null);
   const playbackAnchorTimelineRef = useRef(currentTime);
   const playbackAnchorPerformanceRef = useRef(0);
 
@@ -114,10 +116,19 @@ function VideoPlayer({
   );
 
   const visualSourcePath = activeVideoClip?.sourcePath ?? videoPath;
+  const linkedAudioSourcePath = activeVideoClip?.sourcePath ?? null;
 
   const videoUrl = useMemo(
     () => (visualSourcePath ? convertFileSrc(visualSourcePath) : null),
     [visualSourcePath],
+  );
+
+  const linkedAudioUrl = useMemo(
+    () =>
+      linkedAudioSourcePath
+        ? convertFileSrc(linkedAudioSourcePath)
+        : null,
+    [linkedAudioSourcePath],
   );
 
   const primaryVideoUrl = useMemo(
@@ -188,7 +199,7 @@ function VideoPlayer({
 
     const maxSourceTime = Number.isFinite(video.duration)
       ? video.duration
-      : sourceDurationRef.current;
+      : activeClip.sourceDuration ?? sourceDurationRef.current;
 
     const safeSourceTime = Math.max(
       0,
@@ -197,21 +208,12 @@ function VideoPlayer({
 
     const clipChanged = activeClipIdRef.current !== activeClip.id;
 
-    /*
-     * Do not continuously chase the timeline clock with native video seeks.
-     * Seeking while media is already playing flushes/rebuffers the decoder and
-     * produces broken, intermittent audio.
-     *
-     * We only seek when:
-     * - the playhead enters a different timeline clip, or
-     * - the user explicitly seeks/scrubs/jumps, or
-     * - metadata has just loaded and we need to establish the correct frame.
-     *
-     * Once a clip is playing, let the native media element run continuously.
-     * The editor timeline still advances from the playback controller clock.
-     */
     if (clipChanged || forceSeek) {
-      video.currentTime = safeSourceTime;
+      try {
+        video.currentTime = safeSourceTime;
+      } catch (error) {
+        console.error("Timeline video seek failed:", error);
+      }
     }
 
     activeClipIdRef.current = activeClip.id;
@@ -227,47 +229,65 @@ function VideoPlayer({
     }
   };
 
-
-  const syncAudioToTimeline = (
+  const syncLinkedAudioToTimeline = (
     timelineTime: number,
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
     const audio = audioRef.current;
+    const activeClip = findActiveVideoClip(
+      videoClipsRef.current,
+      timelineTime,
+    );
 
-    if (!audio) {
+    if (!audio || !activeClip) {
+      activeAudioClipIdRef.current = null;
+      audio?.pause();
       return;
     }
 
-    const sourceDuration = Number.isFinite(audio.duration)
+    const loadedSourcePath = audio.dataset.sourcePath ?? "";
+
+    if (loadedSourcePath !== activeClip.sourcePath) {
+      activeAudioClipIdRef.current = null;
+      audio.pause();
+      return;
+    }
+
+    if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+      return;
+    }
+
+    const expectedSourceTime = timelineTimeToSourceTime(
+      activeClip,
+      timelineTime,
+    );
+
+    const maxSourceTime = Number.isFinite(audio.duration)
       ? audio.duration
-      : sourceDurationRef.current;
+      : activeClip.sourceDuration ?? activeClip.sourceOut;
 
-    const hasAudioAtTime =
-      sourceDuration > 0 &&
-      timelineTime >= 0 &&
-      timelineTime < sourceDuration;
+    const safeSourceTime = Math.max(
+      0,
+      Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
+    );
 
-    if (!hasAudioAtTime) {
-      if (!audio.paused) {
-        audio.pause();
-      }
+    const clipChanged = activeAudioClipIdRef.current !== activeClip.id;
 
-      return;
-    }
-
-    if (forceSeek) {
-      const safeAudioTime = Math.max(
-        0,
-        Math.min(sourceDuration, timelineTime),
-      );
-
+    /*
+     * A1 is linked to V1. Seek only when entering a different linked clip or
+     * when the user explicitly seeks. Do not chase the timeline clock every
+     * animation frame or the browser will continually flush the audio decoder.
+     */
+    if (clipChanged || forceSeek) {
       try {
-        audio.currentTime = safeAudioTime;
+        audio.currentTime = safeSourceTime;
       } catch (error) {
         console.error("Timeline audio seek failed:", error);
       }
     }
+
+    activeAudioClipIdRef.current = activeClip.id;
 
     if (shouldPlay) {
       if (audio.paused) {
@@ -295,7 +315,7 @@ function VideoPlayer({
     onTimeChangeRef.current?.(nextTime);
 
     syncNativeVideoToTimeline(nextTime, isPlayingRef.current, true);
-    syncAudioToTimeline(nextTime, isPlayingRef.current, true);
+    syncLinkedAudioToTimeline(nextTime, isPlayingRef.current, true);
   };
 
   const jumpBy = (seconds: number) => {
@@ -338,14 +358,10 @@ function VideoPlayer({
     setIsPlaying(true);
 
     syncNativeVideoToTimeline(playbackStart, true, true);
-    syncAudioToTimeline(playbackStart, true, true);
+    syncLinkedAudioToTimeline(playbackStart, true, true);
   };
 
   useEffect(() => {
-    /*
-     * Reset playback state only when the selected source video changes.
-     * App.currentTime is timeline time; native video.currentTime is source time.
-     */
     setDuration(0);
     setIsPlaying(false);
     setIsVideoVisible(false);
@@ -356,6 +372,7 @@ function VideoPlayer({
     isPlayingRef.current = false;
     currentTimeRef.current = 0;
     activeClipIdRef.current = null;
+    activeAudioClipIdRef.current = null;
     playbackAnchorTimelineRef.current = 0;
     playbackAnchorPerformanceRef.current = 0;
 
@@ -369,7 +386,7 @@ function VideoPlayer({
     }
 
     syncNativeVideoToTimeline(currentTime, false, true);
-    syncAudioToTimeline(currentTime, false, true);
+    syncLinkedAudioToTimeline(currentTime, false, true);
   }, [currentTime, isPlaying, videoClips, videoPath, duration]);
 
   useEffect(() => {
@@ -393,7 +410,7 @@ function VideoPlayer({
         isPlayingRef.current = false;
         setIsPlaying(false);
         syncNativeVideoToTimeline(0, false);
-        syncAudioToTimeline(0, false);
+        syncLinkedAudioToTimeline(0, false);
         return;
       }
 
@@ -409,13 +426,13 @@ function VideoPlayer({
       onTimeChangeRef.current?.(nextTime);
 
       syncNativeVideoToTimeline(nextTime, true);
-      syncAudioToTimeline(nextTime, true);
+      syncLinkedAudioToTimeline(nextTime, true);
 
       if (nextTime >= maxDuration) {
         isPlayingRef.current = false;
         setIsPlaying(false);
         syncNativeVideoToTimeline(maxDuration, false);
-        syncAudioToTimeline(maxDuration, false);
+        syncLinkedAudioToTimeline(maxDuration, false);
         return;
       }
 
@@ -443,8 +460,24 @@ function VideoPlayer({
     );
   };
 
-  const handlePrimaryAudioLoadedMetadata = () => {
+  const handleLinkedAudioLoadedMetadata = () => {
     const audio = audioRef.current;
+
+    if (!audio || !Number.isFinite(audio.duration)) {
+      return;
+    }
+
+    activeAudioClipIdRef.current = null;
+
+    syncLinkedAudioToTimeline(
+      currentTimeRef.current,
+      isPlayingRef.current,
+      true,
+    );
+  };
+
+  const handlePrimaryMetadataLoaded = () => {
+    const audio = primaryMetadataAudioRef.current;
 
     if (!audio || !Number.isFinite(audio.duration)) {
       return;
@@ -453,12 +486,6 @@ function VideoPlayer({
     setDuration(audio.duration);
     sourceDurationRef.current = audio.duration;
     onDurationChangeRef.current?.(audio.duration);
-
-    syncAudioToTimeline(
-      currentTimeRef.current,
-      isPlayingRef.current,
-      true,
-    );
   };
 
   useEffect(() => {
@@ -543,12 +570,22 @@ function VideoPlayer({
             />
 
             <audio
-              key={`audio:${videoPath ?? ""}`}
+              key={`linked-audio:${linkedAudioSourcePath ?? "gap"}`}
               ref={audioRef}
-              src={primaryVideoUrl ?? undefined}
+              src={linkedAudioUrl ?? undefined}
+              data-source-path={linkedAudioSourcePath ?? ""}
               preload="auto"
               hidden
-              onLoadedMetadata={handlePrimaryAudioLoadedMetadata}
+              onLoadedMetadata={handleLinkedAudioLoadedMetadata}
+            />
+
+            <audio
+              key={`primary-metadata:${videoPath ?? ""}`}
+              ref={primaryMetadataAudioRef}
+              src={primaryVideoUrl ?? undefined}
+              preload="metadata"
+              hidden
+              onLoadedMetadata={handlePrimaryMetadataLoaded}
             />
 
             <VideoSubtitleOverlay

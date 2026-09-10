@@ -225,6 +225,21 @@
   height:100%
 }
 
+.audio-clip-label {
+  position:absolute;
+  top:5px;
+  z-index:2;
+  min-width:0;
+  padding:0 7px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--tertiary-label);
+  font-size:9px;
+  pointer-events:none;
+  box-sizing:border-box
+}
+
 .timeline-subtitle-row {
   height:54px
 }
