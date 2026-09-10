@@ -7,9 +7,13 @@ import {
 
 import type { Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
+import type { TimelineTrack as TimelineTrackModel } from "../../types/timelineModel";
+
+import { buildTimelineModel } from "../../utils/timelineModel";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
+import VideoTrack from "./VideoTrack";
 import WaveformTrack from "./WaveformTrack";
 
 import "./Timeline.css";
@@ -82,6 +86,16 @@ function Timeline({
   const markerTimes = useMemo(
     () => markers.map((marker) => marker.time).sort((a, b) => a - b),
     [markers],
+  );
+
+  const timelineTracks = useMemo(
+    () =>
+      buildTimelineModel({
+        duration,
+        videoName,
+        subtitles,
+      }),
+    [duration, videoName, subtitles],
   );
 
   const setTimelineZoom = (nextZoom: number) => {
@@ -211,13 +225,64 @@ function Timeline({
     setTimelineZoom(zoom + (event.deltaY < 0 ? TIMELINE_ZOOM_STEP : -TIMELINE_ZOOM_STEP));
   };
 
+  const renderTimelineTrack = (
+    track: TimelineTrackModel,
+  ) => {
+    switch (track.kind) {
+      case "video":
+        return (
+          <VideoTrack
+            key={track.id}
+            duration={duration}
+            track={track}
+            onSeek={onSeek}
+          />
+        );
+
+      case "subtitle":
+        return (
+          <SubtitleTrack
+            key={track.id}
+            duration={duration}
+            track={track}
+            subtitles={subtitles}
+            selectedSubtitleId={selectedSubtitleId}
+            selectedSubtitleIds={selectedSubtitleIds}
+            markerTimes={markerTimes}
+            playheadTime={currentTime}
+            onSubtitleSelect={onSubtitleSelect}
+            onSubtitleMove={onSubtitleMove}
+            onSubtitleGroupMove={onSubtitleGroupMove}
+            onSubtitleResize={onSubtitleResize}
+            onSeek={onSeek}
+          />
+        );
+
+      case "audio":
+        return (
+          <WaveformTrack
+            key={track.id}
+            duration={duration}
+            track={track}
+            videoName={videoName}
+            waveform={waveform}
+            onSeek={onSeek}
+          />
+        );
+
+      default:
+        return null;
+    }
+  };
+
+
   return (
     <section className="timeline-panel">
       <div className="timeline-header">
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            Snap: markers · playhead · subtitle edges
+            V1 · S1 · A1 · generic track architecture
           </span>
         </div>
 
@@ -284,26 +349,7 @@ function Timeline({
               onClearSubtitleSelection?.();
             }}
           >
-            <WaveformTrack
-              duration={duration}
-              videoName={videoName}
-              waveform={waveform}
-              onSeek={onSeek}
-            />
-
-            <SubtitleTrack
-              duration={duration}
-              subtitles={subtitles}
-              selectedSubtitleId={selectedSubtitleId}
-              selectedSubtitleIds={selectedSubtitleIds}
-              markerTimes={markerTimes}
-              playheadTime={currentTime}
-              onSubtitleSelect={onSubtitleSelect}
-              onSubtitleMove={onSubtitleMove}
-              onSubtitleGroupMove={onSubtitleGroupMove}
-              onSubtitleResize={onSubtitleResize}
-              onSeek={onSeek}
-            />
+            {timelineTracks.map(renderTimelineTrack)}
 
             <div className="timeline-marker-layer" aria-hidden="true">
               {markers.map((marker) => (

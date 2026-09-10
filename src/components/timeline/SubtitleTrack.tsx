@@ -4,6 +4,9 @@ import {
 } from "react";
 
 import type { Subtitle } from "../../types/subtitle";
+import type { TimelineTrack } from "../../types/timelineModel";
+
+import TimelineTrackLabel from "./TimelineTrackLabel";
 
 export type SubtitleSelectionMode =
   | "single"
@@ -12,6 +15,7 @@ export type SubtitleSelectionMode =
 
 type SubtitleTrackProps = {
   duration: number;
+  track: TimelineTrack;
   subtitles: Subtitle[];
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
@@ -262,6 +266,7 @@ function selectionModeFromEvent(
 
 function SubtitleTrack({
   duration,
+  track,
   subtitles,
   selectedSubtitleId,
   selectedSubtitleIds,
@@ -633,9 +638,11 @@ function SubtitleTrack({
 
   return (
     <div className="timeline-row timeline-subtitle-row">
-      <div className="timeline-row-label">
-        Subtitles
-      </div>
+      <TimelineTrackLabel
+        shortLabel={track.shortLabel}
+        name={track.name}
+        locked={track.locked}
+      />
 
       <div
         className="subtitle-track"

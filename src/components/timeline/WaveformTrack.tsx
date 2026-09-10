@@ -1,8 +1,17 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+
+import type { TimelineTrack } from "../../types/timelineModel";
+
+import TimelineTrackLabel from "./TimelineTrackLabel";
 
 type WaveformTrackProps = {
   duration: number;
   videoName: string | null;
+  track: TimelineTrack;
   waveform: number[];
   onSeek?: (time: number) => void;
 };
@@ -10,6 +19,7 @@ type WaveformTrackProps = {
 function WaveformTrack({
   duration,
   videoName,
+  track,
   waveform,
   onSeek,
 }: WaveformTrackProps) {
@@ -81,7 +91,11 @@ function WaveformTrack({
 
   return (
     <div className="timeline-row timeline-waveform-row">
-      <div className="timeline-row-label">Audio</div>
+      <TimelineTrackLabel
+        shortLabel={track.shortLabel}
+        name={track.name}
+        locked={track.locked}
+      />
 
       <div className="waveform-track" onClick={handleClick}>
         <span className="timeline-video-name">
