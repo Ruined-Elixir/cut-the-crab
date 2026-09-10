@@ -8,33 +8,30 @@ import type {
 
 type BuildTimelineModelOptions = {
   duration: number;
+  sourceDuration?: number;
   videoName: string | null;
+  videoPath?: string | null;
+  videoClips: VideoTimelineClip[];
   subtitles: Subtitle[];
 };
 
 export function buildTimelineModel({
   duration,
+  sourceDuration,
   videoName,
+  videoPath,
+  videoClips,
   subtitles,
 }: BuildTimelineModelOptions): TimelineTrack[] {
   const safeDuration = Math.max(0, duration);
+  const safeSourceDuration = Math.max(
+    0,
+    sourceDuration ?? safeDuration,
+  );
   const sourceName = videoName ?? "Source Video";
-  const sourceId = videoName ?? "current-source-video";
-
-  const videoClip: VideoTimelineClip | null =
-    safeDuration > 0 && videoName
-      ? {
-          id: "video-source-clip",
-          kind: "video",
-          trackId: "video-1",
-          sourceId,
-          sourceName,
-          sourceIn: 0,
-          sourceOut: safeDuration,
-          timelineStart: 0,
-          timelineEnd: safeDuration,
-        }
-      : null;
+  const sourceId =
+    videoPath ?? videoName ?? "current-source-video";
+  const sourcePath = videoPath ?? "";
 
   const subtitleClips: SubtitleTimelineClip[] =
     subtitles.map((subtitle) => ({
@@ -47,17 +44,18 @@ export function buildTimelineModel({
     }));
 
   const audioClip: AudioTimelineClip | null =
-    safeDuration > 0 && videoName
+    safeSourceDuration > 0 && videoName
       ? {
           id: "audio-source-clip",
           kind: "audio",
           trackId: "audio-1",
           sourceId,
+          sourcePath,
           sourceName,
           sourceIn: 0,
-          sourceOut: safeDuration,
+          sourceOut: safeSourceDuration,
           timelineStart: 0,
-          timelineEnd: safeDuration,
+          timelineEnd: safeSourceDuration,
         }
       : null;
 
@@ -68,9 +66,9 @@ export function buildTimelineModel({
       index: 1,
       name: "Video",
       shortLabel: "V1",
-      locked: true,
+      locked: false,
       hidden: false,
-      clips: videoClip ? [videoClip] : [],
+      clips: videoClips,
     },
     {
       id: "subtitle-1",
@@ -86,7 +84,7 @@ export function buildTimelineModel({
       id: "audio-1",
       kind: "audio",
       index: 1,
-      name: "Audio",
+      name: "Source Audio",
       shortLabel: "A1",
       locked: true,
       muted: false,

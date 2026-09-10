@@ -7,7 +7,10 @@ import {
 
 import type { Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
-import type { TimelineTrack as TimelineTrackModel } from "../../types/timelineModel";
+import type {
+  TimelineTrack as TimelineTrackModel,
+  VideoTimelineClip,
+} from "../../types/timelineModel";
 
 import { buildTimelineModel } from "../../utils/timelineModel";
 
@@ -20,18 +23,33 @@ import "./Timeline.css";
 
 type TimelineProps = {
   duration: number;
+  sourceDuration: number;
   currentTime: number;
   videoName: string | null;
   waveform: number[];
+  videoClips: VideoTimelineClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   zoom: number;
 
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
+  selectedVideoClipId: string | null;
 
   onSeek?: (time: number) => void;
   onClearSubtitleSelection?: () => void;
+
+  onVideoClipSelect?: (id: string) => void;
+  onVideoClipMove?: (
+    id: string,
+    newTimelineStart: number,
+  ) => void;
+  onVideoClipResize?: (
+    id: string,
+    newTimelineStart: number,
+    newTimelineEnd: number,
+  ) => void;
+
   onSubtitleSelect?: (
     id: string,
     mode?: "single" | "toggle" | "range",
@@ -61,16 +79,22 @@ export function clampTimelineZoom(value: number) {
 
 function Timeline({
   duration,
+  sourceDuration,
   currentTime,
   videoName,
   waveform,
+  videoClips,
   subtitles,
   markers,
   zoom,
   selectedSubtitleId,
   selectedSubtitleIds,
+  selectedVideoClipId,
   onSeek,
   onClearSubtitleSelection,
+  onVideoClipSelect,
+  onVideoClipMove,
+  onVideoClipResize,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
@@ -92,10 +116,18 @@ function Timeline({
     () =>
       buildTimelineModel({
         duration,
+        sourceDuration,
         videoName,
+        videoClips,
         subtitles,
       }),
-    [duration, videoName, subtitles],
+    [
+      duration,
+      sourceDuration,
+      videoName,
+      videoClips,
+      subtitles,
+    ],
   );
 
   const setTimelineZoom = (nextZoom: number) => {
@@ -234,8 +266,13 @@ function Timeline({
           <VideoTrack
             key={track.id}
             duration={duration}
+            currentTime={currentTime}
             track={track}
+            selectedVideoClipId={selectedVideoClipId}
             onSeek={onSeek}
+            onSelect={onVideoClipSelect}
+            onMove={onVideoClipMove}
+            onResize={onVideoClipResize}
           />
         );
 
@@ -282,7 +319,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            V1 · S1 · A1 · generic track architecture
+            V1 editable · split · trim · move · delete
           </span>
         </div>
 

@@ -25,6 +25,7 @@ export type TimelineClipBase = {
 export type VideoTimelineClip = TimelineClipBase & {
   kind: "video";
   sourceId: string;
+  sourcePath: string;
   sourceName: string;
   sourceIn: number;
   sourceOut: number;
@@ -38,6 +39,7 @@ export type SubtitleTimelineClip = TimelineClipBase & {
 export type AudioTimelineClip = TimelineClipBase & {
   kind: "audio";
   sourceId: string;
+  sourcePath: string;
   sourceName: string;
   sourceIn: number;
   sourceOut: number;

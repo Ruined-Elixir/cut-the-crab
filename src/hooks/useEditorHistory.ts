@@ -8,10 +8,12 @@ import {
 
 import type { Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
+import type { VideoTimelineClip } from "../types/timelineModel";
 
 export type EditorHistorySnapshot = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
+  videoClips: VideoTimelineClip[];
 };
 
 type UseEditorHistoryOptions = {
@@ -32,6 +34,11 @@ function cloneSnapshot(
     markers: snapshot.markers.map((marker) => ({
       ...marker,
     })),
+    videoClips: snapshot.videoClips.map(
+      (clip) => ({
+        ...clip,
+      }),
+    ),
   };
 }
 

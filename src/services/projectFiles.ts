@@ -2,20 +2,23 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
+import type { VideoTimelineClip } from "../types/timelineModel";
 import type {
   ProjectLanguage,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 3;
+export const CURRENT_PROJECT_VERSION = 5;
 
 export type SubtitleProject = {
   version: number;
+  projectId: string;
   videoPath: string;
   title: string;
   languages: ProjectLanguage[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
+  videoClips: VideoTimelineClip[];
   updatedAt: string;
 };
 
@@ -130,8 +133,77 @@ function normalizeMarker(value: unknown, index: number): TimelineMarker | null {
   };
 }
 
+function normalizeVideoClip(
+  value: unknown,
+  index: number,
+  fallbackVideoPath: string,
+): VideoTimelineClip | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const timelineStart = asNumber(
+    value.timelineStart,
+    0,
+  );
+  const timelineEnd = asNumber(
+    value.timelineEnd,
+    timelineStart,
+  );
+  const sourceIn = asNumber(value.sourceIn, 0);
+  const sourceOut = asNumber(
+    value.sourceOut,
+    sourceIn +
+      (timelineEnd - timelineStart),
+  );
+
+  if (
+    timelineStart < 0 ||
+    timelineEnd <= timelineStart ||
+    sourceIn < 0 ||
+    sourceOut <= sourceIn
+  ) {
+    return null;
+  }
+
+  const sourcePath =
+    typeof value.sourcePath === "string" &&
+    value.sourcePath.length > 0
+      ? value.sourcePath
+      : fallbackVideoPath;
+
+  return {
+    id:
+      typeof value.id === "string" &&
+      value.id.length > 0
+        ? value.id
+        : `video-clip-${index}-${crypto.randomUUID()}`,
+    kind: "video",
+    trackId:
+      typeof value.trackId === "string"
+        ? value.trackId
+        : "video-1",
+    sourceId:
+      typeof value.sourceId === "string" &&
+      value.sourceId.length > 0
+        ? value.sourceId
+        : sourcePath,
+    sourcePath,
+    sourceName:
+      typeof value.sourceName === "string" &&
+      value.sourceName.length > 0
+        ? value.sourceName
+        : defaultTitleFromVideoPath(sourcePath),
+    sourceIn,
+    sourceOut,
+    timelineStart,
+    timelineEnd,
+  };
+}
+
 function normalizeProject(
   value: unknown,
+  fallbackProjectId: string,
   fallbackVideoPath: string,
 ): SubtitleProject {
   if (!isRecord(value)) {
@@ -166,8 +238,35 @@ function normalizeProject(
         .sort((a, b) => a.time - b.time)
     : [];
 
+  const videoClips = Array.isArray(value.videoClips)
+    ? value.videoClips
+        .map((clip, index) =>
+          normalizeVideoClip(
+            clip,
+            index,
+            videoPath,
+          ),
+        )
+        .filter(
+          (
+            clip,
+          ): clip is VideoTimelineClip =>
+            clip !== null,
+        )
+        .sort(
+          (a, b) =>
+            a.timelineStart -
+            b.timelineStart,
+        )
+    : [];
+
   return {
     version: CURRENT_PROJECT_VERSION,
+    projectId:
+      typeof value.projectId === "string" &&
+      value.projectId.trim().length > 0
+        ? value.projectId
+        : fallbackProjectId,
     videoPath,
     title:
       typeof value.title === "string" && value.title.trim().length > 0
@@ -176,6 +275,7 @@ function normalizeProject(
     languages: parseLanguages(value.languages),
     subtitles,
     markers,
+    videoClips,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
 }
@@ -188,10 +288,12 @@ function normalizeProject(
  * migrates legacy sidecar projects automatically on first load.
  */
 export async function loadMatchingProjectFile(
+  projectId: string,
   videoPath: string,
 ): Promise<SubtitleProject | null> {
   try {
     const content = await invoke<string | null>("read_matching_project", {
+      projectId,
       videoPath,
     });
 
@@ -207,7 +309,11 @@ export async function loadMatchingProjectFile(
       throw new Error("Project file contains invalid JSON.");
     }
 
-    return normalizeProject(parsed, videoPath);
+    return normalizeProject(
+      parsed,
+      projectId,
+      videoPath,
+    );
   } catch (error) {
     console.error("Failed to load subtitle project:", error);
     return null;
@@ -215,23 +321,30 @@ export async function loadMatchingProjectFile(
 }
 
 export async function saveProjectFile(
+  projectId: string,
   videoPath: string,
   subtitles: Subtitle[],
   markers: TimelineMarker[],
   metadata?: ProjectMetadata,
+  videoClips: VideoTimelineClip[] = [],
 ): Promise<void> {
   const project: SubtitleProject = {
     version: CURRENT_PROJECT_VERSION,
+    projectId,
     videoPath,
     title: metadata?.title ?? defaultTitleFromVideoPath(videoPath),
     languages: metadata?.languages ?? [],
     subtitles,
     markers: [...markers].sort((a, b) => a.time - b.time),
+    videoClips: [...videoClips].sort(
+      (a, b) =>
+        a.timelineStart - b.timelineStart,
+    ),
     updatedAt: new Date().toISOString(),
   };
 
   await invoke("save_subtitle_project", {
-    videoPath,
+    projectId,
     projectJson: JSON.stringify(project, null, 2),
   });
 }

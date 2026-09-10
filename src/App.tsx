@@ -14,6 +14,7 @@ import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationMo
 
 import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
+import { useVideoTimeline } from "./hooks/useVideoTimeline";
 import { useTranscription } from "./hooks/useTranscription";
 import { useWaveform } from "./hooks/useWaveform";
 
@@ -42,6 +43,7 @@ import {
 } from "./services/appMenu";
 
 import type { TimelineMarker } from "./types/timeline";
+import type { VideoTimelineClip } from "./types/timelineModel";
 import type {
   ProjectLanguage,
   ProjectMetadata,
@@ -103,6 +105,7 @@ function App() {
   const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(
     null,
   );
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // ==========================================================================
   // Video
@@ -179,6 +182,30 @@ function App() {
     replaceWithGeneratedSubtitles,
   } = useSubtitleEditor(currentTime, videoDuration);
 
+  const {
+    videoClips,
+    selectedVideoClipId,
+    selectVideoClip,
+    clearVideoClipSelection,
+    moveVideoClip,
+    resizeVideoClip,
+    splitVideoClip,
+    deleteVideoClip,
+    replaceVideoClips,
+    initializeDefaultVideoClip,
+  } = useVideoTimeline({
+    sourcePath: videoPath,
+    sourceName: videoName,
+    sourceDuration: videoDuration,
+  });
+
+  const timelineDuration = Math.max(
+    videoDuration,
+    ...videoClips.map((clip) => clip.timelineEnd),
+    ...subtitles.map((subtitle) => subtitle.endTime),
+    ...markers.map((marker) => marker.time),
+  );
+
   // ==========================================================================
   // Undo / Redo history
   // ==========================================================================
@@ -194,6 +221,7 @@ function App() {
     snapshot: {
       subtitles,
       markers,
+      videoClips,
     },
     enabled:
       screen === "editor" &&
@@ -202,12 +230,70 @@ function App() {
     onApply: (snapshot) => {
       replaceSubtitles(snapshot.subtitles);
       setMarkers(snapshot.markers);
+      replaceVideoClips(snapshot.videoClips);
     },
   });
 
   const addSubtitleWithHistory = (time: number) => {
     markNextChangeImmediate();
     addSubtitle(time);
+  };
+
+  const splitSelectedVideoClipAtPlayhead = () => {
+    if (!selectedVideoClipId) {
+      return false;
+    }
+
+    const selectedClip = videoClips.find(
+      (clip) =>
+        clip.id === selectedVideoClipId,
+    );
+
+    if (!selectedClip) {
+      return false;
+    }
+
+    if (
+      currentTime <= selectedClip.timelineStart + 0.1 ||
+      currentTime >= selectedClip.timelineEnd - 0.1
+    ) {
+      return false;
+    }
+
+    markNextChangeImmediate();
+    splitVideoClip(
+      selectedVideoClipId,
+      currentTime,
+    );
+
+    return true;
+  };
+
+  const deleteSelectedVideoClipWithHistory = () => {
+    if (!selectedVideoClipId) {
+      return false;
+    }
+
+    markNextChangeImmediate();
+    deleteVideoClip(selectedVideoClipId);
+
+    return true;
+  };
+
+  const handleVideoClipSelect = (id: string) => {
+    selectVideoClip(id);
+    clearSubtitleSelection();
+  };
+
+  const handleSubtitleTrackSelect = (
+    id: string,
+    mode:
+      | "single"
+      | "toggle"
+      | "range" = "single",
+  ) => {
+    clearVideoClipSelection();
+    selectSubtitle(id, mode);
   };
 
   const splitSelectedSubtitleAtPlayhead = () => {
@@ -318,11 +404,13 @@ function App() {
   }, []);
 
   const recordRecentProject = async (
+    projectId: string,
     path: string,
     metadata: ProjectMetadata,
     duration = 0,
   ) => {
     await upsertRecentProject({
+      projectId,
       videoPath: path,
       title: metadata.title,
       languages: metadata.languages,
@@ -347,17 +435,27 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers });
+    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
-  }, [subtitles, markers, videoPath]);
+  }, [
+    subtitles,
+    markers,
+    videoClips,
+    videoPath,
+  ]);
 
   // ==========================================================================
   // Autosave
   // ==========================================================================
 
   useEffect(() => {
-    if (!videoPath || !hasUnsavedChanges || isLoadingVideoRef.current) {
+    if (
+      !activeProjectId ||
+      !videoPath ||
+      !hasUnsavedChanges ||
+      isLoadingVideoRef.current
+    ) {
       return;
     }
 
@@ -366,13 +464,15 @@ function App() {
         setIsSavingProject(true);
 
         await saveProjectFile(
+          activeProjectId,
           videoPath,
           subtitles,
           markers,
           projectMetadata ?? undefined,
+          videoClips,
         );
 
-        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
+        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips });
         setHasUnsavedChanges(false);
       } catch (error) {
         console.error("Autosave failed:", error);
@@ -385,10 +485,12 @@ function App() {
       window.clearTimeout(timeout);
     };
   }, [
+    activeProjectId,
     videoPath,
     subtitles,
     markers,
     projectMetadata,
+    videoClips,
     hasUnsavedChanges,
   ]);
 
@@ -427,8 +529,14 @@ function App() {
   const handleVideoPathChange = async (
     path: string,
     preferredMetadata?: ProjectMetadata,
+    requestedProjectId?: string,
   ) => {
     isLoadingVideoRef.current = true;
+
+    const projectId =
+      requestedProjectId ?? crypto.randomUUID();
+
+    setActiveProjectId(projectId);
 
     const name = path.split(/[\\/]/).pop() ?? "Unknown video";
     const fallbackMetadata: ProjectMetadata = preferredMetadata ?? {
@@ -443,6 +551,7 @@ function App() {
     setVideoPath(path);
 
     replaceSubtitles([]);
+    replaceVideoClips([]);
     setMarkers([]);
     setSubtitleSearch("");
     setTimelineZoom(1);
@@ -454,14 +563,20 @@ function App() {
     let loadedHistorySnapshot = {
       subtitles: [] as typeof subtitles,
       markers: [] as TimelineMarker[],
+      videoClips: [] as VideoTimelineClip[],
     };
 
     try {
-      const matchingProject = await loadMatchingProjectFile(path);
+      const matchingProject = await loadMatchingProjectFile(
+        projectId,
+        path,
+      );
 
       if (matchingProject) {
         const loadedSubtitles = matchingProject.subtitles;
         const loadedMarkers = matchingProject.markers;
+        const loadedVideoClips =
+          matchingProject.videoClips;
 
         resolvedMetadata = {
           title: matchingProject.title,
@@ -472,17 +587,22 @@ function App() {
         };
 
         replaceSubtitles(loadedSubtitles);
+        replaceVideoClips(loadedVideoClips, {
+          markSourceInitialized: true,
+        });
         setMarkers(loadedMarkers);
         setProjectMetadata(resolvedMetadata);
 
         loadedHistorySnapshot = {
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
+          videoClips: loadedVideoClips,
         };
 
         lastSavedSnapshotRef.current = JSON.stringify({
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
+          videoClips: loadedVideoClips,
         });
 
         setHasUnsavedChanges(false);
@@ -495,16 +615,19 @@ function App() {
           loadedHistorySnapshot = {
             subtitles: matchingSubtitles,
             markers: [],
+            videoClips: [],
           };
 
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: matchingSubtitles,
             markers: [],
+            videoClips: [],
           });
         } else {
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: [],
             markers: [],
+            videoClips: [],
           });
         }
 
@@ -516,6 +639,7 @@ function App() {
       loadedHistorySnapshot = {
         subtitles: [],
         markers: [],
+        videoClips: [],
       };
 
       lastSavedSnapshotRef.current = JSON.stringify({
@@ -534,7 +658,11 @@ function App() {
     setHomeError("");
 
     try {
-      await recordRecentProject(path, resolvedMetadata);
+      await recordRecentProject(
+        projectId,
+        path,
+        resolvedMetadata,
+      );
     } catch (error) {
       console.error("Failed to update recent projects:", error);
     }
@@ -586,16 +714,29 @@ function App() {
     }
 
     const path = pendingNewProjectPath;
+    const projectId = crypto.randomUUID();
+
     const metadata: ProjectMetadata = {
       title: getVideoTitle(path),
       languages: [language],
     };
 
     try {
-      await saveProjectFile(path, [], [], metadata);
+      await saveProjectFile(
+        projectId,
+        path,
+        [],
+        [],
+        metadata,
+      );
+
       setPendingNewProjectPath(null);
 
-      await handleVideoPathChange(path, metadata);
+      await handleVideoPathChange(
+        path,
+        metadata,
+        projectId,
+      );
 
       void generateSubtitles(path, transcriptionOptionsForLanguage(language));
     } catch (error) {
@@ -619,10 +760,14 @@ function App() {
     try {
       setHomeError("");
 
-      const matchingProject = await loadMatchingProjectFile(project.videoPath);
+      const matchingProject = await loadMatchingProjectFile(
+        project.projectId,
+        project.videoPath,
+      );
 
       if (matchingProject) {
         await saveProjectFile(
+          project.projectId,
           project.videoPath,
           matchingProject.subtitles,
           matchingProject.markers,
@@ -633,6 +778,7 @@ function App() {
                 ? matchingProject.languages
                 : project.languages,
           },
+          matchingProject.videoClips,
         );
       }
 
@@ -641,7 +787,7 @@ function App() {
         title,
       });
 
-      if (videoPath === project.videoPath) {
+      if (activeProjectId === project.projectId) {
         setProjectMetadata((current) => ({
           title,
           languages: current?.languages ?? project.languages,
@@ -668,10 +814,14 @@ function App() {
     try {
       setHomeError("");
 
-      const oldProject = await loadMatchingProjectFile(project.videoPath);
+      const oldProject = await loadMatchingProjectFile(
+        project.projectId,
+        project.videoPath,
+      );
 
       if (oldProject) {
         await saveProjectFile(
+          project.projectId,
           replacementPath,
           oldProject.subtitles,
           oldProject.markers,
@@ -682,12 +832,14 @@ function App() {
                 ? oldProject.languages
                 : project.languages,
           },
+          oldProject.videoClips,
         );
       }
 
-      await removeRecentProject(project.videoPath);
+      await removeRecentProject(project.projectId);
 
       await upsertRecentProject({
+        projectId: project.projectId,
         videoPath: replacementPath,
         title: oldProject?.title || project.title,
         languages:
@@ -700,13 +852,17 @@ function App() {
 
       await refreshRecentProjects();
 
-      await handleVideoPathChange(replacementPath, {
-        title: oldProject?.title || project.title,
-        languages:
-          oldProject && oldProject.languages.length > 0
-            ? oldProject.languages
-            : project.languages,
-      });
+      await handleVideoPathChange(
+        replacementPath,
+        {
+          title: oldProject?.title || project.title,
+          languages:
+            oldProject && oldProject.languages.length > 0
+              ? oldProject.languages
+              : project.languages,
+        },
+        project.projectId,
+      );
     } catch (error) {
       console.error("Failed to relink project media:", error);
 
@@ -727,10 +883,14 @@ function App() {
         return;
       }
 
-      await handleVideoPathChange(project.videoPath, {
-        title: project.title,
-        languages: project.languages,
-      });
+      await handleVideoPathChange(
+        project.videoPath,
+        {
+          title: project.title,
+          languages: project.languages,
+        },
+        project.projectId,
+      );
     } catch (error) {
       console.error("Failed to open recent project:", error);
       setHomeError("Failed to open the selected recent project.");
@@ -739,7 +899,7 @@ function App() {
 
   const handleRemoveRecentProject = async (project: RecentProject) => {
     try {
-      await removeRecentProject(project.videoPath);
+      await removeRecentProject(project.projectId);
       await refreshRecentProjects();
     } catch (error) {
       console.error("Failed to remove recent project:", error);
@@ -749,11 +909,28 @@ function App() {
   const handleVideoDurationChange = (duration: number) => {
     setVideoDuration(duration);
 
-    if (!videoPath || !projectMetadata || duration <= 0) {
+    if (
+      duration > 0 &&
+      videoClips.length === 0
+    ) {
+      initializeDefaultVideoClip();
+    }
+
+    if (
+      !activeProjectId ||
+      !videoPath ||
+      !projectMetadata ||
+      duration <= 0
+    ) {
       return;
     }
 
-    void recordRecentProject(videoPath, projectMetadata, duration).catch(
+    void recordRecentProject(
+      activeProjectId,
+      videoPath,
+      projectMetadata,
+      duration,
+    ).catch(
       (error) => {
         console.error("Failed to update recent-project duration:", error);
       },
@@ -765,7 +942,7 @@ function App() {
   // ==========================================================================
 
   const handleSaveProject = async () => {
-    if (!videoPath || isSavingProject) {
+    if (!activeProjectId || !videoPath || isSavingProject) {
       return;
     }
 
@@ -773,17 +950,20 @@ function App() {
       setIsSavingProject(true);
 
       await saveProjectFile(
+        activeProjectId,
         videoPath,
         subtitles,
         markers,
         projectMetadata ?? undefined,
+        videoClips,
       );
 
-      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers });
+      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips });
       setHasUnsavedChanges(false);
 
       if (projectMetadata) {
         await recordRecentProject(
+          activeProjectId,
           videoPath,
           projectMetadata,
           videoDuration,
@@ -807,6 +987,7 @@ function App() {
     startTime: number,
     mode: "single" | "toggle" | "range" = "single",
   ) => {
+    clearVideoClipSelection();
     selectSubtitle(id, mode);
 
     if (mode === "single") {
@@ -919,7 +1100,9 @@ function App() {
 
       case "edit.split-subtitle":
         if (screen === "editor") {
-          splitSelectedSubtitleAtPlayhead();
+          if (!splitSelectedVideoClipAtPlayhead()) {
+            splitSelectedSubtitleAtPlayhead();
+          }
         }
         return;
 
@@ -943,7 +1126,9 @@ function App() {
 
       case "edit.delete-subtitle":
         if (screen === "editor") {
-          deleteSelectionWithHistory();
+          if (!deleteSelectedVideoClipWithHistory()) {
+            deleteSelectionWithHistory();
+          }
         }
         return;
 
@@ -1166,6 +1351,12 @@ function App() {
         (event.key === "Delete" ||
           event.key === "Backspace")
       ) {
+        if (selectedVideoClipId) {
+          event.preventDefault();
+          deleteSelectedVideoClipWithHistory();
+          return;
+        }
+
         if (selectedSubtitleIds.length > 0) {
           event.preventDefault();
           deleteSelectionWithHistory();
@@ -1324,6 +1515,8 @@ function App() {
             onDurationChange={handleVideoDurationChange}
             onTimeChange={setCurrentTime}
             seekRequest={seekRequest}
+            videoClips={videoClips}
+            timelineDuration={timelineDuration}
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}
@@ -1353,17 +1546,26 @@ function App() {
       </div>
 
       <Timeline
-        duration={videoDuration}
+        duration={timelineDuration}
+        sourceDuration={videoDuration}
         currentTime={currentTime}
         videoName={videoName}
         waveform={waveform}
+        videoClips={videoClips}
         subtitles={subtitles}
         markers={markers}
         zoom={timelineZoom}
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
-        onClearSubtitleSelection={clearSubtitleSelection}
-        onSubtitleSelect={selectSubtitle}
+        selectedVideoClipId={selectedVideoClipId}
+        onClearSubtitleSelection={() => {
+          clearSubtitleSelection();
+          clearVideoClipSelection();
+        }}
+        onVideoClipSelect={handleVideoClipSelect}
+        onVideoClipMove={moveVideoClip}
+        onVideoClipResize={resizeVideoClip}
+        onSubtitleSelect={handleSubtitleTrackSelect}
         onSubtitleMove={moveSubtitle}
         onSubtitleGroupMove={moveSubtitleGroup}
         onSubtitleResize={resizeSubtitle}

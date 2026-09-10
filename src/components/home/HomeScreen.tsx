@@ -106,7 +106,7 @@ function HomeScreen({
     Record<string, boolean>
   >({});
 
-  const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(
     null,
   );
   const [renameDraft, setRenameDraft] = useState("");
@@ -236,12 +236,12 @@ function HomeScreen({
   };
 
   const beginRename = (project: RecentProject) => {
-    setRenamingProjectPath(project.videoPath);
+    setRenamingProjectId(project.projectId);
     setRenameDraft(project.title);
   };
 
   const cancelRename = () => {
-    setRenamingProjectPath(null);
+    setRenamingProjectId(null);
     setRenameDraft("");
   };
 
@@ -305,7 +305,7 @@ function HomeScreen({
 
                 return (
                   <article
-                    key={project.videoPath}
+                    key={project.projectId}
                     className={[
                       "project-card",
                       isMissing ? "missing-media" : "",
@@ -322,13 +322,13 @@ function HomeScreen({
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        if (renamingProjectPath !== project.videoPath) {
+                        if (renamingProjectId !== project.projectId) {
                           void onOpenProject(project);
                         }
                       }}
                       onKeyDown={(event) => {
                         if (
-                          renamingProjectPath !== project.videoPath &&
+                          renamingProjectId !== project.projectId &&
                           (event.key === "Enter" || event.key === " ")
                         ) {
                           event.preventDefault();
@@ -383,7 +383,7 @@ function HomeScreen({
                       </div>
 
                       <div className="project-card-content">
-                        {renamingProjectPath === project.videoPath ? (
+                        {renamingProjectId === project.projectId ? (
                           <input
                             className="project-title-input"
                             value={renameDraft}

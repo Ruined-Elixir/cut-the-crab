@@ -34,6 +34,7 @@ import "./VideoSubtitleOverlay.css";
 type VideoSubtitleOverlayProps = {
   subtitles: Subtitle[];
   currentTime: number;
+  videoTimeOffset?: number;
 
   selectedSubtitleId?: string | null;
   shellRef: React.RefObject<HTMLDivElement | null>;
@@ -65,9 +66,38 @@ type DraftPosition = {
   positionY: number;
 };
 
+function setRendererCurrentTime(
+  renderer: SubtitlesOctopus | null,
+  time: number,
+) {
+  const timelineRenderer = renderer as
+    | (SubtitlesOctopus & {
+        setCurrentTime?: (currentTime: number) => void;
+      })
+    | null;
+
+  timelineRenderer?.setCurrentTime?.(time);
+}
+
+function setRendererTimeOffset(
+  renderer: SubtitlesOctopus | null,
+  timeOffset: number,
+) {
+  const timelineRenderer = renderer as
+    | (SubtitlesOctopus & {
+        timeOffset?: number;
+      })
+    | null;
+
+  if (timelineRenderer) {
+    timelineRenderer.timeOffset = timeOffset;
+  }
+}
+
 function VideoSubtitleOverlay({
   subtitles,
   currentTime,
+  videoTimeOffset = 0,
   selectedSubtitleId,
   shellRef,
   onSubtitleSelect,
@@ -118,11 +148,27 @@ function VideoSubtitleOverlay({
 
   const renderer0Ref = useRef<SubtitlesOctopus | null>(null);
   const renderer1Ref = useRef<SubtitlesOctopus | null>(null);
+  const currentTimeRef = useRef(currentTime);
+  const videoTimeOffsetRef = useRef(videoTimeOffset);
 
   const frontCanvasIndexRef = useRef<0 | 1>(0);
   const renderRevisionRef = useRef(0);
 
   const draftPositionRef = useRef<DraftPosition | null>(null);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+    videoTimeOffsetRef.current = videoTimeOffset;
+
+    setRendererTimeOffset(renderer0Ref.current, videoTimeOffset);
+    setRendererTimeOffset(renderer1Ref.current, videoTimeOffset);
+
+    // App.currentTime is canonical timeline time. Drive libass explicitly so
+    // subtitle timing stays correct even when native video time represents a
+    // trimmed or moved source clip.
+    setRendererCurrentTime(renderer0Ref.current, currentTime);
+    setRendererCurrentTime(renderer1Ref.current, currentTime);
+  }, [currentTime, videoTimeOffset]);
 
   const activeSubtitle = useMemo(
     () =>
@@ -594,9 +640,15 @@ function VideoSubtitleOverlay({
       renderer1Ref.current = null;
     }
 
-    let renderer: SubtitlesOctopus;
+    let renderer: SubtitlesOctopus | null = null;
 
-    renderer = new SubtitlesOctopus({
+    /*
+     * Keep libass attached to the real video element for geometry/resizing.
+     * The renderer's clock is still driven explicitly from App.currentTime,
+     * while timeOffset keeps native video events aligned to timeline time for
+     * trimmed/moved clips.
+     */
+    const rendererOptions = {
       video,
       canvas,
       subContent: assContent,
@@ -608,8 +660,12 @@ function VideoSubtitleOverlay({
 
       prescaleHeightLimit: ASS_HEIGHT,
       maxRenderHeight: ASS_HEIGHT,
+      timeOffset: videoTimeOffsetRef.current,
 
       onReady: () => {
+        setRendererTimeOffset(renderer, videoTimeOffsetRef.current);
+        setRendererCurrentTime(renderer, currentTimeRef.current);
+
         /*
          * onReady means the new worker/libass instance is initialized, but it
          * does NOT necessarily mean the new subtitle frame has already been
@@ -630,7 +686,7 @@ function VideoSubtitleOverlay({
                * while this renderer was starting/painting.
                */
               if (revision !== renderRevisionRef.current) {
-                renderer.dispose();
+                renderer?.dispose();
                 return;
               }
 
@@ -667,7 +723,19 @@ function VideoSubtitleOverlay({
       onError: (error: Error) => {
         console.error("libass preview renderer failed:", error);
       },
-    });
+    } as unknown as ConstructorParameters<typeof SubtitlesOctopus>[0];
+
+    try {
+      renderer = new SubtitlesOctopus(rendererOptions);
+    } catch (error) {
+      /*
+       * A synchronous libass constructor failure must never take down the
+       * entire React editor. Keep the project open and surface the real
+       * renderer error in DevTools instead of producing a grey screen.
+       */
+      console.error("Failed to initialize libass preview renderer:", error);
+      return;
+    }
 
     if (backIndex === 0) {
       renderer0Ref.current = renderer;

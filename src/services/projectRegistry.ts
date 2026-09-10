@@ -19,9 +19,9 @@ export async function upsertRecentProject(
   });
 }
 
-export async function removeRecentProject(videoPath: string): Promise<void> {
+export async function removeRecentProject(projectId: string): Promise<void> {
   await invoke("remove_recent_project", {
-    videoPath,
+    projectId,
   });
 }
 

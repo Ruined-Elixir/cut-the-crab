@@ -153,6 +153,8 @@ fn center_main_window(app_handle: &tauri::AppHandle) -> tauri::Result<()> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecentProject {
+    #[serde(default)]
+    project_id: String,
     video_path: String,
     title: String,
     languages: Vec<String>,
@@ -185,6 +187,13 @@ fn read_recent_projects_file(app: &tauri::AppHandle) -> Result<Vec<RecentProject
     let mut projects: Vec<RecentProject> = serde_json::from_str(&content)
         .map_err(|error| format!("Failed to parse recent projects: {error}"))?;
 
+    for project in &mut projects {
+        if project.project_id.trim().is_empty() {
+            project.project_id =
+                format!("legacy-{:016x}", stable_path_hash(&project.video_path));
+        }
+    }
+
     projects.sort_by(|a, b| b.last_opened_at.cmp(&a.last_opened_at));
 
     Ok(projects)
@@ -215,7 +224,7 @@ fn upsert_recent_project(
 ) -> Result<(), String> {
     let mut projects = read_recent_projects_file(&app)?;
 
-    projects.retain(|existing| existing.video_path != project.video_path);
+    projects.retain(|existing| existing.project_id != project.project_id);
     projects.push(project);
     projects.sort_by(|a, b| b.last_opened_at.cmp(&a.last_opened_at));
     projects.truncate(50);
@@ -224,10 +233,10 @@ fn upsert_recent_project(
 }
 
 #[tauri::command]
-fn remove_recent_project(app: tauri::AppHandle, video_path: String) -> Result<(), String> {
+fn remove_recent_project(app: tauri::AppHandle, project_id: String) -> Result<(), String> {
     let mut projects = read_recent_projects_file(&app)?;
 
-    projects.retain(|project| project.video_path != video_path);
+    projects.retain(|project| project.project_id != project_id);
 
     write_recent_projects_file(&app, &projects)
 }
@@ -857,7 +866,17 @@ fn managed_projects_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(projects_dir)
 }
 
-fn managed_project_path(
+fn managed_project_path_for_id(
+    app: &tauri::AppHandle,
+    project_id: &str,
+) -> Result<PathBuf, String> {
+    let projects_dir = managed_projects_dir(app)?;
+    let cache_key = stable_path_hash(project_id);
+
+    Ok(projects_dir.join(format!("{cache_key:016x}.subtitle-project.json")))
+}
+
+fn legacy_managed_project_path_for_video(
     app: &tauri::AppHandle,
     video_path: &str,
 ) -> Result<PathBuf, String> {
@@ -869,10 +888,10 @@ fn managed_project_path(
 
 fn write_managed_project(
     app: &tauri::AppHandle,
-    video_path: &str,
+    project_id: &str,
     project_json: &str,
 ) -> Result<(), String> {
-    let project_path = managed_project_path(app, video_path)?;
+    let project_path = managed_project_path_for_id(app, project_id)?;
     let temporary_path = project_path.with_extension("json.tmp");
 
     fs::write(&temporary_path, project_json)
@@ -890,9 +909,10 @@ fn write_managed_project(
 #[tauri::command]
 fn read_matching_project(
     app: tauri::AppHandle,
+    project_id: String,
     video_path: String,
 ) -> Result<Option<String>, String> {
-    let managed_path = managed_project_path(&app, &video_path)?;
+    let managed_path = managed_project_path_for_id(&app, &project_id)?;
 
     if managed_path.exists() {
         return fs::read_to_string(&managed_path)
@@ -903,31 +923,53 @@ fn read_matching_project(
     /*
      * Backward compatibility:
      *
-     * Older builds stored `*.subtitle-project.json` beside the source video.
-     * If one exists, read it and immediately copy it into managed app storage.
-     * The legacy sidecar is intentionally left untouched.
+     * Existing installs used the source video path as the project identity.
+     * Only deterministic `legacy-*` project IDs are allowed to fall back to
+     * that old location. New UUID-backed projects never do this, which is what
+     * allows multiple independent projects to use the same source video.
      */
-    let legacy_path = legacy_matching_project_path(Path::new(&video_path));
+    if project_id.starts_with("legacy-") {
+        let legacy_managed_path =
+            legacy_managed_project_path_for_video(&app, &video_path)?;
 
-    if !legacy_path.exists() {
-        return Ok(None);
+        if legacy_managed_path.exists() {
+            let content = fs::read_to_string(&legacy_managed_path)
+                .map_err(|error| {
+                    format!("Failed to read legacy managed subtitle project: {error}")
+                })?;
+
+            write_managed_project(&app, &project_id, &content)?;
+
+            return Ok(Some(content));
+        }
+
+        /*
+         * Older builds stored `*.subtitle-project.json` beside the source video.
+         * If one exists, read it and copy it into project-ID managed storage.
+         * The legacy sidecar remains untouched.
+         */
+        let legacy_path = legacy_matching_project_path(Path::new(&video_path));
+
+        if legacy_path.exists() {
+            let content = fs::read_to_string(&legacy_path)
+                .map_err(|error| format!("Failed to read legacy subtitle project: {error}"))?;
+
+            write_managed_project(&app, &project_id, &content)?;
+
+            return Ok(Some(content));
+        }
     }
 
-    let content = fs::read_to_string(&legacy_path)
-        .map_err(|error| format!("Failed to read legacy subtitle project: {error}"))?;
-
-    write_managed_project(&app, &video_path, &content)?;
-
-    Ok(Some(content))
+    Ok(None)
 }
 
 #[tauri::command]
 fn save_subtitle_project(
     app: tauri::AppHandle,
-    video_path: String,
+    project_id: String,
     project_json: String,
 ) -> Result<(), String> {
-    write_managed_project(&app, &video_path, &project_json)
+    write_managed_project(&app, &project_id, &project_json)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

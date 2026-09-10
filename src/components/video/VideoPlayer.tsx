@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
+import type { VideoTimelineClip } from "../../types/timelineModel";
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
@@ -24,6 +25,9 @@ type VideoPlayerProps = {
 
   seekRequest?: SeekRequest | null;
 
+  videoClips: VideoTimelineClip[];
+  timelineDuration: number;
+
   subtitles: Subtitle[];
   currentTime: number;
 
@@ -43,6 +47,26 @@ type VideoPlayerProps = {
   onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
 
+function findActiveVideoClip(
+  videoClips: VideoTimelineClip[],
+  timelineTime: number,
+) {
+  return (
+    videoClips.find(
+      (clip) =>
+        timelineTime >= clip.timelineStart &&
+        timelineTime < clip.timelineEnd,
+    ) ?? null
+  );
+}
+
+function timelineTimeToSourceTime(
+  clip: VideoTimelineClip,
+  timelineTime: number,
+) {
+  return clip.sourceIn + (timelineTime - clip.timelineStart);
+}
+
 function VideoPlayer({
   videoPath,
   videoName,
@@ -50,6 +74,8 @@ function VideoPlayer({
   onDurationChange,
   onTimeChange,
   seekRequest,
+  videoClips,
+  timelineDuration,
   subtitles,
   currentTime,
   selectedSubtitleId,
@@ -61,9 +87,25 @@ function VideoPlayer({
 }: VideoPlayerProps) {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isVideoVisible, setIsVideoVisible] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+
+  const currentTimeRef = useRef(currentTime);
+  const timelineDurationRef = useRef(timelineDuration);
+  const sourceDurationRef = useRef(duration);
+  const videoClipsRef = useRef(videoClips);
+  const videoPathRef = useRef(videoPath);
+  const isPlayingRef = useRef(false);
+
+  const onTimeChangeRef = useRef(onTimeChange);
+  const onDurationChangeRef = useRef(onDurationChange);
+
+  const activeClipIdRef = useRef<string | null>(null);
+  const playbackAnchorTimelineRef = useRef(currentTime);
+  const playbackAnchorPerformanceRef = useRef(0);
 
   const skipSeconds = 10;
 
@@ -73,22 +115,185 @@ function VideoPlayer({
   );
 
   useEffect(() => {
-    /*
-     * Reset playback state only when the selected video changes.
-     *
-     * Do not depend on onDurationChange/onTimeChange here. App-level callback
-     * functions may receive a new identity during ordinary React renders
-     * (for example when currentTime changes). Treating that as a video change
-     * repeatedly resets currentTime/duration to zero while playback is running.
-     */
-    setDuration(0);
-    setIsPlaying(false);
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
 
-    onTimeChange?.(0);
-    onDurationChange?.(0);
+  useEffect(() => {
+    timelineDurationRef.current = timelineDuration;
+  }, [timelineDuration]);
+
+  useEffect(() => {
+    sourceDurationRef.current = duration;
+  }, [duration]);
+
+  useEffect(() => {
+    videoClipsRef.current = videoClips;
+  }, [videoClips]);
+
+  useEffect(() => {
+    videoPathRef.current = videoPath;
   }, [videoPath]);
 
-  // Playback
+  useEffect(() => {
+    onTimeChangeRef.current = onTimeChange;
+  }, [onTimeChange]);
+
+  useEffect(() => {
+    onDurationChangeRef.current = onDurationChange;
+  }, [onDurationChange]);
+
+  const syncNativeVideoToTimeline = (
+    timelineTime: number,
+    shouldPlay: boolean,
+    forceSeek = false,
+  ) => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    const activeClip = findActiveVideoClip(
+      videoClipsRef.current,
+      timelineTime,
+    );
+
+    const canRenderClip =
+      !!activeClip && activeClip.sourcePath === videoPathRef.current;
+
+    setIsVideoVisible(canRenderClip);
+
+    if (!activeClip || !canRenderClip) {
+      activeClipIdRef.current = null;
+
+      if (!video.paused) {
+        video.pause();
+      }
+
+      return;
+    }
+
+    const expectedSourceTime = timelineTimeToSourceTime(
+      activeClip,
+      timelineTime,
+    );
+
+    const maxSourceTime = Number.isFinite(video.duration)
+      ? video.duration
+      : sourceDurationRef.current;
+
+    const safeSourceTime = Math.max(
+      0,
+      Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
+    );
+
+    const clipChanged = activeClipIdRef.current !== activeClip.id;
+
+    /*
+     * Do not continuously chase the timeline clock with native video seeks.
+     * Seeking while media is already playing flushes/rebuffers the decoder and
+     * produces broken, intermittent audio.
+     *
+     * We only seek when:
+     * - the playhead enters a different timeline clip, or
+     * - the user explicitly seeks/scrubs/jumps, or
+     * - metadata has just loaded and we need to establish the correct frame.
+     *
+     * Once a clip is playing, let the native media element run continuously.
+     * The editor timeline still advances from the playback controller clock.
+     */
+    if (clipChanged || forceSeek) {
+      video.currentTime = safeSourceTime;
+    }
+
+    activeClipIdRef.current = activeClip.id;
+
+    if (shouldPlay) {
+      if (video.paused) {
+        void video.play().catch((error) => {
+          console.error("Timeline video playback failed:", error);
+        });
+      }
+    } else if (!video.paused) {
+      video.pause();
+    }
+  };
+
+
+  const syncAudioToTimeline = (
+    timelineTime: number,
+    shouldPlay: boolean,
+    forceSeek = false,
+  ) => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const sourceDuration = Number.isFinite(audio.duration)
+      ? audio.duration
+      : sourceDurationRef.current;
+
+    const hasAudioAtTime =
+      sourceDuration > 0 &&
+      timelineTime >= 0 &&
+      timelineTime < sourceDuration;
+
+    if (!hasAudioAtTime) {
+      if (!audio.paused) {
+        audio.pause();
+      }
+
+      return;
+    }
+
+    if (forceSeek) {
+      const safeAudioTime = Math.max(
+        0,
+        Math.min(sourceDuration, timelineTime),
+      );
+
+      try {
+        audio.currentTime = safeAudioTime;
+      } catch (error) {
+        console.error("Timeline audio seek failed:", error);
+      }
+    }
+
+    if (shouldPlay) {
+      if (audio.paused) {
+        void audio.play().catch((error) => {
+          console.error("Timeline audio playback failed:", error);
+        });
+      }
+    } else if (!audio.paused) {
+      audio.pause();
+    }
+  };
+
+  const seekTo = (time: number) => {
+    if (!Number.isFinite(time)) {
+      return;
+    }
+
+    const maxDuration = Math.max(0, timelineDurationRef.current || 0);
+    const nextTime = Math.max(0, Math.min(maxDuration, time));
+
+    currentTimeRef.current = nextTime;
+    playbackAnchorTimelineRef.current = nextTime;
+    playbackAnchorPerformanceRef.current = performance.now();
+
+    onTimeChangeRef.current?.(nextTime);
+
+    syncNativeVideoToTimeline(nextTime, isPlayingRef.current, true);
+    syncAudioToTimeline(nextTime, isPlayingRef.current, true);
+  };
+
+  const jumpBy = (seconds: number) => {
+    seekTo(currentTimeRef.current + seconds);
+  };
+
   const togglePlayPause = () => {
     const video = videoRef.current;
 
@@ -96,47 +301,125 @@ function VideoPlayer({
       return;
     }
 
-    if (video.paused) {
-      void video.play();
-    } else {
+    if (isPlayingRef.current) {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
       video.pause();
-    }
-  };
-
-  const jumpBy = (seconds: number) => {
-    const video = videoRef.current;
-
-    if (!video || !Number.isFinite(video.duration)) {
+      audioRef.current?.pause();
       return;
     }
 
-    const nextTime = Math.max(
-      0,
-      Math.min(video.duration, video.currentTime + seconds),
-    );
+    const maxDuration = Math.max(0, timelineDurationRef.current || 0);
 
-    video.currentTime = nextTime;
-
-    onTimeChange?.(nextTime);
-  };
-
-  const seekTo = (time: number) => {
-    const video = videoRef.current;
-
-    if (!video || !Number.isFinite(time)) {
+    if (maxDuration <= 0) {
       return;
     }
 
-    const maxDuration = Number.isFinite(video.duration)
-      ? video.duration
-      : duration;
+    let playbackStart = currentTimeRef.current;
 
-    const nextTime = Math.max(0, Math.min(maxDuration || 0, time));
+    if (playbackStart >= maxDuration) {
+      playbackStart = 0;
+      currentTimeRef.current = 0;
+      onTimeChangeRef.current?.(0);
+    }
 
-    video.currentTime = nextTime;
+    playbackAnchorTimelineRef.current = playbackStart;
+    playbackAnchorPerformanceRef.current = performance.now();
 
-    onTimeChange?.(nextTime);
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+
+    syncNativeVideoToTimeline(playbackStart, true, true);
+    syncAudioToTimeline(playbackStart, true, true);
   };
+
+  useEffect(() => {
+    /*
+     * Reset playback state only when the selected source video changes.
+     * App.currentTime is timeline time; native video.currentTime is source time.
+     */
+    setDuration(0);
+    setIsPlaying(false);
+    setIsVideoVisible(false);
+
+    videoRef.current?.pause();
+    audioRef.current?.pause();
+
+    isPlayingRef.current = false;
+    currentTimeRef.current = 0;
+    activeClipIdRef.current = null;
+    playbackAnchorTimelineRef.current = 0;
+    playbackAnchorPerformanceRef.current = 0;
+
+    onTimeChangeRef.current?.(0);
+    onDurationChangeRef.current?.(0);
+  }, [videoPath]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      return;
+    }
+
+    syncNativeVideoToTimeline(currentTime, false, true);
+    syncAudioToTimeline(currentTime, false, true);
+  }, [currentTime, isPlaying, videoClips, videoPath, duration]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+
+    playbackAnchorTimelineRef.current = currentTimeRef.current;
+    playbackAnchorPerformanceRef.current = performance.now();
+
+    let animationFrameId = 0;
+
+    const tick = (now: number) => {
+      if (!isPlayingRef.current) {
+        return;
+      }
+
+      const maxDuration = Math.max(0, timelineDurationRef.current || 0);
+
+      if (maxDuration <= 0) {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+        syncNativeVideoToTimeline(0, false);
+        syncAudioToTimeline(0, false);
+        return;
+      }
+
+      const elapsedSeconds =
+        (now - playbackAnchorPerformanceRef.current) / 1000;
+
+      const nextTime = Math.min(
+        maxDuration,
+        playbackAnchorTimelineRef.current + elapsedSeconds,
+      );
+
+      currentTimeRef.current = nextTime;
+      onTimeChangeRef.current?.(nextTime);
+
+      syncNativeVideoToTimeline(nextTime, true);
+      syncAudioToTimeline(nextTime, true);
+
+      if (nextTime >= maxDuration) {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+        syncNativeVideoToTimeline(maxDuration, false);
+        syncAudioToTimeline(maxDuration, false);
+        return;
+      }
+
+      animationFrameId = window.requestAnimationFrame(tick);
+    };
+
+    animationFrameId = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [isPlaying]);
 
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
@@ -146,21 +429,22 @@ function VideoPlayer({
     }
 
     setDuration(video.duration);
+    sourceDurationRef.current = video.duration;
+    onDurationChangeRef.current?.(video.duration);
 
-    onDurationChange?.(video.duration);
+    syncNativeVideoToTimeline(
+      currentTimeRef.current,
+      isPlayingRef.current,
+      true,
+    );
+
+    syncAudioToTimeline(
+      currentTimeRef.current,
+      isPlayingRef.current,
+      true,
+    );
   };
 
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    onTimeChange?.(video.currentTime);
-  };
-
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -196,26 +480,21 @@ function VideoPlayer({
     };
   }, []);
 
-  // External seek requests
   useEffect(() => {
-    const video = videoRef.current;
-
-    if (!video || !seekRequest) {
+    if (!seekRequest) {
       return;
     }
 
-    const nextTime = Math.max(
-      0,
-      Math.min(
-        Number.isFinite(video.duration) ? video.duration : seekRequest.time,
-        seekRequest.time,
-      ),
-    );
+    seekTo(seekRequest.time);
+  }, [seekRequest]);
 
-    video.currentTime = nextTime;
+  const monitorDuration = Math.max(0, timelineDuration || 0);
 
-    onTimeChange?.(nextTime);
-  }, [seekRequest, onTimeChange]);
+  const subtitleClockClip = findActiveVideoClip(videoClips, currentTime);
+  const subtitleVideoTimeOffset =
+    subtitleClockClip && subtitleClockClip.sourcePath === videoPath
+      ? subtitleClockClip.timelineStart - subtitleClockClip.sourceIn
+      : 0;
 
   return (
     <div className="video-player">
@@ -242,17 +521,31 @@ function VideoPlayer({
               ref={videoRef}
               src={videoUrl}
               className="video-element"
+              muted
+              style={{ visibility: isVideoVisible ? "visible" : "hidden" }}
               onLoadedMetadata={handleLoadedMetadata}
-              onTimeUpdate={handleTimeUpdate}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onEnded={() => setIsPlaying(false)}
               onClick={togglePlayPause}
+            />
+
+            <audio
+              key={`audio:${videoPath ?? ""}`}
+              ref={audioRef}
+              src={videoUrl}
+              preload="auto"
+              hidden
+              onLoadedMetadata={() => {
+                syncAudioToTimeline(
+                  currentTimeRef.current,
+                  isPlayingRef.current,
+                  true,
+                );
+              }}
             />
 
             <VideoSubtitleOverlay
               subtitles={subtitles}
               currentTime={currentTime}
+              videoTimeOffset={subtitleVideoTimeOffset}
               selectedSubtitleId={selectedSubtitleId}
               shellRef={shellRef}
               onSubtitleSelect={onSubtitleSelect}
@@ -265,7 +558,7 @@ function VideoPlayer({
 
           <VideoControls
             currentTime={currentTime}
-            duration={duration}
+            duration={monitorDuration}
             isPlaying={isPlaying}
             skipSeconds={skipSeconds}
             onTogglePlayPause={togglePlayPause}

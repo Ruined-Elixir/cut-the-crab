@@ -11,6 +11,7 @@ export type ProjectMetadata = {
 };
 
 export type RecentProject = ProjectMetadata & {
+  projectId: string;
   videoPath: string;
   lastOpenedAt: string;
   duration: number;
