@@ -1,4 +1,7 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import {
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import type { Subtitle } from "../../types/subtitle";
 
@@ -13,6 +16,7 @@ type SubtitleTrackProps = {
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
   markerTimes: number[];
+  playheadTime: number;
 
   onSeek?: (time: number) => void;
   onSubtitleSelect?: (
@@ -49,19 +53,71 @@ function getSnapTolerance(
   return (SNAP_TOLERANCE_PX / trackWidth) * duration;
 }
 
-function snapTime(
-  value: number,
+type SnapTargetType =
+  | "marker"
+  | "playhead"
+  | "subtitle";
+
+type SnapTarget = {
+  time: number;
+  type: SnapTargetType;
+};
+
+function getSnapTargets(
+  subtitles: Subtitle[],
+  excludedIds: Set<string>,
   markerTimes: number[],
+  playheadTime: number,
+) {
+  const targets: SnapTarget[] = markerTimes.map(
+    (time) => ({
+      time,
+      type: "marker",
+    }),
+  );
+
+  if (Number.isFinite(playheadTime)) {
+    targets.push({
+      time: playheadTime,
+      type: "playhead",
+    });
+  }
+
+  for (const subtitle of subtitles) {
+    if (excludedIds.has(subtitle.id)) {
+      continue;
+    }
+
+    targets.push(
+      {
+        time: subtitle.startTime,
+        type: "subtitle",
+      },
+      {
+        time: subtitle.endTime,
+        type: "subtitle",
+      },
+    );
+  }
+
+  return targets;
+}
+
+function findSnapTarget(
+  value: number,
+  targets: SnapTarget[],
   tolerance: number,
 ) {
-  let best = value;
+  let best: SnapTarget | null = null;
   let bestDistance = tolerance;
 
-  for (const markerTime of markerTimes) {
-    const distance = Math.abs(markerTime - value);
+  for (const target of targets) {
+    const distance = Math.abs(
+      target.time - value,
+    );
 
     if (distance <= bestDistance) {
-      best = markerTime;
+      best = target;
       bestDistance = distance;
     }
   }
@@ -210,12 +266,18 @@ function SubtitleTrack({
   selectedSubtitleId,
   selectedSubtitleIds,
   markerTimes,
+  playheadTime,
   onSeek,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
   onSubtitleResize,
 }: SubtitleTrackProps) {
+  const [draggingSubtitleIds, setDraggingSubtitleIds] =
+    useState<string[]>([]);
+  const [snapIndicator, setSnapIndicator] =
+    useState<SnapTarget | null>(null);
+
   const startMove = (
     event: ReactMouseEvent<HTMLDivElement>,
     subtitle: Subtitle,
@@ -262,6 +324,15 @@ function SubtitleTrack({
       onSubtitleSelect?.(subtitle.id, "single");
     }
 
+    setDraggingSubtitleIds(groupIds);
+
+    const snapTargets = getSnapTargets(
+      subtitles,
+      new Set(groupIds),
+      markerTimes,
+      playheadTime,
+    );
+
     const startX = event.clientX;
     const originalStart = subtitle.startTime;
     const subtitleDuration =
@@ -280,31 +351,41 @@ function SubtitleTrack({
 
       let newStart = originalStart + deltaTime;
 
-      const snappedStart = snapTime(
+      const startSnap = findSnapTarget(
         newStart,
-        markerTimes,
-        snapTolerance,
-      );
-      const snappedEnd = snapTime(
-        newStart + subtitleDuration,
-        markerTimes,
+        snapTargets,
         snapTolerance,
       );
 
+      const endSnap = findSnapTarget(
+        newStart + subtitleDuration,
+        snapTargets,
+        snapTolerance,
+      );
+
+      const startDistance = startSnap
+        ? Math.abs(startSnap.time - newStart)
+        : Number.POSITIVE_INFINITY;
+
+      const endDistance = endSnap
+        ? Math.abs(
+            endSnap.time -
+              (newStart + subtitleDuration),
+          )
+        : Number.POSITIVE_INFINITY;
+
       if (
-        Math.abs(snappedStart - newStart) <=
-        Math.abs(
-          snappedEnd -
-            (newStart + subtitleDuration),
-        )
+        startSnap &&
+        startDistance <= endDistance
       ) {
-        newStart = snappedStart;
-      } else if (
-        snappedEnd !==
-        newStart + subtitleDuration
-      ) {
+        newStart = startSnap.time;
+        setSnapIndicator(startSnap);
+      } else if (endSnap) {
         newStart =
-          snappedEnd - subtitleDuration;
+          endSnap.time - subtitleDuration;
+        setSnapIndicator(endSnap);
+      } else {
+        setSnapIndicator(null);
       }
 
       if (groupIds.length > 1) {
@@ -340,6 +421,9 @@ function SubtitleTrack({
     };
 
     const handleMouseUp = () => {
+      setDraggingSubtitleIds([]);
+      setSnapIndicator(null);
+
       window.removeEventListener(
         "mousemove",
         handleMouseMove,
@@ -378,6 +462,15 @@ function SubtitleTrack({
     onSubtitleSelect?.(
       subtitle.id,
       "single",
+    );
+
+    setDraggingSubtitleIds([subtitle.id]);
+
+    const snapTargets = getSnapTargets(
+      subtitles,
+      new Set([subtitle.id]),
+      markerTimes,
+      playheadTime,
     );
 
     const startX = event.clientX;
@@ -425,11 +518,18 @@ function SubtitleTrack({
         let newStart =
           originalStart + deltaTime;
 
-        newStart = snapTime(
+        const startSnap = findSnapTarget(
           newStart,
-          markerTimes,
+          snapTargets,
           snapTolerance,
         );
+
+        if (startSnap) {
+          setSnapIndicator(startSnap);
+          newStart = startSnap.time;
+        } else {
+          setSnapIndicator(null);
+        }
 
         newStart = Math.max(
           previousSubtitle?.endTime ?? 0,
@@ -452,11 +552,18 @@ function SubtitleTrack({
 
       let newEnd = originalEnd + deltaTime;
 
-      newEnd = snapTime(
+      const endSnap = findSnapTarget(
         newEnd,
-        markerTimes,
+        snapTargets,
         snapTolerance,
       );
+
+      if (endSnap) {
+        setSnapIndicator(endSnap);
+        newEnd = endSnap.time;
+      } else {
+        setSnapIndicator(null);
+      }
 
       newEnd = Math.min(
         nextSubtitle?.startTime ?? duration,
@@ -476,6 +583,9 @@ function SubtitleTrack({
     };
 
     const handleMouseUp = () => {
+      setDraggingSubtitleIds([]);
+      setSnapIndicator(null);
+
       window.removeEventListener(
         "mousemove",
         handleMouseMove,
@@ -531,6 +641,21 @@ function SubtitleTrack({
         className="subtitle-track"
         onClick={handleTrackClick}
       >
+        {snapIndicator !== null && duration > 0 && (
+          <div
+            className={[
+              "subtitle-snap-indicator",
+              `snap-${snapIndicator.type}`,
+            ].join(" ")}
+            style={{
+              left: `${(snapIndicator.time / duration) * 100}%`,
+            }}
+            aria-hidden="true"
+          >
+            <span />
+          </div>
+        )}
+
         {subtitles.map((subtitle) => {
           const left =
             duration > 0
@@ -561,6 +686,9 @@ function SubtitleTrack({
                 "subtitle-clip",
                 isSelected ? "selected" : "",
                 isPrimary ? "primary-selected" : "",
+                draggingSubtitleIds.includes(subtitle.id)
+                  ? "dragging"
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" ")}

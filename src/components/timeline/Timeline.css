@@ -368,3 +368,97 @@
   .subtitle-resize-handle::after {
   opacity: 0;
 }
+
+/* ==========================================================================
+   Timeline editing polish
+   ========================================================================== */
+
+.subtitle-clip.dragging {
+  z-index: 8;
+
+  cursor: grabbing;
+
+  filter: brightness(1.12);
+
+  box-shadow:
+    inset 0 0 0 1px rgba(10, 132, 255, 0.95),
+    0 5px 16px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(10, 132, 255, 0.16);
+
+  transform: translateY(-1px);
+}
+
+.subtitle-snap-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+
+  z-index: 20;
+
+  width: 1px;
+
+  background: var(--system-yellow, #ffd60a);
+
+  pointer-events: none;
+
+  box-shadow:
+    0 0 0 0.5px rgba(255, 214, 10, 0.45),
+    0 0 8px rgba(255, 214, 10, 0.26);
+}
+
+.subtitle-snap-indicator > span {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+
+  width: 5px;
+  height: 5px;
+
+  border-radius: 1px;
+
+  background: var(--system-yellow, #ffd60a);
+
+  transform:
+    translateX(-50%)
+    rotate(45deg);
+}
+
+/* ==========================================================================
+   Expanded snap target feedback
+   ========================================================================== */
+
+.subtitle-snap-indicator.snap-marker {
+  background: var(--system-yellow, #ffd60a);
+
+  box-shadow:
+    0 0 0 0.5px rgba(255, 214, 10, 0.45),
+    0 0 8px rgba(255, 214, 10, 0.26);
+}
+
+.subtitle-snap-indicator.snap-marker > span {
+  background: var(--system-yellow, #ffd60a);
+}
+
+.subtitle-snap-indicator.snap-playhead {
+  background: var(--system-red, #ff453a);
+
+  box-shadow:
+    0 0 0 0.5px rgba(255, 69, 58, 0.46),
+    0 0 8px rgba(255, 69, 58, 0.25);
+}
+
+.subtitle-snap-indicator.snap-playhead > span {
+  background: var(--system-red, #ff453a);
+}
+
+.subtitle-snap-indicator.snap-subtitle {
+  background: var(--system-blue, #0a84ff);
+
+  box-shadow:
+    0 0 0 0.5px rgba(10, 132, 255, 0.46),
+    0 0 8px rgba(10, 132, 255, 0.27);
+}
+
+.subtitle-snap-indicator.snap-subtitle > span {
+  background: var(--system-blue, #0a84ff);
+}

@@ -985,6 +985,64 @@ function App() {
     }
   };
 
+  const trimPrimarySubtitleToPlayhead = (
+    edge: "start" | "end",
+  ) => {
+    if (!selectedSubtitleId) {
+      return;
+    }
+
+    const subtitle = subtitles.find(
+      (item) => item.id === selectedSubtitleId,
+    );
+
+    if (!subtitle) {
+      return;
+    }
+
+    const MIN_SUBTITLE_DURATION = 0.1;
+
+    if (
+      currentTime <= subtitle.startTime ||
+      currentTime >= subtitle.endTime
+    ) {
+      return;
+    }
+
+    if (
+      edge === "start" &&
+      currentTime >
+        subtitle.endTime - MIN_SUBTITLE_DURATION
+    ) {
+      return;
+    }
+
+    if (
+      edge === "end" &&
+      currentTime <
+        subtitle.startTime + MIN_SUBTITLE_DURATION
+    ) {
+      return;
+    }
+
+    markNextChangeImmediate();
+
+    if (edge === "start") {
+      resizeSubtitle(
+        subtitle.id,
+        currentTime,
+        subtitle.endTime,
+      );
+      return;
+    }
+
+    resizeSubtitle(
+      subtitle.id,
+      subtitle.startTime,
+      currentTime,
+    );
+  };
+
   useEffect(() => {
     const handleEditorShortcutKeyDown = (
       event: KeyboardEvent,
@@ -1008,6 +1066,23 @@ function App() {
           event.preventDefault();
           clearSubtitleSelection();
         }
+
+        return;
+      }
+
+      if (
+        !isEditingText &&
+        event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        (event.key === "[" || event.key === "]")
+      ) {
+        event.preventDefault();
+
+        trimPrimarySubtitleToPlayhead(
+          event.key === "[" ? "start" : "end",
+        );
 
         return;
       }
@@ -1163,6 +1238,8 @@ function App() {
     clearSubtitleSelection,
     focusSelectedSubtitle,
     nudgeSelectedSubtitles,
+    resizeSubtitle,
+    markNextChangeImmediate,
     currentTime,
     selectedSubtitleId,
     selectedSubtitleIds,

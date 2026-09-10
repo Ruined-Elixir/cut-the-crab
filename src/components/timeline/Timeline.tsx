@@ -217,7 +217,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            Shift-click range · Cmd/Ctrl-click toggle · Option/Alt+←/→ nudge
+            Snap: markers · playhead · subtitle edges
           </span>
         </div>
 
@@ -297,6 +297,7 @@ function Timeline({
               selectedSubtitleId={selectedSubtitleId}
               selectedSubtitleIds={selectedSubtitleIds}
               markerTimes={markerTimes}
+              playheadTime={currentTime}
               onSubtitleSelect={onSubtitleSelect}
               onSubtitleMove={onSubtitleMove}
               onSubtitleGroupMove={onSubtitleGroupMove}
