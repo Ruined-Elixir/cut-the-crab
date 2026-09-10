@@ -5,6 +5,7 @@ import {
   useState,
 } from "react";
 
+import type { ProjectMediaAsset } from "../types/project";
 import type { VideoTimelineClip } from "../types/timelineModel";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -23,6 +24,32 @@ function sortVideoClips(clips: VideoTimelineClip[]) {
   );
 }
 
+
+function findNextAvailableTimelineStart(
+  clips: VideoTimelineClip[],
+  requestedStart: number,
+  clipDuration: number,
+) {
+  let start = Math.max(0, requestedStart);
+  const sorted = sortVideoClips(clips);
+
+  for (const clip of sorted) {
+    const end = start + clipDuration;
+
+    if (end <= clip.timelineStart) {
+      break;
+    }
+
+    if (start >= clip.timelineEnd) {
+      continue;
+    }
+
+    start = clip.timelineEnd;
+  }
+
+  return start;
+}
+
 function createFullSourceClip(
   sourcePath: string,
   sourceName: string,
@@ -37,6 +64,7 @@ function createFullSourceClip(
     sourceName,
     sourceIn: 0,
     sourceOut: sourceDuration,
+    sourceDuration,
     timelineStart: 0,
     timelineEnd: sourceDuration,
   };
@@ -227,9 +255,12 @@ export function useVideoTimeline({
         target.timelineStart - target.sourceIn,
       );
 
+      const clipSourceDuration =
+        target.sourceDuration ?? sourceDuration;
+
       const latestTimelineEnd =
         target.timelineEnd +
-        Math.max(0, sourceDuration - target.sourceOut);
+        Math.max(0, clipSourceDuration - target.sourceOut);
 
       const nextStart = Math.max(
         earliestTimelineStart,
@@ -342,6 +373,116 @@ export function useVideoTimeline({
     });
   };
 
+
+  const insertVideoClipCopy = (
+    sourceClip: VideoTimelineClip,
+    requestedTimelineStart: number,
+  ) => {
+    const newId = crypto.randomUUID();
+
+    setVideoClips((current) => {
+      const clipDuration = Math.max(
+        MIN_VIDEO_CLIP_DURATION,
+        sourceClip.timelineEnd - sourceClip.timelineStart,
+      );
+
+      const timelineStart = findNextAvailableTimelineStart(
+        current,
+        requestedTimelineStart,
+        clipDuration,
+      );
+
+      const copy: VideoTimelineClip = {
+        ...sourceClip,
+        id: newId,
+        timelineStart,
+        timelineEnd: timelineStart + clipDuration,
+      };
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId(newId);
+      });
+
+      return sortVideoClips([...current, copy]);
+    });
+  };
+
+  const duplicateVideoClip = (id: string) => {
+    const newId = crypto.randomUUID();
+
+    setVideoClips((current) => {
+      const sourceClip = current.find((clip) => clip.id === id);
+
+      if (!sourceClip) {
+        return current;
+      }
+
+      const clipDuration = Math.max(
+        MIN_VIDEO_CLIP_DURATION,
+        sourceClip.timelineEnd - sourceClip.timelineStart,
+      );
+
+      const timelineStart = findNextAvailableTimelineStart(
+        current,
+        sourceClip.timelineEnd,
+        clipDuration,
+      );
+
+      const copy: VideoTimelineClip = {
+        ...sourceClip,
+        id: newId,
+        timelineStart,
+        timelineEnd: timelineStart + clipDuration,
+      };
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId(newId);
+      });
+
+      return sortVideoClips([...current, copy]);
+    });
+  };
+
+
+  const insertVideoClipFromMedia = (
+    asset: ProjectMediaAsset,
+    requestedTimelineStart: number,
+  ) => {
+    if (asset.duration <= 0) {
+      return;
+    }
+
+    const newId = crypto.randomUUID();
+
+    setVideoClips((current) => {
+      const timelineStart = findNextAvailableTimelineStart(
+        current,
+        requestedTimelineStart,
+        asset.duration,
+      );
+
+      const clip: VideoTimelineClip = {
+        id: newId,
+        kind: "video",
+        trackId: "video-1",
+        sourceId: asset.id,
+        sourcePath: asset.path,
+        sourceName: asset.name,
+        sourceIn: 0,
+        sourceOut: asset.duration,
+        sourceDuration: asset.duration,
+        timelineStart,
+        timelineEnd: timelineStart + asset.duration,
+      };
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId(newId);
+      });
+
+      return sortVideoClips([...current, clip]);
+    });
+  };
+
   const deleteVideoClip = (id: string) => {
     setVideoClips((current) =>
       current.filter((clip) => clip.id !== id),
@@ -364,6 +505,9 @@ export function useVideoTimeline({
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
+    insertVideoClipCopy,
+    duplicateVideoClip,
+    insertVideoClipFromMedia,
 
     replaceVideoClips,
     initializeDefaultVideoClip,

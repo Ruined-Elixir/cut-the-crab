@@ -43,6 +43,35 @@
   gap:7px
 }
 
+
+.timeline-edit-actions {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  margin-right:4px
+}
+
+.timeline-action-button {
+  height:26px;
+  padding:0 9px;
+  border:none;
+  border-radius:8px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:10px;
+  font-weight:600
+}
+
+.timeline-action-button:hover:not(:disabled) {
+  background:var(--control-fill-hover);
+  color:var(--label)
+}
+
+.timeline-action-button:disabled {
+  opacity:.3;
+  cursor:default
+}
+
 .timeline-zoom-button {
   width:26px;
   height:26px;

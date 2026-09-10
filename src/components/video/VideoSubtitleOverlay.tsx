@@ -35,6 +35,7 @@ type VideoSubtitleOverlayProps = {
   subtitles: Subtitle[];
   currentTime: number;
   videoTimeOffset?: number;
+  videoSourceKey?: string;
 
   selectedSubtitleId?: string | null;
   shellRef: React.RefObject<HTMLDivElement | null>;
@@ -98,6 +99,7 @@ function VideoSubtitleOverlay({
   subtitles,
   currentTime,
   videoTimeOffset = 0,
+  videoSourceKey = "",
   selectedSubtitleId,
   shellRef,
   onSubtitleSelect,
@@ -592,7 +594,7 @@ function VideoSubtitleOverlay({
       observer.disconnect();
       video.removeEventListener("loadedmetadata", updateVideoRect);
     };
-  }, [shellRef]);
+  }, [shellRef, videoSourceKey]);
 
   /*
    * Double-buffered libass refresh.
@@ -742,7 +744,7 @@ function VideoSubtitleOverlay({
     } else {
       renderer1Ref.current = renderer;
     }
-  }, [subtitles, shellRef]);
+  }, [subtitles, shellRef, videoSourceKey]);
 
   useEffect(() => {
     return () => {

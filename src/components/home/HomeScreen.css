@@ -20,6 +20,28 @@
   margin-bottom:34px
 }
 
+
+.home-brand {
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:18px
+}
+
+.home-brand-logo {
+  width:86px;
+  height:86px;
+  flex-shrink:0;
+  display:block;
+  object-fit:contain;
+  border-radius:20px;
+  box-shadow:0 10px 28px rgba(0,0,0,.18)
+}
+
+.home-brand-copy {
+  min-width:0
+}
+
 .home-eyebrow {
   display:none
 }
@@ -415,6 +437,12 @@
 }
 
 @media(max-width:720px) {
+  .home-brand-logo {
+    width:70px;
+    height:70px;
+    border-radius:17px
+  }
+
   .home-shell {
     width:min(100% - 32px,1120px);
     padding-top:36px

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import SubcutLogo from "../brand/SubcutLogo";
+
 import {
   PROJECT_LANGUAGE_LABELS,
   type ProjectLanguage,
@@ -266,12 +268,19 @@ function HomeScreen({
     <main className="home-screen">
       <div className="home-shell">
         <header className="home-header">
-          <div>
-            <div className="home-eyebrow">LOCAL SUBTITLE WORKSPACE</div>
-            <h1>Subtitle Editor</h1>
-            <p>
-              Open a recent project or create a new transcription workspace.
-            </p>
+          <div className="home-brand">
+            <SubcutLogo
+              className="home-brand-logo"
+              alt="SUBCUT"
+            />
+
+            <div className="home-brand-copy">
+              <div className="home-eyebrow">LOCAL SUBTITLE WORKSPACE</div>
+              <h1>SUBCUT</h1>
+              <p>
+                Open a recent project or create a new transcription workspace.
+              </p>
+            </div>
           </div>
 
           <button

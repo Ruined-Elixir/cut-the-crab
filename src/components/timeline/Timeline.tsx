@@ -49,6 +49,10 @@ type TimelineProps = {
     newTimelineStart: number,
     newTimelineEnd: number,
   ) => void;
+  onCopyVideoClip?: () => void;
+  onPasteVideoClip?: () => void;
+  onDuplicateVideoClip?: () => void;
+  canPasteVideoClip?: boolean;
 
   onSubtitleSelect?: (
     id: string,
@@ -95,6 +99,10 @@ function Timeline({
   onVideoClipSelect,
   onVideoClipMove,
   onVideoClipResize,
+  onCopyVideoClip,
+  onPasteVideoClip,
+  onDuplicateVideoClip,
+  canPasteVideoClip = false,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
@@ -319,11 +327,43 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            V1 editable · split · trim · move · delete
+            V1 editable · split · trim · move · copy · paste · duplicate
           </span>
         </div>
 
         <div className="timeline-controls">
+          <div className="timeline-edit-actions" aria-label="Video clip actions">
+            <button
+              type="button"
+              className="timeline-action-button"
+              onClick={onCopyVideoClip}
+              disabled={!selectedVideoClipId}
+              title="Copy selected video clip (⌘C / Ctrl+C)"
+            >
+              Copy
+            </button>
+
+            <button
+              type="button"
+              className="timeline-action-button"
+              onClick={onPasteVideoClip}
+              disabled={!canPasteVideoClip}
+              title="Paste video clip at playhead (⌘V / Ctrl+V)"
+            >
+              Paste
+            </button>
+
+            <button
+              type="button"
+              className="timeline-action-button"
+              onClick={onDuplicateVideoClip}
+              disabled={!selectedVideoClipId}
+              title="Duplicate selected video clip (⌘D / Ctrl+D)"
+            >
+              Duplicate
+            </button>
+          </div>
+
           <button
             type="button"
             className="timeline-zoom-button"

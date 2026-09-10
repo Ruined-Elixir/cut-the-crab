@@ -5,10 +5,11 @@ import type { TimelineMarker } from "../types/timeline";
 import type { VideoTimelineClip } from "../types/timelineModel";
 import type {
   ProjectLanguage,
+  ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 5;
+export const CURRENT_PROJECT_VERSION = 6;
 
 export type SubtitleProject = {
   version: number;
@@ -19,6 +20,7 @@ export type SubtitleProject = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
+  mediaAssets: ProjectMediaAsset[];
   updatedAt: string;
 };
 
@@ -196,8 +198,38 @@ function normalizeVideoClip(
         : defaultTitleFromVideoPath(sourcePath),
     sourceIn,
     sourceOut,
+    sourceDuration: asOptionalNumber(value.sourceDuration),
     timelineStart,
     timelineEnd,
+  };
+}
+
+function normalizeMediaAsset(
+  value: unknown,
+  index: number,
+): ProjectMediaAsset | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const path = typeof value.path === "string" ? value.path : "";
+
+  if (!path) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof value.id === "string" && value.id.length > 0
+        ? value.id
+        : `media-${index}-${crypto.randomUUID()}`,
+    kind: "video",
+    path,
+    name:
+      typeof value.name === "string" && value.name.length > 0
+        ? value.name
+        : path.split(/[\\/]/).pop() ?? "Video",
+    duration: Math.max(0, asNumber(value.duration, 0)),
   };
 }
 
@@ -238,6 +270,12 @@ function normalizeProject(
         .sort((a, b) => a.time - b.time)
     : [];
 
+  const mediaAssets = Array.isArray(value.mediaAssets)
+    ? value.mediaAssets
+        .map((asset, index) => normalizeMediaAsset(asset, index))
+        .filter((asset): asset is ProjectMediaAsset => asset !== null)
+    : [];
+
   const videoClips = Array.isArray(value.videoClips)
     ? value.videoClips
         .map((clip, index) =>
@@ -276,6 +314,7 @@ function normalizeProject(
     subtitles,
     markers,
     videoClips,
+    mediaAssets,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
 }
@@ -327,6 +366,7 @@ export async function saveProjectFile(
   markers: TimelineMarker[],
   metadata?: ProjectMetadata,
   videoClips: VideoTimelineClip[] = [],
+  mediaAssets: ProjectMediaAsset[] = [],
 ): Promise<void> {
   const project: SubtitleProject = {
     version: CURRENT_PROJECT_VERSION,
@@ -340,6 +380,7 @@ export async function saveProjectFile(
       (a, b) =>
         a.timelineStart - b.timelineStart,
     ),
+    mediaAssets,
     updatedAt: new Date().toISOString(),
   };
 

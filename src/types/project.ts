@@ -10,6 +10,14 @@ export type ProjectMetadata = {
   languages: ProjectLanguage[];
 };
 
+export type ProjectMediaAsset = {
+  id: string;
+  kind: "video";
+  path: string;
+  name: string;
+  duration: number;
+};
+
 export type RecentProject = ProjectMetadata & {
   projectId: string;
   videoPath: string;

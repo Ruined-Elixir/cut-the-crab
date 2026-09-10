@@ -97,7 +97,6 @@ function VideoPlayer({
   const timelineDurationRef = useRef(timelineDuration);
   const sourceDurationRef = useRef(duration);
   const videoClipsRef = useRef(videoClips);
-  const videoPathRef = useRef(videoPath);
   const isPlayingRef = useRef(false);
 
   const onTimeChangeRef = useRef(onTimeChange);
@@ -109,7 +108,19 @@ function VideoPlayer({
 
   const skipSeconds = 10;
 
+  const activeVideoClip = useMemo(
+    () => findActiveVideoClip(videoClips, currentTime),
+    [videoClips, currentTime],
+  );
+
+  const visualSourcePath = activeVideoClip?.sourcePath ?? videoPath;
+
   const videoUrl = useMemo(
+    () => (visualSourcePath ? convertFileSrc(visualSourcePath) : null),
+    [visualSourcePath],
+  );
+
+  const primaryVideoUrl = useMemo(
     () => (videoPath ? convertFileSrc(videoPath) : null),
     [videoPath],
   );
@@ -129,10 +140,6 @@ function VideoPlayer({
   useEffect(() => {
     videoClipsRef.current = videoClips;
   }, [videoClips]);
-
-  useEffect(() => {
-    videoPathRef.current = videoPath;
-  }, [videoPath]);
 
   useEffect(() => {
     onTimeChangeRef.current = onTimeChange;
@@ -158,8 +165,9 @@ function VideoPlayer({
       timelineTime,
     );
 
+    const loadedSourcePath = video.dataset.sourcePath ?? "";
     const canRenderClip =
-      !!activeClip && activeClip.sourcePath === videoPathRef.current;
+      !!activeClip && activeClip.sourcePath === loadedSourcePath;
 
     setIsVideoVisible(canRenderClip);
 
@@ -428,15 +436,23 @@ function VideoPlayer({
       return;
     }
 
-    setDuration(video.duration);
-    sourceDurationRef.current = video.duration;
-    onDurationChangeRef.current?.(video.duration);
-
     syncNativeVideoToTimeline(
       currentTimeRef.current,
       isPlayingRef.current,
       true,
     );
+  };
+
+  const handlePrimaryAudioLoadedMetadata = () => {
+    const audio = audioRef.current;
+
+    if (!audio || !Number.isFinite(audio.duration)) {
+      return;
+    }
+
+    setDuration(audio.duration);
+    sourceDurationRef.current = audio.duration;
+    onDurationChangeRef.current?.(audio.duration);
 
     syncAudioToTimeline(
       currentTimeRef.current,
@@ -490,11 +506,9 @@ function VideoPlayer({
 
   const monitorDuration = Math.max(0, timelineDuration || 0);
 
-  const subtitleClockClip = findActiveVideoClip(videoClips, currentTime);
-  const subtitleVideoTimeOffset =
-    subtitleClockClip && subtitleClockClip.sourcePath === videoPath
-      ? subtitleClockClip.timelineStart - subtitleClockClip.sourceIn
-      : 0;
+  const subtitleVideoTimeOffset = activeVideoClip
+    ? activeVideoClip.timelineStart - activeVideoClip.sourceIn
+    : 0;
 
   return (
     <div className="video-player">
@@ -513,13 +527,14 @@ function VideoPlayer({
         )}
       </div>
 
-      {videoUrl ? (
+      {primaryVideoUrl ? (
         <div className="video-monitor">
           <div ref={shellRef} className="video-shell">
             <video
-              key={videoPath ?? undefined}
+              key={visualSourcePath ?? undefined}
               ref={videoRef}
-              src={videoUrl}
+              src={videoUrl ?? undefined}
+              data-source-path={visualSourcePath ?? ""}
               className="video-element"
               muted
               style={{ visibility: isVideoVisible ? "visible" : "hidden" }}
@@ -530,22 +545,17 @@ function VideoPlayer({
             <audio
               key={`audio:${videoPath ?? ""}`}
               ref={audioRef}
-              src={videoUrl}
+              src={primaryVideoUrl ?? undefined}
               preload="auto"
               hidden
-              onLoadedMetadata={() => {
-                syncAudioToTimeline(
-                  currentTimeRef.current,
-                  isPlayingRef.current,
-                  true,
-                );
-              }}
+              onLoadedMetadata={handlePrimaryAudioLoadedMetadata}
             />
 
             <VideoSubtitleOverlay
               subtitles={subtitles}
               currentTime={currentTime}
               videoTimeOffset={subtitleVideoTimeOffset}
+              videoSourceKey={visualSourcePath ?? ""}
               selectedSubtitleId={selectedSubtitleId}
               shellRef={shellRef}
               onSubtitleSelect={onSubtitleSelect}

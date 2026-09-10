@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
+import SubcutLogo from "./components/brand/SubcutLogo";
+
 import HomeScreen from "./components/home/HomeScreen";
+import MediaBrowser from "./components/media/MediaBrowser";
 import VideoPlayer from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
@@ -46,6 +50,7 @@ import type { TimelineMarker } from "./types/timeline";
 import type { VideoTimelineClip } from "./types/timelineModel";
 import type {
   ProjectLanguage,
+  ProjectMediaAsset,
   ProjectMetadata,
   RecentProject,
 } from "./types/project";
@@ -65,6 +70,34 @@ function getVideoTitle(path: string) {
   const fileName = path.split(/[\\/]/).pop() ?? "Untitled Project";
 
   return fileName.replace(/\.[^/.\\]+$/, "") || "Untitled Project";
+}
+
+function getFileName(path: string) {
+  return path.split(/[\\/]/).pop() ?? "Video";
+}
+
+function probeVideoDuration(path: string) {
+  return new Promise<number>((resolve) => {
+    const probe = document.createElement("video");
+    const cleanup = () => {
+      probe.removeAttribute("src");
+      probe.load();
+    };
+
+    probe.preload = "metadata";
+    probe.src = convertFileSrc(path);
+
+    probe.onloadedmetadata = () => {
+      const duration = Number.isFinite(probe.duration) ? probe.duration : 0;
+      cleanup();
+      resolve(Math.max(0, duration));
+    };
+
+    probe.onerror = () => {
+      cleanup();
+      resolve(0);
+    };
+  });
 }
 
 function transcriptionOptionsForLanguage(language: ProjectLanguage) {
@@ -116,6 +149,7 @@ function App() {
   const [videoName, setVideoName] = useState<string | null>(null);
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
+  const [mediaAssets, setMediaAssets] = useState<ProjectMediaAsset[]>([]);
 
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -136,9 +170,10 @@ function App() {
   const [isSavingProject, setIsSavingProject] = useState(false);
 
   const isLoadingVideoRef = useRef(false);
+  const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
 
   const lastSavedSnapshotRef = useRef<string>(
-    JSON.stringify({ subtitles: [], markers: [] }),
+    JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [] }),
   );
 
   // ==========================================================================
@@ -185,12 +220,16 @@ function App() {
   const {
     videoClips,
     selectedVideoClipId,
+    selectedVideoClip,
     selectVideoClip,
     clearVideoClipSelection,
     moveVideoClip,
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
+    insertVideoClipCopy,
+    duplicateVideoClip,
+    insertVideoClipFromMedia,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -277,6 +316,39 @@ function App() {
     markNextChangeImmediate();
     deleteVideoClip(selectedVideoClipId);
 
+    return true;
+  };
+
+  const copySelectedVideoClip = () => {
+    if (!selectedVideoClip) {
+      return false;
+    }
+
+    videoClipboardRef.current = { ...selectedVideoClip };
+    return true;
+  };
+
+  const pasteVideoClipAtPlayhead = () => {
+    const clipboardClip = videoClipboardRef.current;
+
+    if (!clipboardClip) {
+      return false;
+    }
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    insertVideoClipCopy(clipboardClip, currentTime);
+    return true;
+  };
+
+  const duplicateSelectedVideoClipWithHistory = () => {
+    if (!selectedVideoClipId) {
+      return false;
+    }
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    duplicateVideoClip(selectedVideoClipId);
     return true;
   };
 
@@ -435,13 +507,14 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips });
+    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
   }, [
     subtitles,
     markers,
     videoClips,
+    mediaAssets,
     videoPath,
   ]);
 
@@ -470,9 +543,10 @@ function App() {
           markers,
           projectMetadata ?? undefined,
           videoClips,
+          mediaAssets,
         );
 
-        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips });
+        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
         setHasUnsavedChanges(false);
       } catch (error) {
         console.error("Autosave failed:", error);
@@ -491,6 +565,7 @@ function App() {
     markers,
     projectMetadata,
     videoClips,
+    mediaAssets,
     hasUnsavedChanges,
   ]);
 
@@ -549,6 +624,7 @@ function App() {
     setVideoDuration(0);
     setVideoName(name);
     setVideoPath(path);
+    setMediaAssets([]);
 
     replaceSubtitles([]);
     replaceVideoClips([]);
@@ -564,6 +640,7 @@ function App() {
       subtitles: [] as typeof subtitles,
       markers: [] as TimelineMarker[],
       videoClips: [] as VideoTimelineClip[],
+      mediaAssets: [] as ProjectMediaAsset[],
     };
 
     try {
@@ -577,6 +654,7 @@ function App() {
         const loadedMarkers = matchingProject.markers;
         const loadedVideoClips =
           matchingProject.videoClips;
+        const loadedMediaAssets = matchingProject.mediaAssets;
 
         resolvedMetadata = {
           title: matchingProject.title,
@@ -591,18 +669,21 @@ function App() {
           markSourceInitialized: true,
         });
         setMarkers(loadedMarkers);
+        setMediaAssets(loadedMediaAssets);
         setProjectMetadata(resolvedMetadata);
 
         loadedHistorySnapshot = {
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
+          mediaAssets: loadedMediaAssets,
         };
 
         lastSavedSnapshotRef.current = JSON.stringify({
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
+          mediaAssets: loadedMediaAssets,
         });
 
         setHasUnsavedChanges(false);
@@ -616,18 +697,21 @@ function App() {
             subtitles: matchingSubtitles,
             markers: [],
             videoClips: [],
+            mediaAssets: [],
           };
 
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: matchingSubtitles,
             markers: [],
             videoClips: [],
+            mediaAssets: [],
           });
         } else {
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: [],
             markers: [],
             videoClips: [],
+            mediaAssets: [],
           });
         }
 
@@ -640,11 +724,14 @@ function App() {
         subtitles: [],
         markers: [],
         videoClips: [],
+        mediaAssets: [],
       };
 
       lastSavedSnapshotRef.current = JSON.stringify({
         subtitles: [],
         markers: [],
+        videoClips: [],
+        mediaAssets: [],
       });
 
       setHasUnsavedChanges(false);
@@ -685,6 +772,59 @@ function App() {
     }
 
     return selected;
+  };
+
+  const handleImportMedia = async () => {
+    const selected = await open({
+      multiple: true,
+      directory: false,
+      filters: [
+        {
+          name: "Video",
+          extensions: ["mp4", "mov", "webm", "mkv"],
+        },
+      ],
+    });
+
+    if (!selected) {
+      return;
+    }
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+    const existingPaths = new Set(mediaAssets.map((asset) => asset.path));
+    const additions: ProjectMediaAsset[] = [];
+
+    for (const path of paths) {
+      if (existingPaths.has(path)) {
+        continue;
+      }
+
+      const duration = await probeVideoDuration(path);
+
+      additions.push({
+        id: crypto.randomUUID(),
+        kind: "video",
+        path,
+        name: getFileName(path),
+        duration,
+      });
+
+      existingPaths.add(path);
+    }
+
+    if (additions.length > 0) {
+      setMediaAssets((current) => [...current, ...additions]);
+    }
+  };
+
+  const handleInsertMediaAtPlayhead = (asset: ProjectMediaAsset) => {
+    if (asset.duration <= 0) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    insertVideoClipFromMedia(asset, currentTime);
   };
 
   const handleChooseVideo = async () => {
@@ -728,6 +868,8 @@ function App() {
         [],
         [],
         metadata,
+        [],
+        [],
       );
 
       setPendingNewProjectPath(null);
@@ -779,6 +921,7 @@ function App() {
                 : project.languages,
           },
           matchingProject.videoClips,
+          matchingProject.mediaAssets,
         );
       }
 
@@ -833,6 +976,7 @@ function App() {
                 : project.languages,
           },
           oldProject.videoClips,
+          oldProject.mediaAssets,
         );
       }
 
@@ -909,6 +1053,35 @@ function App() {
   const handleVideoDurationChange = (duration: number) => {
     setVideoDuration(duration);
 
+    if (duration > 0 && videoPath && videoName) {
+      setMediaAssets((current) => {
+        const existing = current.find((asset) => asset.path === videoPath);
+
+        if (existing) {
+          if (existing.duration === duration && existing.name === videoName) {
+            return current;
+          }
+
+          return current.map((asset) =>
+            asset.id === existing.id
+              ? { ...asset, duration, name: videoName }
+              : asset,
+          );
+        }
+
+        return [
+          {
+            id: `primary:${activeProjectId ?? videoPath}`,
+            kind: "video",
+            path: videoPath,
+            name: videoName,
+            duration,
+          },
+          ...current,
+        ];
+      });
+    }
+
     if (
       duration > 0 &&
       videoClips.length === 0
@@ -956,9 +1129,10 @@ function App() {
         markers,
         projectMetadata ?? undefined,
         videoClips,
+        mediaAssets,
       );
 
-      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips });
+      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
       setHasUnsavedChanges(false);
 
       if (projectMetadata) {
@@ -1374,6 +1548,33 @@ function App() {
 
       const key = event.key.toLowerCase();
 
+      if (!isEditingText && key === "c" && !event.shiftKey) {
+        if (selectedVideoClipId) {
+          event.preventDefault();
+          copySelectedVideoClip();
+        }
+
+        return;
+      }
+
+      if (!isEditingText && key === "v" && !event.shiftKey) {
+        if (videoClipboardRef.current) {
+          event.preventDefault();
+          pasteVideoClipAtPlayhead();
+        }
+
+        return;
+      }
+
+      if (!isEditingText && key === "d" && !event.shiftKey) {
+        if (selectedVideoClipId) {
+          event.preventDefault();
+          duplicateSelectedVideoClipWithHistory();
+        }
+
+        return;
+      }
+
       if (key === "z") {
         event.preventDefault();
 
@@ -1402,7 +1603,10 @@ function App() {
         }
 
         event.preventDefault();
-        splitSelectedSubtitleAtPlayhead();
+
+        if (!splitSelectedVideoClipAtPlayhead()) {
+          splitSelectedSubtitleAtPlayhead();
+        }
       }
     };
 
@@ -1432,6 +1636,8 @@ function App() {
     resizeSubtitle,
     markNextChangeImmediate,
     currentTime,
+    selectedVideoClipId,
+    selectedVideoClip,
     selectedSubtitleId,
     selectedSubtitleIds,
     subtitles,
@@ -1490,9 +1696,14 @@ function App() {
           ‹
         </button>
 
+        <SubcutLogo
+          className="topbar-brand-logo"
+          decorative
+        />
+
         <div className="topbar-project-title">
           <h1>{projectMetadata?.title ?? videoName ?? "Untitled Project"}</h1>
-          <span className="topbar-app-name">Subtitle Editor</span>
+          <span className="topbar-app-name">SUBCUT</span>
         </div>
 
         {videoPath && (
@@ -1507,6 +1718,13 @@ function App() {
       </header>
 
       <div className="workspace">
+        <MediaBrowser
+          assets={mediaAssets}
+          primaryVideoPath={videoPath}
+          onImportMedia={handleImportMedia}
+          onInsertMedia={handleInsertMediaAtPlayhead}
+        />
+
         <section className="preview-panel">
           <VideoPlayer
             videoPath={videoPath}
@@ -1565,6 +1783,10 @@ function App() {
         onVideoClipSelect={handleVideoClipSelect}
         onVideoClipMove={moveVideoClip}
         onVideoClipResize={resizeVideoClip}
+        onCopyVideoClip={copySelectedVideoClip}
+        onPasteVideoClip={pasteVideoClipAtPlayhead}
+        onDuplicateVideoClip={duplicateSelectedVideoClipWithHistory}
+        canPasteVideoClip={videoClipboardRef.current !== null}
         onSubtitleSelect={handleSubtitleTrackSelect}
         onSubtitleMove={moveSubtitle}
         onSubtitleGroupMove={moveSubtitleGroup}
