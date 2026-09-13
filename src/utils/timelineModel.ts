@@ -44,6 +44,10 @@ function linkedAudioClip(
     sourceOut: clip.sourceOut,
     sourceDuration: clip.sourceDuration,
     linkedVideoClipId: clip.id,
+    volume: clip.audioVolume ?? 100,
+    muted: clip.audioMuted ?? false,
+    fadeInDuration: clip.audioFadeInDuration ?? 0,
+    fadeOutDuration: clip.audioFadeOutDuration ?? 0,
     timelineStart: clip.timelineStart,
     timelineEnd: clip.timelineEnd,
   };

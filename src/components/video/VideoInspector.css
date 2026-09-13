@@ -231,3 +231,28 @@
   opacity:.35;
   cursor:default;
 }
+
+
+.video-inspector-audio-section {
+  gap: 12px;
+}
+
+.video-audio-mute {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,.055);
+  color: var(--secondary-label);
+  font-size: 10px;
+}
+
+.video-audio-mute:hover:not(:disabled) {
+  background: rgba(255,255,255,.09);
+  color: var(--label);
+}
+
+.video-audio-mute.active {
+  border-color: rgba(255,69,58,.45);
+  background: rgba(255,69,58,.12);
+  color: #ff6961;
+}

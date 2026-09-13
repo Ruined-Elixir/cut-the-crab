@@ -113,7 +113,16 @@ function drawWaveformClip(
       );
     }
 
-    const amplitude = Math.max(1, amplitudeValue * height * 0.72);
+    const positionRatio = barCount <= 1 ? 0 : barIndex / (barCount - 1);
+    const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
+    const localTime = positionRatio * clipDuration;
+    const fadeInDuration = Math.max(0, Math.min(clip.fadeInDuration ?? 0, clipDuration / 2));
+    const fadeOutDuration = Math.max(0, Math.min(clip.fadeOutDuration ?? 0, clipDuration / 2));
+    const fadeInGain = fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
+    const fadeOutGain = fadeOutDuration > 0 ? Math.min(1, (clipDuration - localTime) / fadeOutDuration) : 1;
+    const volumeGain = Math.max(0, Math.min(100, clip.volume ?? 100)) / 100;
+    const effectiveGain = clip.muted ? 0.12 : volumeGain * Math.min(fadeInGain, fadeOutGain);
+    const amplitude = Math.max(1, amplitudeValue * height * 0.72 * effectiveGain);
     const x = clipLeft + barIndex * barWidth;
     const y = centerY - amplitude / 2;
 
@@ -265,9 +274,9 @@ function WaveformTrack({
             }}
             title={`${clip.sourceName} · linked to ${
               track.id === "audio-2" ? "V2" : "V1"
-            }`}
+            } · ${clip.muted ? "Muted" : `${Math.round(clip.volume ?? 100)}%`}`}
           >
-            {clip.sourceName}
+            {clip.sourceName}{clip.muted ? " · Muted" : ""}
           </span>
         ))}
       </div>

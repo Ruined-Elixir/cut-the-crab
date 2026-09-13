@@ -18,6 +18,15 @@ type VideoInspectorProps = {
   disabled?: boolean;
   onTransformChange: (id: string, transform: VideoTransformPatch) => void;
   onResetTransform: (id: string) => void;
+  onAudioChange: (
+    id: string,
+    audio: {
+      volume?: number;
+      muted?: boolean;
+      fadeInDuration?: number;
+      fadeOutDuration?: number;
+    },
+  ) => void;
   onTransitionChange: (
     id: string,
     edge: "in" | "out",
@@ -38,6 +47,7 @@ function VideoInspector({
   disabled = false,
   onTransformChange,
   onResetTransform,
+  onAudioChange,
   onTransitionChange,
 }: VideoInspectorProps) {
   const positionX = clip.positionX ?? 0;
@@ -48,12 +58,17 @@ function VideoInspector({
   const cropRight = clip.cropRight ?? 0;
   const cropBottom = clip.cropBottom ?? 0;
   const cropLeft = clip.cropLeft ?? 0;
+  const audioVolume = clip.audioVolume ?? 100;
+  const audioMuted = clip.audioMuted ?? false;
+  const audioFadeInDuration = clip.audioFadeInDuration ?? 0;
+  const audioFadeOutDuration = clip.audioFadeOutDuration ?? 0;
   const transitionInType = clip.transitionInType ?? "none";
   const transitionInDuration = clip.transitionInDuration ?? 0.5;
   const transitionOutType = clip.transitionOutType ?? "none";
   const transitionOutDuration = clip.transitionOutDuration ?? 0.5;
   const clipDuration = Math.max(0.1, clip.timelineEnd - clip.timelineStart);
   const maxTransitionDuration = Math.max(0.1, Math.min(5, clipDuration / 2));
+  const maxAudioFadeDuration = Math.max(0, Math.min(5, clipDuration / 2));
 
   const updateNumber = (
     key: keyof VideoTransformPatch,
@@ -181,6 +196,116 @@ function VideoInspector({
         {renderRangeControl("Left", "cropLeft", cropLeft, 0, 49, 0.5, "%")}
       </section>
 
+
+      <section className="video-inspector-section video-inspector-audio-section">
+        <div className="video-inspector-section-heading">
+          <h3>Audio</h3>
+          <button
+            type="button"
+            className={["video-audio-mute", audioMuted ? "active" : ""].filter(Boolean).join(" ")}
+            disabled={disabled}
+            onClick={() => onAudioChange(clip.id, { muted: !audioMuted })}
+          >
+            {audioMuted ? "Unmute Clip" : "Mute Clip"}
+          </button>
+        </div>
+
+        <label className="video-inspector-control">
+          <div className="video-inspector-label-row">
+            <span>Volume</span>
+            <div className="video-inspector-number-wrap">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(audioVolume)}
+                disabled={disabled}
+                onChange={(event) =>
+                  onAudioChange(clip.id, { volume: Number(event.target.value) })
+                }
+              />
+              <span>%</span>
+            </div>
+          </div>
+          <input
+            className="video-inspector-range"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={audioVolume}
+            disabled={disabled}
+            onChange={(event) =>
+              onAudioChange(clip.id, { volume: Number(event.target.value) })
+            }
+          />
+        </label>
+
+        <label className="video-inspector-control">
+          <div className="video-inspector-label-row">
+            <span>Fade In</span>
+            <div className="video-inspector-number-wrap">
+              <input
+                type="number"
+                min={0}
+                max={maxAudioFadeDuration}
+                step={0.1}
+                value={Math.round(audioFadeInDuration * 10) / 10}
+                disabled={disabled}
+                onChange={(event) =>
+                  onAudioChange(clip.id, { fadeInDuration: Number(event.target.value) })
+                }
+              />
+              <span>s</span>
+            </div>
+          </div>
+          <input
+            className="video-inspector-range"
+            type="range"
+            min={0}
+            max={maxAudioFadeDuration}
+            step={0.1}
+            value={Math.min(audioFadeInDuration, maxAudioFadeDuration)}
+            disabled={disabled}
+            onChange={(event) =>
+              onAudioChange(clip.id, { fadeInDuration: Number(event.target.value) })
+            }
+          />
+        </label>
+
+        <label className="video-inspector-control">
+          <div className="video-inspector-label-row">
+            <span>Fade Out</span>
+            <div className="video-inspector-number-wrap">
+              <input
+                type="number"
+                min={0}
+                max={maxAudioFadeDuration}
+                step={0.1}
+                value={Math.round(audioFadeOutDuration * 10) / 10}
+                disabled={disabled}
+                onChange={(event) =>
+                  onAudioChange(clip.id, { fadeOutDuration: Number(event.target.value) })
+                }
+              />
+              <span>s</span>
+            </div>
+          </div>
+          <input
+            className="video-inspector-range"
+            type="range"
+            min={0}
+            max={maxAudioFadeDuration}
+            step={0.1}
+            value={Math.min(audioFadeOutDuration, maxAudioFadeDuration)}
+            disabled={disabled}
+            onChange={(event) =>
+              onAudioChange(clip.id, { fadeOutDuration: Number(event.target.value) })
+            }
+          />
+        </label>
+      </section>
 
       <section className="video-inspector-section video-inspector-transition-section">
         <div className="video-inspector-section-heading">

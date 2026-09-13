@@ -107,6 +107,10 @@ function createFullSourceClip(
     transitionInDuration: 0.5,
     transitionOutType: "none",
     transitionOutDuration: 0.5,
+    audioVolume: 100,
+    audioMuted: false,
+    audioFadeInDuration: 0,
+    audioFadeOutDuration: 0,
     timelineStart: 0,
     timelineEnd: sourceDuration,
   };
@@ -405,6 +409,7 @@ export function useVideoTimeline({
         timelineEnd: splitTime,
         sourceOut: sourceSplit,
         transitionOutType: "none",
+        audioFadeOutDuration: 0,
       };
 
       const right: VideoTimelineClip = {
@@ -413,6 +418,7 @@ export function useVideoTimeline({
         timelineStart: splitTime,
         sourceIn: sourceSplit,
         transitionInType: "none",
+        audioFadeInDuration: 0,
       };
 
       window.requestAnimationFrame(() => {
@@ -542,6 +548,10 @@ export function useVideoTimeline({
         transitionInDuration: 0.5,
         transitionOutType: "none",
         transitionOutDuration: 0.5,
+    audioVolume: 100,
+    audioMuted: false,
+    audioFadeInDuration: 0,
+    audioFadeOutDuration: 0,
         timelineStart,
         timelineEnd: timelineStart + asset.duration,
       };
@@ -676,6 +686,53 @@ export function useVideoTimeline({
     );
   };
 
+
+  const updateVideoClipAudio = (
+    id: string,
+    audio: {
+      volume?: number;
+      muted?: boolean;
+      fadeInDuration?: number;
+      fadeOutDuration?: number;
+    },
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) => {
+        if (clip.id !== id) {
+          return clip;
+        }
+
+        const clipDuration = Math.max(
+          MIN_VIDEO_CLIP_DURATION,
+          clip.timelineEnd - clip.timelineStart,
+        );
+        const maxFadeDuration = Math.max(0, Math.min(5, clipDuration / 2));
+        const clampFade = (value: number) =>
+          Math.max(0, Math.min(maxFadeDuration, value));
+
+        return {
+          ...clip,
+          audioVolume:
+            audio.volume === undefined
+              ? clip.audioVolume ?? 100
+              : Math.max(0, Math.min(100, audio.volume)),
+          audioMuted:
+            audio.muted === undefined
+              ? clip.audioMuted ?? false
+              : audio.muted,
+          audioFadeInDuration:
+            audio.fadeInDuration === undefined
+              ? clip.audioFadeInDuration ?? 0
+              : clampFade(audio.fadeInDuration),
+          audioFadeOutDuration:
+            audio.fadeOutDuration === undefined
+              ? clip.audioFadeOutDuration ?? 0
+              : clampFade(audio.fadeOutDuration),
+        };
+      }),
+    );
+  };
+
   const deleteVideoClip = (id: string) => {
     setVideoClips((current) =>
       current.filter((clip) => clip.id !== id),
@@ -705,6 +762,7 @@ export function useVideoTimeline({
     updateVideoClipTransform,
     resetVideoClipTransform,
     updateVideoClipTransition,
+    updateVideoClipAudio,
 
     replaceVideoClips,
     initializeDefaultVideoClip,

@@ -773,8 +773,27 @@ function VideoPlayer({
       }
     }
 
-    const muted = isTrackMuted(trackSettingsRef.current, audioTrackId);
+    const trackMuted = isTrackMuted(trackSettingsRef.current, audioTrackId);
+    const clipMuted = activeClip.audioMuted ?? false;
+    const muted = trackMuted || clipMuted;
     audio.muted = muted;
+
+    const clipDuration = Math.max(0.001, activeClip.timelineEnd - activeClip.timelineStart);
+    const fadeInDuration = Math.max(
+      0,
+      Math.min(activeClip.audioFadeInDuration ?? 0, clipDuration / 2),
+    );
+    const fadeOutDuration = Math.max(
+      0,
+      Math.min(activeClip.audioFadeOutDuration ?? 0, clipDuration / 2),
+    );
+    const localTime = Math.max(0, timelineTime - activeClip.timelineStart);
+    const timeToEnd = Math.max(0, activeClip.timelineEnd - timelineTime);
+    const fadeInGain = fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
+    const fadeOutGain = fadeOutDuration > 0 ? Math.min(1, timeToEnd / fadeOutDuration) : 1;
+    const fadeGain = Math.max(0, Math.min(1, fadeInGain, fadeOutGain));
+    const clipVolume = Math.max(0, Math.min(100, activeClip.audioVolume ?? 100)) / 100;
+    audio.volume = Math.max(0, Math.min(1, clipVolume * fadeGain));
 
     if (muted) {
       activeAudioClipIdRefs.current[audioTrackId] = null;

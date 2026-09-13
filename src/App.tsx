@@ -284,6 +284,7 @@ function App() {
     updateVideoClipTransform,
     resetVideoClipTransform,
     updateVideoClipTransition,
+    updateVideoClipAudio,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -525,6 +526,25 @@ function App() {
     }
 
     updateVideoClipTransition(id, edge, transition);
+  };
+
+
+  const handleVideoAudioChange = (
+    id: string,
+    audio: {
+      volume?: number;
+      muted?: boolean;
+      fadeInDuration?: number;
+      fadeOutDuration?: number;
+    },
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    updateVideoClipAudio(id, audio);
   };
 
   const handleSubtitleTrackSelect = (
@@ -2132,6 +2152,7 @@ function App() {
             onTransformChange={handleVideoTransformChange}
             onResetTransform={handleResetVideoTransform}
             onTransitionChange={handleVideoTransitionChange}
+            onAudioChange={handleVideoAudioChange}
           />
         ) : (
           <SubtitlePanel

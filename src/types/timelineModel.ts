@@ -46,6 +46,10 @@ export type VideoTimelineClip = TimelineClipBase & {
   transitionInDuration?: number;
   transitionOutType?: VideoTransitionType;
   transitionOutDuration?: number;
+  audioVolume?: number;
+  audioMuted?: boolean;
+  audioFadeInDuration?: number;
+  audioFadeOutDuration?: number;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {
@@ -62,6 +66,10 @@ export type AudioTimelineClip = TimelineClipBase & {
   sourceOut: number;
   sourceDuration?: number;
   linkedVideoClipId?: string;
+  volume?: number;
+  muted?: boolean;
+  fadeInDuration?: number;
+  fadeOutDuration?: number;
 };
 
 export type TimelineClip =
