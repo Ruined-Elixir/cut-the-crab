@@ -4,7 +4,15 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { VideoTimelineClip } from "../types/timelineModel";
 
-export type VideoClipFrames = Record<string, string[]>;
+export type VideoClipFrame = {
+  sourceTime: number;
+  url: string;
+  leftPercent: number;
+  widthPercent: number;
+  exact: boolean;
+};
+
+export type VideoClipFrames = Record<string, VideoClipFrame[]>;
 
 type SampledFrame = {
   time: number;
@@ -13,23 +21,36 @@ type SampledFrame = {
 
 type SourceFrameCacheEntry = {
   duration: number;
-  density: number;
   frames: SampledFrame[];
 };
 
-const BASE_SECONDS_PER_FRAME = 2.2;
-const MIN_SOURCE_FRAME_COUNT = 6;
-const MAX_SOURCE_FRAME_COUNT = 180;
+type ClipFramePlan = {
+  clipId: string;
+  sourcePath: string;
+  sourceIn: number;
+  sourceOut: number;
+  targetTimes: number[];
+};
+
+type SourceFramePlan = {
+  sourcePath: string;
+  expectedDuration: number;
+  targetTimes: number[];
+};
+
+const FRAME_TILE_WIDTH_PX = 78;
+const MAX_CLIP_FRAME_SLOTS = 220;
 const FRAME_WIDTH = 128;
 const JPEG_QUALITY = 0.7;
-const FRAME_PAINT_DELAY_MS = 36;
+const FRAME_PAINT_DELAY_MS = 34;
+const FRAME_MATCH_MIN_TOLERANCE = 0.035;
 
-function normalizeZoom(zoom: number) {
-  if (!Number.isFinite(zoom)) {
-    return 1;
-  }
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
-  return Math.max(1, Math.min(12, zoom));
+function clipDuration(clip: VideoTimelineClip) {
+  return Math.max(0, clip.timelineEnd - clip.timelineStart);
 }
 
 function sourceDurationForClip(clip: VideoTimelineClip) {
@@ -44,18 +65,97 @@ function sourceDurationForClip(clip: VideoTimelineClip) {
   return Math.max(clip.sourceOut, 0);
 }
 
-function requestedFrameCount(duration: number, zoom: number) {
-  const safeDuration = Math.max(0.1, duration);
-  const safeZoom = normalizeZoom(zoom);
-  const secondsPerFrame = BASE_SECONDS_PER_FRAME / safeZoom;
+function desiredSlotCount(
+  clip: VideoTimelineClip,
+  timelineDuration: number,
+  timelineTrackWidthPx: number,
+) {
+  if (timelineDuration <= 0 || timelineTrackWidthPx <= 0) {
+    return 1;
+  }
 
-  return Math.max(
-    MIN_SOURCE_FRAME_COUNT,
-    Math.min(
-      MAX_SOURCE_FRAME_COUNT,
-      Math.ceil(safeDuration / secondsPerFrame) + 1,
-    ),
+  const pixelWidth =
+    (clipDuration(clip) / timelineDuration) * timelineTrackWidthPx;
+
+  return clamp(
+    Math.ceil(pixelWidth / FRAME_TILE_WIDTH_PX),
+    1,
+    MAX_CLIP_FRAME_SLOTS,
   );
+}
+
+function buildClipPlan(
+  clip: VideoTimelineClip,
+  timelineDuration: number,
+  timelineTrackWidthPx: number,
+): ClipFramePlan {
+  const slotCount = desiredSlotCount(
+    clip,
+    timelineDuration,
+    timelineTrackWidthPx,
+  );
+  const sourceDuration = Math.max(0, clip.sourceOut - clip.sourceIn);
+  const targetTimes = Array.from({ length: slotCount }, (_, index) => {
+    const ratio = (index + 0.5) / slotCount;
+    return clip.sourceIn + sourceDuration * ratio;
+  });
+
+  return {
+    clipId: clip.id,
+    sourcePath: clip.sourcePath,
+    sourceIn: clip.sourceIn,
+    sourceOut: clip.sourceOut,
+    targetTimes,
+  };
+}
+
+function mergeTargetTimes(times: number[]) {
+  const sorted = [...times].sort((a, b) => a - b);
+  const result: number[] = [];
+
+  for (const time of sorted) {
+    const previous = result[result.length - 1];
+
+    if (previous === undefined || Math.abs(previous - time) > 0.018) {
+      result.push(time);
+    }
+  }
+
+  return result;
+}
+
+function spreadOrder<T>(items: T[]) {
+  if (items.length <= 2) {
+    return [...items];
+  }
+
+  const result: T[] = [];
+  const seen = new Set<number>();
+  const queue: Array<[number, number]> = [[0, items.length - 1]];
+
+  const pushIndex = (index: number) => {
+    if (!seen.has(index)) {
+      seen.add(index);
+      result.push(items[index]);
+    }
+  };
+
+  pushIndex(0);
+  pushIndex(items.length - 1);
+
+  while (queue.length > 0) {
+    const [start, end] = queue.shift()!;
+
+    if (end - start <= 1) {
+      continue;
+    }
+
+    const middle = Math.floor((start + end) / 2);
+    pushIndex(middle);
+    queue.push([start, middle], [middle, end]);
+  }
+
+  return result;
 }
 
 function waitForEvent(
@@ -157,18 +257,115 @@ async function seekAndWaitForFrame(
   await waitForFramePaint(signal);
 }
 
-async function generateSourceFrames(
-  sourcePath: string,
-  expectedDuration: number,
-  density: number,
-  signal: AbortSignal,
-  onProgress?: (frames: SampledFrame[], duration: number) => void,
+function nearestFrame(frames: SampledFrame[], targetTime: number) {
+  if (frames.length === 0) {
+    return null;
+  }
+
+  let low = 0;
+  let high = frames.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const frame = frames[middle];
+
+    if (frame.time < targetTime) {
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  const after = frames[Math.min(low, frames.length - 1)];
+  const before = frames[Math.max(0, low - 1)];
+
+  return Math.abs(before.time - targetTime) <= Math.abs(after.time - targetTime)
+    ? before
+    : after;
+}
+
+function addFrameToCache(
+  cache: SourceFrameCacheEntry,
+  frame: SampledFrame,
 ) {
+  const existingIndex = cache.frames.findIndex(
+    (candidate) => Math.abs(candidate.time - frame.time) < 0.008,
+  );
+
+  if (existingIndex >= 0) {
+    cache.frames[existingIndex] = frame;
+  } else {
+    cache.frames.push(frame);
+    cache.frames.sort((a, b) => a.time - b.time);
+  }
+}
+
+function frameTolerance(targetTimes: number[], index: number) {
+  if (targetTimes.length <= 1) {
+    return 0.15;
+  }
+
+  const previous = targetTimes[Math.max(0, index - 1)];
+  const next = targetTimes[Math.min(targetTimes.length - 1, index + 1)];
+  const spacing = Math.max(0.001, (next - previous) / (index === 0 || index === targetTimes.length - 1 ? 1 : 2));
+
+  return Math.max(FRAME_MATCH_MIN_TOLERANCE, spacing * 0.28);
+}
+
+function buildClipFrameMap(
+  plans: ClipFramePlan[],
+  cache: Map<string, SourceFrameCacheEntry>,
+) {
+  const result: VideoClipFrames = {};
+
+  for (const plan of plans) {
+    const cached = cache.get(plan.sourcePath);
+
+    if (!cached || cached.frames.length === 0 || plan.targetTimes.length === 0) {
+      continue;
+    }
+
+    const slotWidth = 100 / plan.targetTimes.length;
+
+    result[plan.clipId] = plan.targetTimes
+      .map((targetTime, index) => {
+        const frame = nearestFrame(cached.frames, targetTime);
+
+        if (!frame) {
+          return null;
+        }
+
+        return {
+          sourceTime: targetTime,
+          url: frame.url,
+          leftPercent: index * slotWidth,
+          widthPercent: slotWidth + 0.08,
+          exact:
+            Math.abs(frame.time - targetTime) <=
+            frameTolerance(plan.targetTimes, index),
+        } satisfies VideoClipFrame;
+      })
+      .filter((frame): frame is VideoClipFrame => frame !== null);
+  }
+
+  return result;
+}
+
+async function generateMissingFrames(
+  plan: SourceFramePlan,
+  cacheEntry: SourceFrameCacheEntry,
+  signal: AbortSignal,
+  onFrame: () => void,
+) {
+  if (!plan.sourcePath || plan.targetTimes.length === 0) {
+    return;
+  }
+
   const video = document.createElement("video");
   video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
-  video.src = convertFileSrc(sourcePath);
+  video.src = convertFileSrc(plan.sourcePath);
 
   try {
     if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
@@ -180,17 +377,19 @@ async function generateSourceFrames(
     }
 
     if (signal.aborted || video.videoWidth <= 0 || video.videoHeight <= 0) {
-      return null;
+      return;
     }
 
     const actualDuration =
       Number.isFinite(video.duration) && video.duration > 0
         ? video.duration
-        : expectedDuration;
+        : plan.expectedDuration;
 
     if (actualDuration <= 0) {
-      return null;
+      return;
     }
+
+    cacheEntry.duration = actualDuration;
 
     const aspectRatio = video.videoWidth / video.videoHeight;
     const canvas = document.createElement("canvas");
@@ -200,213 +399,182 @@ async function generateSourceFrames(
     const context = canvas.getContext("2d", { alpha: false });
 
     if (!context) {
-      return null;
+      return;
     }
 
-    const frameCount = requestedFrameCount(actualDuration, density);
-    const frames: SampledFrame[] = [];
     const sourceEndLimit = Math.max(0, actualDuration - 0.01);
+    const targetTimes = plan.targetTimes.map((time) =>
+      clamp(time, 0, sourceEndLimit),
+    );
 
-    for (let index = 0; index < frameCount; index += 1) {
+    const missing = targetTimes.filter((targetTime, index) => {
+      const nearest = nearestFrame(cacheEntry.frames, targetTime);
+      return (
+        !nearest ||
+        Math.abs(nearest.time - targetTime) > frameTolerance(targetTimes, index)
+      );
+    });
+
+    const orderedMissing = spreadOrder(missing);
+
+    for (let index = 0; index < orderedMissing.length; index += 1) {
       if (signal.aborted) {
-        return null;
+        return;
       }
 
-      const ratio = frameCount <= 1 ? 0 : index / (frameCount - 1);
-      const targetTime = Math.max(
-        0,
-        Math.min(sourceEndLimit, actualDuration * ratio),
-      );
-
+      const targetTime = orderedMissing[index];
       await seekAndWaitForFrame(video, targetTime, signal);
 
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      frames.push({
+      addFrameToCache(cacheEntry, {
         time: targetTime,
         url: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
       });
 
-      if (index === 0 || index % 3 === 2 || index === frameCount - 1) {
-        onProgress?.([...frames], actualDuration);
+      /*
+       * Paint the first rough coverage immediately, then batch later updates a
+       * little so hundreds of detailed frames do not cause excessive React
+       * renders while zoomed all the way in.
+       */
+      if (index < 8 || index % 3 === 2 || index === orderedMissing.length - 1) {
+        onFrame();
       }
     }
-
-    return {
-      duration: actualDuration,
-      density,
-      frames,
-    } satisfies SourceFrameCacheEntry;
   } finally {
     video.removeAttribute("src");
     video.load();
   }
 }
 
-function nearestFrameAtOrAfter(
-  frames: SampledFrame[],
-  time: number,
-) {
-  return frames.findIndex((frame) => frame.time >= time - 0.001);
-}
-
-function framesForClip(
-  clip: VideoTimelineClip,
-  sourceFrames: SampledFrame[],
-) {
-  if (sourceFrames.length === 0) {
-    return [];
-  }
-
-  const startIndexRaw = nearestFrameAtOrAfter(sourceFrames, clip.sourceIn);
-  const startIndex = startIndexRaw >= 0 ? startIndexRaw : sourceFrames.length - 1;
-
-  const selected = sourceFrames.slice(startIndex).filter(
-    (frame) => frame.time <= clip.sourceOut + 0.001,
-  );
-
-  if (selected.length > 0) {
-    return selected.map((frame) => frame.url);
-  }
-
-  const nearest = sourceFrames.reduce((best, frame) =>
-    Math.abs(frame.time - clip.sourceIn) < Math.abs(best.time - clip.sourceIn)
-      ? frame
-      : best,
-  );
-
-  return [nearest.url];
-}
-
-function buildClipFrameMap(
-  videoClips: VideoTimelineClip[],
-  cache: Map<string, SourceFrameCacheEntry>,
-) {
-  const result: VideoClipFrames = {};
-
-  for (const clip of videoClips) {
-    const cached = cache.get(clip.sourcePath);
-
-    if (!cached) {
-      continue;
-    }
-
-    result[clip.id] = framesForClip(clip, cached.frames);
-  }
-
-  return result;
-}
-
 export function useVideoClipFrames(
   videoClips: VideoTimelineClip[],
-  zoom = 1,
+  timelineDuration: number,
+  timelineTrackWidthPx: number,
 ) {
   const [framesByClipId, setFramesByClipId] = useState<VideoClipFrames>({});
   const cacheRef = useRef<Map<string, SourceFrameCacheEntry>>(new Map());
-  const safeZoom = normalizeZoom(zoom);
 
-  const sources = useMemo(() => {
-    const byPath = new Map<string, number>();
+  const clipPlans = useMemo(
+    () =>
+      videoClips.map((clip) =>
+        buildClipPlan(clip, timelineDuration, timelineTrackWidthPx),
+      ),
+    [videoClips, timelineDuration, timelineTrackWidthPx],
+  );
+
+  const sourcePlans = useMemo(() => {
+    const bySource = new Map<
+      string,
+      { expectedDuration: number; targetTimes: number[] }
+    >();
 
     for (const clip of videoClips) {
       if (!clip.sourcePath) {
         continue;
       }
 
-      byPath.set(
-        clip.sourcePath,
-        Math.max(
-          byPath.get(clip.sourcePath) ?? 0,
-          sourceDurationForClip(clip),
-        ),
+      const current = bySource.get(clip.sourcePath) ?? {
+        expectedDuration: 0,
+        targetTimes: [],
+      };
+
+      current.expectedDuration = Math.max(
+        current.expectedDuration,
+        sourceDurationForClip(clip),
       );
+      bySource.set(clip.sourcePath, current);
     }
 
-    return [...byPath.entries()].map(([path, duration]) => ({ path, duration }));
-  }, [videoClips]);
+    for (const plan of clipPlans) {
+      const source = bySource.get(plan.sourcePath);
+
+      if (source) {
+        source.targetTimes.push(...plan.targetTimes);
+      }
+    }
+
+    return [...bySource.entries()].map(
+      ([sourcePath, source]): SourceFramePlan => ({
+        sourcePath,
+        expectedDuration: source.expectedDuration,
+        targetTimes: mergeTargetTimes(source.targetTimes),
+      }),
+    );
+  }, [videoClips, clipPlans]);
+
+  const sourcePlanSignature = useMemo(
+    () =>
+      sourcePlans
+        .map(
+          (plan) =>
+            `${plan.sourcePath}|${plan.targetTimes.length}|${plan.targetTimes
+              .map((time) => time.toFixed(2))
+              .join(",")}`,
+        )
+        .join("||"),
+    [sourcePlans],
+  );
 
   /*
-   * Clip trims only change sourceIn/sourceOut. Because the cache is source-wide,
-   * we can immediately select a different slice of already decoded thumbnails
-   * while the resize handle is moving instead of throwing away the strip and
-   * waiting for a brand-new clip-specific extraction.
+   * Re-map immediately from whatever is already cached. Zooming therefore
+   * never clears the old thumbnails: the new, denser slot layout is populated
+   * from nearest cached samples on the very next render.
    */
   useEffect(() => {
-    setFramesByClipId(buildClipFrameMap(videoClips, cacheRef.current));
-  }, [videoClips, safeZoom]);
+    setFramesByClipId(buildClipFrameMap(clipPlans, cacheRef.current));
+  }, [clipPlans]);
 
   useEffect(() => {
     const controller = new AbortController();
-
     const timeout = window.setTimeout(() => {
       void (async () => {
-        for (const source of sources) {
+        for (const plan of sourcePlans) {
           if (controller.signal.aborted) {
             return;
           }
 
-          const cached = cacheRef.current.get(source.path);
+          let cacheEntry = cacheRef.current.get(plan.sourcePath);
 
-          /*
-           * A higher-density cache is also valid at lower zoom levels. When the
-           * user zooms in we keep showing the existing strip immediately and
-           * progressively add denser samples in the background.
-           */
-          if (
-            cached &&
-            cached.density >= safeZoom &&
-            cached.duration >= source.duration - 0.05
-          ) {
-            continue;
+          if (!cacheEntry) {
+            cacheEntry = {
+              duration: plan.expectedDuration,
+              frames: [],
+            };
+            cacheRef.current.set(plan.sourcePath, cacheEntry);
           }
 
           try {
-            const generated = await generateSourceFrames(
-              source.path,
-              source.duration,
-              safeZoom,
+            await generateMissingFrames(
+              plan,
+              cacheEntry,
               controller.signal,
-              (partialFrames, actualDuration) => {
-                if (controller.signal.aborted) {
-                  return;
+              () => {
+                if (!controller.signal.aborted) {
+                  setFramesByClipId(
+                    buildClipFrameMap(clipPlans, cacheRef.current),
+                  );
                 }
-
-                cacheRef.current.set(source.path, {
-                  duration: actualDuration,
-                  density: safeZoom,
-                  frames: partialFrames,
-                });
-
-                setFramesByClipId(
-                  buildClipFrameMap(videoClips, cacheRef.current),
-                );
               },
             );
-
-            if (generated && !controller.signal.aborted) {
-              cacheRef.current.set(source.path, generated);
-              setFramesByClipId(
-                buildClipFrameMap(videoClips, cacheRef.current),
-              );
-            }
           } catch (error) {
             if (
               !(error instanceof DOMException && error.name === "AbortError")
             ) {
               console.warn(
-                `Could not generate timeline frames for ${source.path}:`,
+                `Could not generate timeline frames for ${plan.sourcePath}:`,
                 error,
               );
             }
           }
         }
       })();
-    }, 80);
+    }, 45);
 
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [sources, safeZoom]);
+  }, [sourcePlanSignature]);
 
   return framesByClipId;
 }

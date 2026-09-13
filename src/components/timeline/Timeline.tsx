@@ -2,6 +2,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -138,9 +139,15 @@ function Timeline({
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousZoomRef = useRef(zoom);
+  const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
 
   const playheadPosition = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const framesByClipId = useVideoClipFrames(videoClips, zoom);
+  const timelineTrackWidthPx = Math.max(1, timelineViewportWidth - 118) * zoom;
+  const framesByClipId = useVideoClipFrames(
+    videoClips,
+    duration,
+    timelineTrackWidthPx,
+  );
 
   const markerTimes = useMemo(
     () => markers.map((marker) => marker.time).sort((a, b) => a - b),
@@ -166,6 +173,25 @@ function Timeline({
   const setTimelineZoom = (nextZoom: number) => {
     onZoomChange?.(clampTimelineZoom(nextZoom));
   };
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+
+    if (!scroll) {
+      return;
+    }
+
+    const updateViewportWidth = () => {
+      setTimelineViewportWidth(scroll.clientWidth);
+    };
+
+    updateViewportWidth();
+
+    const observer = new ResizeObserver(updateViewportWidth);
+    observer.observe(scroll);
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const scroll = scrollRef.current;
