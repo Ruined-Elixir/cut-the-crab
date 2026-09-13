@@ -736,6 +736,8 @@ async fn export_styled_video(
     output_path: String,
     ass_content: String,
     video_duration: f64,
+    input_paths: Option<Vec<String>>,
+    filter_complex: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -755,7 +757,7 @@ async fn export_styled_video(
 
         let ass_path_string = escape_ffmpeg_filter_path(&ass_path);
 
-        let video_filter = if let Some(fonts_dir) = development_fonts_dir() {
+        let ass_filter = if let Some(fonts_dir) = development_fonts_dir() {
             let fonts_dir_string = escape_ffmpeg_filter_path(&fonts_dir);
 
             format!(
@@ -767,36 +769,70 @@ async fn export_styled_video(
         };
 
         println!("Exporting with FFmpeg: {}", ffmpeg_path.display());
-        println!("ASS filter: {}", video_filter);
-
         emit_export_progress(&app, 0.0, "Starting FFmpeg...");
 
-        let mut child = Command::new(&ffmpeg_path)
-            .args([
-                "-y",
-                "-i",
-                &video_path,
-                "-vf",
-                &video_filter,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "medium",
-                "-crf",
-                "18",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                "-movflags",
-                "+faststart",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                &output_path,
-            ])
+        let timeline_mode = filter_complex.is_some()
+            && input_paths
+                .as_ref()
+                .map(|paths| !paths.is_empty())
+                .unwrap_or(false);
+
+        let mut command = Command::new(&ffmpeg_path);
+        command.arg("-y");
+
+        if timeline_mode {
+            let inputs = input_paths.unwrap_or_default();
+
+            for input_path in &inputs {
+                command.arg("-i").arg(input_path);
+            }
+
+            let base_filter = filter_complex.unwrap_or_default();
+            let full_filter = format!(
+                "{};[vcomp]{},format=yuv420p[vout]",
+                base_filter, ass_filter
+            );
+
+            println!("Timeline filter graph: {}", full_filter);
+
+            command
+                .arg("-filter_complex")
+                .arg(full_filter)
+                .arg("-map")
+                .arg("[vout]")
+                .arg("-map")
+                .arg("[aout]");
+        } else {
+            command
+                .arg("-i")
+                .arg(&video_path)
+                .arg("-vf")
+                .arg(&ass_filter);
+        }
+
+        command
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-preset")
+            .arg("medium")
+            .arg("-crf")
+            .arg("18")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k")
+            .arg("-movflags")
+            .arg("+faststart")
+            .arg("-progress")
+            .arg("pipe:1")
+            .arg("-nostats")
+            .arg(&output_path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        let mut child = command
             .spawn()
             .map_err(|error| format!("Failed to start FFmpeg: {error}"))?;
 
@@ -821,7 +857,11 @@ async fn export_styled_video(
                         emit_export_progress(
                             &app,
                             percent.min(99.0),
-                            "Rendering subtitles and encoding video...",
+                            if timeline_mode {
+                                "Rendering edited timeline..."
+                            } else {
+                                "Rendering subtitles and encoding video..."
+                            },
                         );
                     }
                 }

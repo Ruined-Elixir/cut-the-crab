@@ -1554,11 +1554,13 @@ function App() {
 
     try {
       const outputPath = await exportStyledVideo(videoPath, subtitles, {
-        videoDuration,
+        timelineDuration,
+        videoClips,
+        trackSettings,
 
         onStart: () => {
           setExportProgress(0);
-          setExportStatus("Preparing video export...");
+          setExportStatus("Preparing edited timeline export...");
           setIsExporting(true);
         },
 
@@ -1572,10 +1574,10 @@ function App() {
         setExportProgress(100);
         setExportStatus("Export complete.");
 
-        console.log("Styled video exported:", outputPath);
+        console.log("Edited timeline exported:", outputPath);
       }
     } catch (error) {
-      console.error("Styled video export failed:", error);
+      console.error("Edited timeline export failed:", error);
     } finally {
       setIsExporting(false);
     }
