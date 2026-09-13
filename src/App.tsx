@@ -8,7 +8,6 @@ import CtcLogo from "./components/brand/CtcLogo";
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
 import VideoPlayer from "./components/video/VideoPlayer";
-import VideoInspector from "./components/video/VideoInspector";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
   clampTimelineZoom,
@@ -282,9 +281,7 @@ function App() {
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipTransform,
-    resetVideoClipTransform,
     updateVideoClipTransition,
-    updateVideoClipAudio,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -500,17 +497,6 @@ function App() {
     updateVideoClipTransform(id, transform);
   };
 
-  const handleResetVideoTransform = (id: string) => {
-    const clip = videoClips.find((item) => item.id === id);
-
-    if (!clip || trackSettings[clip.trackId]?.locked) {
-      return;
-    }
-
-    markNextChangeImmediate();
-    resetVideoClipTransform(id);
-  };
-
   const handleVideoTransitionChange = (
     id: string,
     edge: "in" | "out",
@@ -528,24 +514,6 @@ function App() {
     updateVideoClipTransition(id, edge, transition);
   };
 
-
-  const handleVideoAudioChange = (
-    id: string,
-    audio: {
-      volume?: number;
-      muted?: boolean;
-      fadeInDuration?: number;
-      fadeOutDuration?: number;
-    },
-  ) => {
-    const clip = videoClips.find((item) => item.id === id);
-
-    if (!clip || trackSettings[clip.trackId]?.locked) {
-      return;
-    }
-
-    updateVideoClipAudio(id, audio);
-  };
 
   const handleSubtitleTrackSelect = (
     id: string,
@@ -2147,32 +2115,21 @@ function App() {
           />
         </section>
 
-        {selectedVideoClip ? (
-          <VideoInspector
-            clip={selectedVideoClip}
-            disabled={trackSettings[selectedVideoClip.trackId]?.locked ?? false}
-            onTransformChange={handleVideoTransformChange}
-            onResetTransform={handleResetVideoTransform}
-            onTransitionChange={handleVideoTransitionChange}
-            onAudioChange={handleVideoAudioChange}
-          />
-        ) : (
-          <SubtitlePanel
-            subtitles={filteredSubtitles}
-            selectedSubtitle={selectedSubtitle}
-            selectedSubtitleId={selectedSubtitleId}
-            selectedSubtitleIds={selectedSubtitleIds}
-            selectedSubtitleCount={selectedSubtitleIds.length}
-            activeSubtitleId={activeSubtitleId}
-            search={subtitleSearch}
-            onSearchChange={setSubtitleSearch}
-            onSelect={handleSubtitleSelect}
-            onTextChange={updateSubtitleText}
-            onStyleChange={updateSubtitleStyleWithSelection}
-            onAdd={() => addSubtitleWithHistory(currentTime)}
-            onDelete={deleteSubtitleWithHistory}
-          />
-        )}
+        <SubtitlePanel
+          subtitles={filteredSubtitles}
+          selectedSubtitle={selectedSubtitle}
+          selectedSubtitleId={selectedSubtitleId}
+          selectedSubtitleIds={selectedSubtitleIds}
+          selectedSubtitleCount={selectedSubtitleIds.length}
+          activeSubtitleId={activeSubtitleId}
+          search={subtitleSearch}
+          onSearchChange={setSubtitleSearch}
+          onSelect={handleSubtitleSelect}
+          onTextChange={updateSubtitleText}
+          onStyleChange={updateSubtitleStyleWithSelection}
+          onAdd={() => addSubtitleWithHistory(currentTime)}
+          onDelete={deleteSubtitleWithHistory}
+        />
       </div>
 
       <Timeline

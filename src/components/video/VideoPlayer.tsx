@@ -183,6 +183,9 @@ function findSameTrackDissolve(
   return null;
 }
 
+const ROTATION_SNAP_INCREMENT_DEGREES = 45;
+const ROTATION_SNAP_THRESHOLD_DEGREES = 4;
+
 function normalizeRotation(value: number) {
   let normalized = value;
 
@@ -190,6 +193,24 @@ function normalizeRotation(value: number) {
   while (normalized < -180) normalized += 360;
 
   return normalized;
+}
+
+function snapRotation(value: number) {
+  const normalized = normalizeRotation(value);
+  const snapTarget = normalizeRotation(
+    Math.round(normalized / ROTATION_SNAP_INCREMENT_DEGREES) *
+      ROTATION_SNAP_INCREMENT_DEGREES,
+  );
+
+  return Math.abs(normalized - snapTarget) <= ROTATION_SNAP_THRESHOLD_DEGREES
+    ? snapTarget
+    : normalized;
+}
+
+function formatRotation(value: number) {
+  const normalized = normalizeRotation(value);
+  const rounded = Math.round(normalized);
+  return `${Object.is(rounded, -0) ? 0 : rounded}°`;
 }
 
 function pointerAngleDegrees(
@@ -1264,28 +1285,105 @@ function VideoPlayer({
     const transformBox = event.currentTarget.closest(
       ".program-transform-box",
     ) as HTMLElement | null;
-    const rect = transformBox?.getBoundingClientRect();
+    const shell = shellRef.current;
 
-    if (!rect) {
+    if (!transformBox || !shell) {
       return;
     }
 
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const startDistance = Math.max(1, Math.hypot(
-      event.clientX - centerX,
-      event.clientY - centerY,
-    ));
-    const startScale = selectedActiveClip.scale ?? 100;
+    const cornerNames = [
+      "top-left",
+      "top-right",
+      "bottom-left",
+      "bottom-right",
+    ] as const;
+    type CornerName = (typeof cornerNames)[number];
+
+    const draggedCorner = cornerNames.find((corner) =>
+      event.currentTarget.classList.contains(corner),
+    );
+
+    if (!draggedCorner) {
+      return;
+    }
+
+    const oppositeCorner: Record<CornerName, CornerName> = {
+      "top-left": "bottom-right",
+      "top-right": "bottom-left",
+      "bottom-left": "top-right",
+      "bottom-right": "top-left",
+    };
+
+    const oppositeHandle = transformBox.querySelector(
+      `.program-transform-handle.corner.${oppositeCorner[draggedCorner]}`,
+    ) as HTMLElement | null;
+
+    if (!oppositeHandle) {
+      return;
+    }
+
+    // Use the actual on-screen handle centres. This automatically accounts for
+    // the clip's current scale and rotation, while the opposite corner becomes
+    // the fixed anchor for the entire resize gesture.
+    const draggedRect = event.currentTarget.getBoundingClientRect();
+    const oppositeRect = oppositeHandle.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+
+    const movingCornerX = draggedRect.left + draggedRect.width / 2;
+    const movingCornerY = draggedRect.top + draggedRect.height / 2;
+    const anchorX = oppositeRect.left + oppositeRect.width / 2;
+    const anchorY = oppositeRect.top + oppositeRect.height / 2;
+
+    const startVectorX = movingCornerX - anchorX;
+    const startVectorY = movingCornerY - anchorY;
+    const startVectorLengthSquared = Math.max(
+      1,
+      startVectorX * startVectorX + startVectorY * startVectorY,
+    );
+
+    // Preserve the exact point inside the handle where the user grabbed it, so
+    // beginning a resize never causes the corner to jump under the cursor.
+    const pointerOffsetX = event.clientX - movingCornerX;
+    const pointerOffsetY = event.clientY - movingCornerY;
+
+    const startScale = Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100));
+    const startPositionX = selectedActiveClip.positionX ?? 0;
+    const startPositionY = selectedActiveClip.positionY ?? 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const distance = Math.max(1, Math.hypot(
-        moveEvent.clientX - centerX,
-        moveEvent.clientY - centerY,
-      ));
+      const pointerCornerX = moveEvent.clientX - pointerOffsetX;
+      const pointerCornerY = moveEvent.clientY - pointerOffsetY;
+      const pointerVectorX = pointerCornerX - anchorX;
+      const pointerVectorY = pointerCornerY - anchorY;
+
+      // Project the pointer onto the original diagonal. This gives proportional
+      // scaling even when the clip is rotated, without distorting its aspect
+      // ratio or letting sideways pointer movement create erratic scale jumps.
+      const requestedRatio =
+        (pointerVectorX * startVectorX + pointerVectorY * startVectorY) /
+        startVectorLengthSquared;
+      const requestedScale = startScale * requestedRatio;
+      const nextScale = Math.max(10, Math.min(400, requestedScale));
+      const appliedRatio = nextScale / startScale;
+
+      // The opposite corner must remain fixed in Program space. Scaling around
+      // the clip centre would move that corner, so shift the centre by half of
+      // the diagonal's size change. positionX/Y are stored as Program-shell
+      // percentages, hence the conversion using the shell dimensions below.
+      const centerShiftX = (startVectorX * (appliedRatio - 1)) / 2;
+      const centerShiftY = (startVectorY * (appliedRatio - 1)) / 2;
+
+      const nextPositionX =
+        startPositionX +
+        (centerShiftX / Math.max(1, shellRect.width)) * 100;
+      const nextPositionY =
+        startPositionY +
+        (centerShiftY / Math.max(1, shellRect.height)) * 100;
 
       onVideoTransformChange(selectedActiveClip.id, {
-        scale: startScale * (distance / startDistance),
+        scale: nextScale,
+        positionX: nextPositionX,
+        positionY: nextPositionY,
       });
     };
 
@@ -1340,10 +1438,12 @@ function VideoPlayer({
         centerY,
       );
 
+      const rawRotation = normalizeRotation(
+        startRotation + (nextPointerAngle - startPointerAngle),
+      );
+
       onVideoTransformChange(selectedActiveClip.id, {
-        rotation: normalizeRotation(
-          startRotation + (nextPointerAngle - startPointerAngle),
-        ),
+        rotation: snapRotation(rawRotation),
       });
     };
 
@@ -1375,15 +1475,23 @@ function VideoPlayer({
     !!selectedActiveClip && programTransformClipId === selectedActiveClip.id;
 
   const transformOverlayStyle: CSSProperties | undefined = selectedActiveClip
-    ? {
-        transform: `translate3d(${selectedActiveClip.positionX ?? 0}%, ${
-          selectedActiveClip.positionY ?? 0
-        }%, 0) scale(${Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100)) / 100}) rotate(${Math.max(
+    ? (() => {
+        const clipScale =
+          Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100)) / 100;
+        const clipRotation = Math.max(
           -180,
           Math.min(180, selectedActiveClip.rotation ?? 0),
-        )}deg)`,
-        transformOrigin: "center center",
-      }
+        );
+
+        return {
+          transform: `translate3d(${selectedActiveClip.positionX ?? 0}%, ${
+            selectedActiveClip.positionY ?? 0
+          }%, 0) scale(${clipScale}) rotate(${clipRotation}deg)`,
+          transformOrigin: "center center",
+          "--program-control-inverse-scale": `${1 / clipScale}`,
+          "--program-control-counter-rotation": `${-clipRotation}deg`,
+        } as CSSProperties;
+      })()
     : undefined;
 
   return (
@@ -1599,10 +1707,19 @@ function VideoPlayer({
                         type="button"
                         className="program-transform-handle rotation"
                         onPointerDown={beginRotateTransform}
-                        aria-label="Rotate clip"
+                        aria-label={`Rotate clip, ${formatRotation(
+                          selectedActiveClip.rotation ?? 0,
+                        )}`}
+                        title="Drag to rotate · snaps every 45°"
                       >
                         ↻
                       </button>
+                      <span
+                        className="program-transform-angle-readout"
+                        aria-hidden="true"
+                      >
+                        {formatRotation(selectedActiveClip.rotation ?? 0)}
+                      </span>
                     </>
                   )}
                 </div>

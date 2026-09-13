@@ -149,7 +149,6 @@ fn center_main_window(app_handle: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RecentProject {
@@ -196,8 +195,7 @@ fn read_recent_projects_file(app: &tauri::AppHandle) -> Result<Vec<RecentProject
 
     for project in &mut projects {
         if project.project_id.trim().is_empty() {
-            project.project_id =
-                format!("legacy-{:016x}", stable_path_hash(&project.video_path));
+            project.project_id = format!("legacy-{:016x}", stable_path_hash(&project.video_path));
         }
     }
 
@@ -215,8 +213,7 @@ fn write_recent_projects_file(
     let content = serde_json::to_string_pretty(projects)
         .map_err(|error| format!("Failed to serialize recent projects: {error}"))?;
 
-    fs::write(path, content)
-        .map_err(|error| format!("Failed to save recent projects: {error}"))
+    fs::write(path, content).map_err(|error| format!("Failed to save recent projects: {error}"))
 }
 
 #[tauri::command]
@@ -225,10 +222,7 @@ fn read_recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, Str
 }
 
 #[tauri::command]
-fn upsert_recent_project(
-    app: tauri::AppHandle,
-    project: RecentProject,
-) -> Result<(), String> {
+fn upsert_recent_project(app: tauri::AppHandle, project: RecentProject) -> Result<(), String> {
     let mut projects = read_recent_projects_file(&app)?;
 
     projects.retain(|existing| existing.project_id != project.project_id);
@@ -282,30 +276,19 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .build(app)?;
 
     let split_subtitle =
-        MenuItemBuilder::with_id(
-            "edit.split-subtitle",
-            "Split Subtitle at Playhead",
-        )
-        .accelerator("CmdOrCtrl+B")
-        .build(app)?;
+        MenuItemBuilder::with_id("edit.split-subtitle", "Split Subtitle at Playhead")
+            .accelerator("CmdOrCtrl+B")
+            .build(app)?;
 
     let select_all_subtitles =
-        MenuItemBuilder::with_id(
-            "edit.select-all-subtitles",
-            "Select All Subtitles",
-        )
-        .build(app)?;
+        MenuItemBuilder::with_id("edit.select-all-subtitles", "Select All Subtitles").build(app)?;
 
     let deselect_all_subtitles =
-        MenuItemBuilder::with_id(
-            "edit.deselect-all-subtitles",
-            "Deselect All Subtitles",
-        )
-        .accelerator("CmdOrCtrl+Shift+A")
-        .build(app)?;
+        MenuItemBuilder::with_id("edit.deselect-all-subtitles", "Deselect All Subtitles")
+            .accelerator("CmdOrCtrl+Shift+A")
+            .build(app)?;
 
-    let add_subtitle =
-        MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
+    let add_subtitle = MenuItemBuilder::with_id("edit.add-subtitle", "Add Subtitle").build(app)?;
     let delete_subtitle =
         MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
 
@@ -325,10 +308,9 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+=")
         .build(app)?;
 
-    let timeline_zoom_out =
-        MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
-            .accelerator("CmdOrCtrl+-")
-            .build(app)?;
+    let timeline_zoom_out = MenuItemBuilder::with_id("view.timeline-zoom-out", "Zoom Out Timeline")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
 
     let timeline_zoom_reset =
         MenuItemBuilder::with_id("view.timeline-zoom-reset", "Reset Timeline Zoom")
@@ -714,11 +696,7 @@ struct VideoExportProgress {
     status: String,
 }
 
-fn emit_export_progress(
-    app: &tauri::AppHandle,
-    progress: f64,
-    status: impl Into<String>,
-) {
+fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into<String>) {
     let payload = VideoExportProgress {
         progress: progress.clamp(0.0, 100.0),
         status: status.into(),
@@ -749,8 +727,7 @@ async fn export_styled_video(
             .map_err(|error| error.to_string())?
             .as_millis();
 
-        let ass_path =
-            std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
 
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
@@ -788,10 +765,7 @@ async fn export_styled_video(
             }
 
             let base_filter = filter_complex.unwrap_or_default();
-            let full_filter = format!(
-                "{};[vcomp]{},format=yuv420p[vout]",
-                base_filter, ass_filter
-            );
+            let full_filter = format!("{};[vcomp]{},format=yuv420p[vout]", base_filter, ass_filter);
 
             println!("Timeline filter graph: {}", full_filter);
 
@@ -844,9 +818,8 @@ async fn export_styled_video(
         let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
-            let line = line.map_err(|error| {
-                format!("Failed to read FFmpeg progress output: {error}")
-            })?;
+            let line =
+                line.map_err(|error| format!("Failed to read FFmpeg progress output: {error}"))?;
 
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
@@ -956,9 +929,7 @@ async fn get_project_thumbnail(
             .arg("-frames:v")
             .arg("1")
             .arg("-vf")
-            .arg(
-                "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
-            )
+            .arg("scale=640:360:force_original_aspect_ratio=increase,crop=640:360")
             .arg("-q:v")
             .arg("3")
             .arg("-y")
@@ -1061,14 +1032,12 @@ fn read_matching_project(
      * allows multiple independent projects to use the same source video.
      */
     if project_id.starts_with("legacy-") {
-        let legacy_managed_path =
-            legacy_managed_project_path_for_video(&app, &video_path)?;
+        let legacy_managed_path = legacy_managed_project_path_for_video(&app, &video_path)?;
 
         if legacy_managed_path.exists() {
-            let content = fs::read_to_string(&legacy_managed_path)
-                .map_err(|error| {
-                    format!("Failed to read legacy managed subtitle project: {error}")
-                })?;
+            let content = fs::read_to_string(&legacy_managed_path).map_err(|error| {
+                format!("Failed to read legacy managed subtitle project: {error}")
+            })?;
 
             write_managed_project(&app, &project_id, &content)?;
 
