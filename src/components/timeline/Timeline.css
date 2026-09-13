@@ -1125,3 +1125,80 @@
   transform: translateX(-50%);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
+
+/* Video clip transition indicators */
+.timeline-video-transition-badge {
+  position:absolute;
+  z-index:4;
+  top:24px;
+  width:17px;
+  height:17px;
+  display:grid;
+  place-items:center;
+  border-radius:5px;
+  border:1px solid rgba(255,255,255,.45);
+  background:rgba(18,18,20,.78);
+  color:rgba(255,255,255,.94);
+  font-size:8px;
+  font-weight:800;
+  line-height:1;
+  pointer-events:none;
+  box-shadow:0 1px 4px rgba(0,0,0,.35);
+}
+
+.timeline-video-transition-badge.in { left:5px; }
+.timeline-video-transition-badge.out { right:5px; }
+
+/* ==========================================================================\n   Scrollable professional-style track stack\n   ========================================================================== */
+
+.timeline-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+
+.timeline-content {
+  min-width: 100%;
+  min-height: 100%;
+  height: auto;
+}
+
+.timeline-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: #18181a;
+}
+
+.timeline-ruler-label-spacer {
+  position: sticky;
+  left: 0;
+  z-index: 42;
+  background: #18181a;
+}
+
+.timeline-track-label {
+  position: sticky;
+  left: 0;
+  z-index: 24;
+  background: #18181a;
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  background-clip: padding-box;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: padding-box;
+}

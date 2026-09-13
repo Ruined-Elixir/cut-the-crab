@@ -10,7 +10,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 9;
+export const CURRENT_PROJECT_VERSION = 10;
 
 export type SubtitleProject = {
   version: number;
@@ -243,6 +243,16 @@ function normalizeVideoClip(
     cropRight: Math.max(0, Math.min(49, asNumber(value.cropRight, 0))),
     cropBottom: Math.max(0, Math.min(49, asNumber(value.cropBottom, 0))),
     cropLeft: Math.max(0, Math.min(49, asNumber(value.cropLeft, 0))),
+    transitionInType:
+      value.transitionInType === "cross-dissolve" || value.transitionInType === "fade-black"
+        ? value.transitionInType
+        : "none",
+    transitionInDuration: Math.max(0.1, Math.min(5, asNumber(value.transitionInDuration, 0.5))),
+    transitionOutType:
+      value.transitionOutType === "cross-dissolve" || value.transitionOutType === "fade-black"
+        ? value.transitionOutType
+        : "none",
+    transitionOutDuration: Math.max(0.1, Math.min(5, asNumber(value.transitionOutDuration, 0.5))),
     timelineStart,
     timelineEnd,
   };

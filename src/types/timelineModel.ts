@@ -24,6 +24,8 @@ export type TimelineClipBase = {
   timelineEnd: number;
 };
 
+export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
+
 export type VideoTimelineClip = TimelineClipBase & {
   kind: "video";
   sourceId: string;
@@ -40,6 +42,10 @@ export type VideoTimelineClip = TimelineClipBase & {
   cropRight?: number;
   cropBottom?: number;
   cropLeft?: number;
+  transitionInType?: VideoTransitionType;
+  transitionInDuration?: number;
+  transitionOutType?: VideoTransitionType;
+  transitionOutDuration?: number;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {

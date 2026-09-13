@@ -448,6 +448,24 @@ function VideoTrack({
                   )}
               </div>
 
+              {(clip.transitionInType ?? "none") !== "none" && (
+                <span
+                  className="timeline-video-transition-badge in"
+                  title={`${clip.transitionInType === "fade-black" ? "Fade from Black" : "Cross Dissolve"} · ${(clip.transitionInDuration ?? 0.5).toFixed(1)}s`}
+                >
+                  {clip.transitionInType === "fade-black" ? "B" : "D"}
+                </span>
+              )}
+
+              {(clip.transitionOutType ?? "none") !== "none" && (
+                <span
+                  className="timeline-video-transition-badge out"
+                  title={`${clip.transitionOutType === "fade-black" ? "Fade to Black" : "Cross Dissolve"} · ${(clip.transitionOutDuration ?? 0.5).toFixed(1)}s`}
+                >
+                  {clip.transitionOutType === "fade-black" ? "B" : "D"}
+                </span>
+              )}
+
               <div className="timeline-video-clip-frame-area">
                 {frames.length > 0 ? (
                   <div

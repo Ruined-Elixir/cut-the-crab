@@ -9,6 +9,7 @@ import type { ProjectMediaAsset } from "../types/project";
 import type {
   TimelineTrackId,
   VideoTimelineClip,
+  VideoTransitionType,
 } from "../types/timelineModel";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -102,6 +103,10 @@ function createFullSourceClip(
     cropRight: 0,
     cropBottom: 0,
     cropLeft: 0,
+    transitionInType: "none",
+    transitionInDuration: 0.5,
+    transitionOutType: "none",
+    transitionOutDuration: 0.5,
     timelineStart: 0,
     timelineEnd: sourceDuration,
   };
@@ -166,10 +171,10 @@ export function useVideoTimeline({
 
   const replaceVideoClips = (
     clips: VideoTimelineClip[],
-    options?: { markSourceInitialized?: boolean },
+    options?: { markSourceInitializedFor?: string },
   ) => {
-    if (sourcePath && options?.markSourceInitialized) {
-      initializedSourceRef.current = sourcePath;
+    if (options?.markSourceInitializedFor) {
+      initializedSourceRef.current = options.markSourceInitializedFor;
     }
 
     const normalized = clips.map((clip) => ({
@@ -399,6 +404,7 @@ export function useVideoTimeline({
         ...target,
         timelineEnd: splitTime,
         sourceOut: sourceSplit,
+        transitionOutType: "none",
       };
 
       const right: VideoTimelineClip = {
@@ -406,6 +412,7 @@ export function useVideoTimeline({
         id: crypto.randomUUID(),
         timelineStart: splitTime,
         sourceIn: sourceSplit,
+        transitionInType: "none",
       };
 
       window.requestAnimationFrame(() => {
@@ -531,6 +538,10 @@ export function useVideoTimeline({
         cropRight: 0,
         cropBottom: 0,
         cropLeft: 0,
+        transitionInType: "none",
+        transitionInDuration: 0.5,
+        transitionOutType: "none",
+        transitionOutDuration: 0.5,
         timelineStart,
         timelineEnd: timelineStart + asset.duration,
       };
@@ -617,6 +628,54 @@ export function useVideoTimeline({
     });
   };
 
+  const updateVideoClipTransition = (
+    id: string,
+    edge: "in" | "out",
+    transition: {
+      type?: VideoTransitionType;
+      duration?: number;
+    },
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) => {
+        if (clip.id !== id) {
+          return clip;
+        }
+
+        const clipDuration = Math.max(
+          MIN_VIDEO_CLIP_DURATION,
+          clip.timelineEnd - clip.timelineStart,
+        );
+        const maxTransitionDuration = Math.max(
+          0.1,
+          Math.min(5, clipDuration / 2),
+        );
+        const clampDuration = (value: number) =>
+          Math.max(0.1, Math.min(maxTransitionDuration, value));
+
+        if (edge === "in") {
+          return {
+            ...clip,
+            transitionInType: transition.type ?? clip.transitionInType ?? "none",
+            transitionInDuration:
+              transition.duration === undefined
+                ? clip.transitionInDuration ?? 0.5
+                : clampDuration(transition.duration),
+          };
+        }
+
+        return {
+          ...clip,
+          transitionOutType: transition.type ?? clip.transitionOutType ?? "none",
+          transitionOutDuration:
+            transition.duration === undefined
+              ? clip.transitionOutDuration ?? 0.5
+              : clampDuration(transition.duration),
+        };
+      }),
+    );
+  };
+
   const deleteVideoClip = (id: string) => {
     setVideoClips((current) =>
       current.filter((clip) => clip.id !== id),
@@ -645,6 +704,7 @@ export function useVideoTimeline({
     insertVideoClipFromMedia,
     updateVideoClipTransform,
     resetVideoClipTransform,
+    updateVideoClipTransition,
 
     replaceVideoClips,
     initializeDefaultVideoClip,

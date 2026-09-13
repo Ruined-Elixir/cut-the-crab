@@ -155,3 +155,44 @@
 .video-inspector-crop-section {
   margin-top: 4px;
 }
+
+/* Clip transitions */
+.video-inspector-transition-section {
+  gap: 12px;
+}
+
+.video-transition-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--separator-soft);
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+}
+
+.video-transition-title {
+  color: var(--secondary-label);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.video-transition-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--secondary-label);
+  font-size: 10px;
+}
+
+.video-transition-select-row select {
+  min-width: 132px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--separator-soft);
+  border-radius: 7px;
+  background: var(--control-fill);
+  color: var(--label);
+  outline: none;
+}

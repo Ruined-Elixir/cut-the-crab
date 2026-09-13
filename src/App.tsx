@@ -73,7 +73,7 @@ type SeekRequest = {
 
 type AppScreen = "home" | "editor";
 
-const AUTOSAVE_DEBOUNCE_MS = 750;
+const AUTOSAVE_DEBOUNCE_MS = 200;
 
 function getVideoTitle(path: string) {
   const fileName = path.split(/[\\/]/).pop() ?? "Untitled Project";
@@ -214,6 +214,8 @@ function App() {
 
   const isLoadingVideoRef = useRef(false);
   const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const isClosingRef = useRef(false);
 
   const lastSavedSnapshotRef = useRef<string>(
     JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
@@ -282,6 +284,7 @@ function App() {
     insertVideoClipFromMedia,
     updateVideoClipTransform,
     resetVideoClipTransform,
+    updateVideoClipTransition,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -289,6 +292,32 @@ function App() {
     sourceName: videoName,
     sourceDuration: videoDuration,
   });
+
+  const latestSaveStateRef = useRef({
+    activeProjectId,
+    videoPath,
+    subtitles,
+    markers,
+    projectMetadata,
+    videoClips,
+    mediaAssets,
+    trackSettings,
+    videoDuration,
+    hasUnsavedChanges,
+  });
+
+  latestSaveStateRef.current = {
+    activeProjectId,
+    videoPath,
+    subtitles,
+    markers,
+    projectMetadata,
+    videoClips,
+    mediaAssets,
+    trackSettings,
+    videoDuration,
+    hasUnsavedChanges,
+  };
 
   const editedContentEnd = Math.max(
     0,
@@ -482,6 +511,23 @@ function App() {
     resetVideoClipTransform(id);
   };
 
+  const handleVideoTransitionChange = (
+    id: string,
+    edge: "in" | "out",
+    transition: {
+      type?: "none" | "cross-dissolve" | "fade-black";
+      duration?: number;
+    },
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    updateVideoClipTransition(id, edge, transition);
+  };
+
   const handleSubtitleTrackSelect = (
     id: string,
     mode:
@@ -618,6 +664,67 @@ function App() {
     await refreshRecentProjects();
   };
 
+  const createSaveFingerprint = (state: {
+    subtitles: typeof subtitles;
+    markers: TimelineMarker[];
+    videoClips: VideoTimelineClip[];
+    mediaAssets: ProjectMediaAsset[];
+    trackSettings: TimelineTrackSettings;
+  }) =>
+    JSON.stringify({
+      subtitles: state.subtitles,
+      markers: state.markers,
+      videoClips: state.videoClips,
+      mediaAssets: state.mediaAssets,
+      trackSettings: state.trackSettings,
+    });
+
+  const enqueueProjectSave = (state: {
+    activeProjectId: string;
+    videoPath: string;
+    subtitles: typeof subtitles;
+    markers: TimelineMarker[];
+    projectMetadata: ProjectMetadata | null;
+    videoClips: VideoTimelineClip[];
+    mediaAssets: ProjectMediaAsset[];
+    trackSettings: TimelineTrackSettings;
+  }) => {
+    const fingerprint = createSaveFingerprint(state);
+
+    const task = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        await saveProjectFile(
+          state.activeProjectId,
+          state.videoPath,
+          state.subtitles,
+          state.markers,
+          state.projectMetadata ?? undefined,
+          state.videoClips,
+          state.mediaAssets,
+          state.trackSettings,
+        );
+
+        lastSavedSnapshotRef.current = fingerprint;
+
+        const latest = latestSaveStateRef.current;
+        if (
+          latest.activeProjectId === state.activeProjectId &&
+          latest.videoPath === state.videoPath
+        ) {
+          const latestFingerprint = createSaveFingerprint(latest);
+          setHasUnsavedChanges(latestFingerprint !== fingerprint);
+        }
+      });
+
+    saveQueueRef.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return task;
+  };
+
   // ==========================================================================
   // Dirty-state detection
   // ==========================================================================
@@ -662,19 +769,16 @@ function App() {
       try {
         setIsSavingProject(true);
 
-        await saveProjectFile(
+        await enqueueProjectSave({
           activeProjectId,
           videoPath,
           subtitles,
           markers,
-          projectMetadata ?? undefined,
+          projectMetadata,
           videoClips,
           mediaAssets,
           trackSettings,
-        );
-
-        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
-        setHasUnsavedChanges(false);
+        });
       } catch (error) {
         console.error("Autosave failed:", error);
       } finally {
@@ -869,7 +973,7 @@ function App() {
 
         replaceSubtitles(loadedSubtitles);
         replaceVideoClips(loadedVideoClips, {
-          markSourceInitialized: true,
+          markSourceInitializedFor: path,
         });
         setMarkers(loadedMarkers);
         setMediaAssets(loadedMediaAssets);
@@ -1352,26 +1456,23 @@ function App() {
   // ==========================================================================
 
   const handleSaveProject = async () => {
-    if (!activeProjectId || !videoPath || isSavingProject) {
+    if (!activeProjectId || !videoPath) {
       return;
     }
 
     try {
       setIsSavingProject(true);
 
-      await saveProjectFile(
+      await enqueueProjectSave({
         activeProjectId,
         videoPath,
         subtitles,
         markers,
-        projectMetadata ?? undefined,
+        projectMetadata,
         videoClips,
         mediaAssets,
         trackSettings,
-      );
-
-      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
-      setHasUnsavedChanges(false);
+      });
 
       if (projectMetadata) {
         await recordRecentProject(
@@ -2031,6 +2132,7 @@ function App() {
             disabled={trackSettings[selectedVideoClip.trackId]?.locked ?? false}
             onTransformChange={handleVideoTransformChange}
             onResetTransform={handleResetVideoTransform}
+            onTransitionChange={handleVideoTransitionChange}
           />
         ) : (
           <SubtitlePanel
