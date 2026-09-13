@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 
-import subcutLogoDarkText from "../../assets/Subcut_transparent-.png";
-import subcutLogoLightText from "../../assets/Subcut_transparent-light.png";
+import ctcLogo from "../../assets/CTC_app_icon.png";
+import ctcLogoWhite from "../../assets/CTC_app_icon_white.png";
 
-type SubcutLogoProps = {
+type CtcLogoProps = {
   className?: string;
   alt?: string;
   decorative?: boolean;
@@ -13,11 +13,11 @@ function getPrefersDarkMode() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-function SubcutLogo({
+function CtcLogo({
   className,
-  alt = "SUBCUT",
+  alt = "Cut The Crab",
   decorative = false,
-}: SubcutLogoProps) {
+}: CtcLogoProps) {
   const [isDarkMode, setIsDarkMode] = useState(getPrefersDarkMode);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ function SubcutLogo({
   return (
     <img
       className={className}
-      src={isDarkMode ? subcutLogoLightText : subcutLogoDarkText}
+      src={isDarkMode ? ctcLogoWhite : ctcLogo}
       alt={decorative ? "" : alt}
       aria-hidden={decorative ? true : undefined}
       draggable={false}
@@ -46,4 +46,4 @@ function SubcutLogo({
   );
 }
 
-export default SubcutLogo;
+export default CtcLogo;

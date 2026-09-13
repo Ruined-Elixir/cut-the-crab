@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import SubcutLogo from "../brand/SubcutLogo";
+import CtcLogo from "../brand/CtcLogo";
 
 import {
   PROJECT_LANGUAGE_LABELS,
@@ -269,14 +269,14 @@ function HomeScreen({
       <div className="home-shell">
         <header className="home-header">
           <div className="home-brand">
-            <SubcutLogo
+            <CtcLogo
               className="home-brand-logo"
-              alt="SUBCUT"
+              alt="Cut The Crab"
             />
 
             <div className="home-brand-copy">
               <div className="home-eyebrow">LOCAL SUBTITLE WORKSPACE</div>
-              <h1>SUBCUT</h1>
+              <h1>CUT THE CRAB</h1>
               <p>
                 Open a recent project or create a new transcription workspace.
               </p>

@@ -9,9 +9,12 @@ import type { Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
 import type {
   TimelineTrack as TimelineTrackModel,
+  TimelineTrackId,
+  TimelineTrackSettings,
   VideoTimelineClip,
 } from "../../types/timelineModel";
 
+import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
 import { buildTimelineModel } from "../../utils/timelineModel";
 
 import SubtitleTrack from "./SubtitleTrack";
@@ -29,6 +32,7 @@ type TimelineProps = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   zoom: number;
+  trackSettings: TimelineTrackSettings;
 
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
@@ -46,6 +50,16 @@ type TimelineProps = {
     id: string,
     newTimelineStart: number,
     newTimelineEnd: number,
+  ) => void;
+  onVideoClipMoveToTrack?: (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newTimelineStart: number,
+  ) => void;
+  onMediaDrop?: (
+    assetId: string,
+    targetTrackId: TimelineTrackId,
+    timelineTime: number,
   ) => void;
   onCopyVideoClip?: () => void;
   onPasteVideoClip?: () => void;
@@ -69,6 +83,9 @@ type TimelineProps = {
   ) => void;
   onMarkersChange?: (markers: TimelineMarker[]) => void;
   onZoomChange?: (zoom: number) => void;
+  onToggleTrackLock?: (trackId: TimelineTrackId) => void;
+  onToggleTrackMute?: (trackId: TimelineTrackId) => void;
+  onToggleTrackHidden?: (trackId: TimelineTrackId) => void;
 };
 
 export const MIN_TIMELINE_ZOOM = 1;
@@ -87,6 +104,7 @@ function Timeline({
   subtitles,
   markers,
   zoom,
+  trackSettings,
   selectedSubtitleId,
   selectedSubtitleIds,
   selectedVideoClipId,
@@ -95,6 +113,8 @@ function Timeline({
   onVideoClipSelect,
   onVideoClipMove,
   onVideoClipResize,
+  onVideoClipMoveToTrack,
+  onMediaDrop,
   onCopyVideoClip,
   onPasteVideoClip,
   onDuplicateVideoClip,
@@ -105,11 +125,15 @@ function Timeline({
   onSubtitleResize,
   onMarkersChange,
   onZoomChange,
+  onToggleTrackLock,
+  onToggleTrackMute,
+  onToggleTrackHidden,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousZoomRef = useRef(zoom);
 
   const playheadPosition = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const framesByClipId = useVideoClipFrames(videoClips, zoom);
 
   const markerTimes = useMemo(
     () => markers.map((marker) => marker.time).sort((a, b) => a - b),
@@ -122,11 +146,13 @@ function Timeline({
         duration,
         videoClips,
         subtitles,
+        trackSettings,
       }),
     [
       duration,
       videoClips,
       subtitles,
+      trackSettings,
     ],
   );
 
@@ -186,7 +212,7 @@ function Timeline({
     }
 
     const rect = event.currentTarget.getBoundingClientRect();
-    const labelWidth = 86;
+    const labelWidth = 118;
     const trackWidth = Math.max(1, rect.width - labelWidth);
     const ratio = (event.clientX - rect.left - labelWidth) / trackWidth;
 
@@ -269,10 +295,15 @@ function Timeline({
             currentTime={currentTime}
             track={track}
             selectedVideoClipId={selectedVideoClipId}
+            framesByClipId={framesByClipId}
             onSeek={onSeek}
             onSelect={onVideoClipSelect}
             onMove={onVideoClipMove}
+            onMoveToTrack={onVideoClipMoveToTrack}
+            onMediaDrop={onMediaDrop}
             onResize={onVideoClipResize}
+            onToggleLock={onToggleTrackLock}
+            onToggleHidden={onToggleTrackHidden}
           />
         );
 
@@ -292,6 +323,8 @@ function Timeline({
             onSubtitleGroupMove={onSubtitleGroupMove}
             onSubtitleResize={onSubtitleResize}
             onSeek={onSeek}
+            onToggleLock={onToggleTrackLock}
+            onToggleHidden={onToggleTrackHidden}
           />
         );
 
@@ -303,6 +336,7 @@ function Timeline({
             track={track}
             waveformsBySource={waveformsBySource}
             onSeek={onSeek}
+            onToggleMute={onToggleTrackMute}
           />
         );
 
@@ -318,7 +352,7 @@ function Timeline({
         <div className="timeline-title-group">
           <h2>Timeline</h2>
           <span className="timeline-help">
-            V1 editable · A1 linked · split · trim · move · copy · paste · duplicate
+            V1/V2 compositing · linked A1/A2 · drag media or clips between video tracks
           </span>
         </div>
 
@@ -397,7 +431,12 @@ function Timeline({
             width: `${zoom * 100}%`,
           }}
         >
-          <TimelineRuler duration={duration} zoom={zoom} />
+          <TimelineRuler
+            duration={duration}
+            zoom={zoom}
+            currentTime={currentTime}
+            onSeek={onSeek}
+          />
 
           <div
             className="timeline-track-stack"
@@ -442,7 +481,7 @@ function Timeline({
             <div
               className="timeline-playhead"
               style={{
-                left: `calc(86px + (100% - 86px) * ${playheadPosition / 100})`,
+                left: `calc(118px + (100% - 118px) * ${playheadPosition / 100})`,
               }}
               aria-hidden="true"
             >

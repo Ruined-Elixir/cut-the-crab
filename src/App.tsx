@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import SubcutLogo from "./components/brand/SubcutLogo";
+import CtcLogo from "./components/brand/CtcLogo";
 
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
@@ -42,12 +42,20 @@ import {
 
 import { exportStyledVideo } from "./services/videoExport";
 import {
+  parseClipTranscriptionCommand,
+  updateTranscriptionMenuTargets,
   useAppMenuCommands,
   type AppMenuCommand,
+  type TranscriptionPreset,
 } from "./services/appMenu";
 
 import type { TimelineMarker } from "./types/timeline";
-import type { VideoTimelineClip } from "./types/timelineModel";
+import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
+import type {
+  TimelineTrackId,
+  TimelineTrackSettings,
+  VideoTimelineClip,
+} from "./types/timelineModel";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
@@ -64,7 +72,7 @@ type SeekRequest = {
 
 type AppScreen = "home" | "editor";
 
-const AUTOSAVE_DEBOUNCE_MS = 3000;
+const AUTOSAVE_DEBOUNCE_MS = 750;
 
 function getVideoTitle(path: string) {
   const fileName = path.split(/[\\/]/).pop() ?? "Untitled Project";
@@ -74,6 +82,37 @@ function getVideoTitle(path: string) {
 
 function getFileName(path: string) {
   return path.split(/[\\/]/).pop() ?? "Video";
+}
+
+function formatClipMenuTime(time: number) {
+  const safeTime = Math.max(0, Number.isFinite(time) ? time : 0);
+  const totalSeconds = Math.floor(safeTime);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function transcriptionOptionsForPreset(preset: TranscriptionPreset) {
+  switch (preset) {
+    case "whisper-small":
+      return {
+        engine: "whisper" as const,
+        model: "small" as const,
+      };
+
+    case "sensevoice":
+      return {
+        engine: "sensevoice" as const,
+      };
+
+    case "whisper-base":
+    default:
+      return {
+        engine: "whisper" as const,
+        model: "base" as const,
+      };
+  }
 }
 
 function probeVideoDuration(path: string) {
@@ -153,6 +192,9 @@ function App() {
 
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(() => ({
+    ...DEFAULT_TIMELINE_TRACK_SETTINGS,
+  }));
 
   // ==========================================================================
   // Video export UI
@@ -173,7 +215,7 @@ function App() {
   const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
 
   const lastSavedSnapshotRef = useRef<string>(
-    JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [] }),
+    JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
   );
 
   // ==========================================================================
@@ -230,6 +272,7 @@ function App() {
     selectVideoClip,
     clearVideoClipSelection,
     moveVideoClip,
+    moveVideoClipToTrack,
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
@@ -297,7 +340,7 @@ function App() {
         clip.id === selectedVideoClipId,
     );
 
-    if (!selectedClip) {
+    if (!selectedClip || trackSettings[selectedClip.trackId]?.locked) {
       return false;
     }
 
@@ -322,6 +365,12 @@ function App() {
       return false;
     }
 
+    const selectedClip = videoClips.find((clip) => clip.id === selectedVideoClipId);
+
+    if (!selectedClip || trackSettings[selectedClip.trackId]?.locked) {
+      return false;
+    }
+
     markNextChangeImmediate();
     deleteVideoClip(selectedVideoClipId);
 
@@ -340,7 +389,7 @@ function App() {
   const pasteVideoClipAtPlayhead = () => {
     const clipboardClip = videoClipboardRef.current;
 
-    if (!clipboardClip) {
+    if (!clipboardClip || trackSettings[clipboardClip.trackId]?.locked) {
       return false;
     }
 
@@ -351,7 +400,11 @@ function App() {
   };
 
   const duplicateSelectedVideoClipWithHistory = () => {
-    if (!selectedVideoClipId) {
+    if (!selectedVideoClipId || !selectedVideoClip) {
+      return false;
+    }
+
+    if (trackSettings[selectedVideoClip.trackId]?.locked) {
       return false;
     }
 
@@ -364,6 +417,32 @@ function App() {
   const handleVideoClipSelect = (id: string) => {
     selectVideoClip(id);
     clearSubtitleSelection();
+  };
+
+  const toggleTrackSetting = (
+    trackId: TimelineTrackId,
+    setting: "locked" | "muted" | "hidden",
+  ) => {
+    setTrackSettings((current) => ({
+      ...current,
+      [trackId]: {
+        ...(current[trackId] ?? { locked: false }),
+        [setting]: !(current[trackId]?.[setting] ?? false),
+      },
+    }));
+  };
+
+  const handleMoveVideoClipToTrack = (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newTimelineStart: number,
+  ) => {
+    if (trackSettings[targetTrackId]?.locked) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    moveVideoClipToTrack(id, targetTrackId, newTimelineStart);
   };
 
   const handleSubtitleTrackSelect = (
@@ -516,7 +595,7 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
+    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
   }, [
@@ -524,6 +603,7 @@ function App() {
     markers,
     videoClips,
     mediaAssets,
+    trackSettings,
     videoPath,
   ]);
 
@@ -553,9 +633,10 @@ function App() {
           projectMetadata ?? undefined,
           videoClips,
           mediaAssets,
+          trackSettings,
         );
 
-        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
+        lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
         setHasUnsavedChanges(false);
       } catch (error) {
         console.error("Autosave failed:", error);
@@ -575,6 +656,7 @@ function App() {
     projectMetadata,
     videoClips,
     mediaAssets,
+    trackSettings,
     hasUnsavedChanges,
   ]);
 
@@ -594,6 +676,80 @@ function App() {
   } = useTranscription({
     onGenerated: replaceGeneratedSubtitlesWithHistory,
   });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const targets =
+        screen === "editor"
+          ? [...videoClips]
+              .sort(
+                (a, b) =>
+                  a.timelineStart - b.timelineStart ||
+                  a.trackId.localeCompare(b.trackId),
+              )
+              .map((clip, index) => ({
+                clipId: clip.id,
+                label: `Clip ${index + 1} — ${clip.sourceName} · ${
+                  clip.trackId === "video-2" ? "V2" : "V1"
+                } ${formatClipMenuTime(clip.timelineStart)}`,
+              }))
+          : [];
+
+      void updateTranscriptionMenuTargets(targets).catch((error) => {
+        console.error("Failed to update Transcription menu targets:", error);
+      });
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [screen, videoClips]);
+
+  const generateSubtitlesForVideoClip = async (
+    clip: VideoTimelineClip,
+    preset: TranscriptionPreset,
+  ) => {
+    const generatedSegments = await generateSubtitles(
+      clip.sourcePath,
+      {
+        ...transcriptionOptionsForPreset(preset),
+        commitResult: false,
+      },
+    );
+
+    if (!generatedSegments) {
+      return;
+    }
+
+    const mappedSubtitles = generatedSegments.flatMap((segment) => {
+      const sourceStart = Math.max(segment.startTime, clip.sourceIn);
+      const sourceEnd = Math.min(segment.endTime, clip.sourceOut);
+
+      if (sourceEnd <= sourceStart) {
+        return [];
+      }
+
+      return [
+        {
+          id: crypto.randomUUID(),
+          startTime:
+            clip.timelineStart + (sourceStart - clip.sourceIn),
+          endTime:
+            clip.timelineStart + (sourceEnd - clip.sourceIn),
+          text: segment.text,
+        },
+      ];
+    });
+
+    if (mappedSubtitles.length === 0) {
+      return;
+    }
+
+    replaceSubtitlesWithHistory([
+      ...subtitles,
+      ...mappedSubtitles,
+    ]);
+  };
 
   // ==========================================================================
   // Seek
@@ -640,6 +796,7 @@ function App() {
     setMarkers([]);
     setSubtitleSearch("");
     setTimelineZoom(1);
+    setTrackSettings({ ...DEFAULT_TIMELINE_TRACK_SETTINGS });
     setProjectMetadata(fallbackMetadata);
 
     void generateWaveform(path);
@@ -679,6 +836,7 @@ function App() {
         });
         setMarkers(loadedMarkers);
         setMediaAssets(loadedMediaAssets);
+        setTrackSettings(matchingProject.trackSettings);
         setProjectMetadata(resolvedMetadata);
 
         loadedHistorySnapshot = {
@@ -693,6 +851,7 @@ function App() {
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
           mediaAssets: loadedMediaAssets,
+          trackSettings: matchingProject.trackSettings,
         });
 
         setHasUnsavedChanges(false);
@@ -714,6 +873,7 @@ function App() {
             markers: [],
             videoClips: [],
             mediaAssets: [],
+            trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
         } else {
           lastSavedSnapshotRef.current = JSON.stringify({
@@ -721,6 +881,7 @@ function App() {
             markers: [],
             videoClips: [],
             mediaAssets: [],
+            trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
         }
 
@@ -741,6 +902,7 @@ function App() {
         markers: [],
         videoClips: [],
         mediaAssets: [],
+        trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
       });
 
       setHasUnsavedChanges(false);
@@ -826,14 +988,40 @@ function App() {
     }
   };
 
-  const handleInsertMediaAtPlayhead = (asset: ProjectMediaAsset) => {
+  const insertMediaAssetOnTimeline = (
+    asset: ProjectMediaAsset,
+    timelineTime: number,
+    trackId: TimelineTrackId,
+  ) => {
     if (asset.duration <= 0) {
       return;
     }
 
     markNextChangeImmediate();
     clearSubtitleSelection();
-    insertVideoClipFromMedia(asset, currentTime);
+    insertVideoClipFromMedia(asset, timelineTime, trackId);
+  };
+
+  const handleInsertMediaAtPlayhead = (asset: ProjectMediaAsset) => {
+    insertMediaAssetOnTimeline(
+      asset,
+      currentTime,
+      selectedVideoClip?.trackId ?? "video-1",
+    );
+  };
+
+  const handleMediaDropOnTimeline = (
+    assetId: string,
+    trackId: TimelineTrackId,
+    timelineTime: number,
+  ) => {
+    const asset = mediaAssets.find((item) => item.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    insertMediaAssetOnTimeline(asset, timelineTime, trackId);
   };
 
   const handleChooseVideo = async () => {
@@ -879,6 +1067,7 @@ function App() {
         metadata,
         [],
         [],
+        DEFAULT_TIMELINE_TRACK_SETTINGS,
       );
 
       setPendingNewProjectPath(null);
@@ -931,6 +1120,7 @@ function App() {
           },
           matchingProject.videoClips,
           matchingProject.mediaAssets,
+          matchingProject.trackSettings,
         );
       }
 
@@ -986,6 +1176,7 @@ function App() {
           },
           oldProject.videoClips,
           oldProject.mediaAssets,
+          oldProject.trackSettings,
         );
       }
 
@@ -1139,9 +1330,10 @@ function App() {
         projectMetadata ?? undefined,
         videoClips,
         mediaAssets,
+        trackSettings,
       );
 
-      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets });
+      lastSavedSnapshotRef.current = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
       setHasUnsavedChanges(false);
 
       if (projectMetadata) {
@@ -1237,13 +1429,42 @@ function App() {
   // ==========================================================================
 
   const handleAppMenuCommand = async (command: AppMenuCommand) => {
+    const clipTranscription = parseClipTranscriptionCommand(command);
+
+    if (clipTranscription) {
+      if (screen !== "editor") {
+        return;
+      }
+
+      const clip = videoClips.find(
+        (item) => item.id === clipTranscription.clipId,
+      );
+
+      if (clip) {
+        await generateSubtitlesForVideoClip(
+          clip,
+          clipTranscription.preset,
+        );
+      }
+
+      return;
+    }
+
     switch (command) {
       case "file.new-project":
+        if (screen === "editor" && hasUnsavedChanges) {
+          await handleSaveProject();
+        }
+
         setScreen("home");
         await handleChooseNewProjectVideo();
         return;
 
       case "file.show-home":
+        if (screen === "editor" && hasUnsavedChanges) {
+          await handleSaveProject();
+        }
+
         setScreen("home");
         setHomeError("");
         await refreshRecentProjects();
@@ -1695,9 +1916,15 @@ function App() {
           type="button"
           className="topbar-home-button"
           onClick={() => {
-            setScreen("home");
-            setHomeError("");
-            void refreshRecentProjects();
+            void (async () => {
+              if (hasUnsavedChanges) {
+                await handleSaveProject();
+              }
+
+              setScreen("home");
+              setHomeError("");
+              await refreshRecentProjects();
+            })();
           }}
           aria-label="Back to Home"
           title="Home"
@@ -1705,14 +1932,14 @@ function App() {
           ‹
         </button>
 
-        <SubcutLogo
+        <CtcLogo
           className="topbar-brand-logo"
           decorative
         />
 
         <div className="topbar-project-title">
           <h1>{projectMetadata?.title ?? videoName ?? "Untitled Project"}</h1>
-          <span className="topbar-app-name">SUBCUT</span>
+          <span className="topbar-app-name">CUT THE CRAB</span>
         </div>
 
         {videoPath && (
@@ -1732,6 +1959,8 @@ function App() {
           primaryVideoPath={videoPath}
           onImportMedia={handleImportMedia}
           onInsertMedia={handleInsertMediaAtPlayhead}
+          timelineDuration={timelineDuration}
+          onDropMedia={handleMediaDropOnTimeline}
         />
 
         <section className="preview-panel">
@@ -1744,6 +1973,7 @@ function App() {
             seekRequest={seekRequest}
             videoClips={videoClips}
             timelineDuration={timelineDuration}
+            trackSettings={trackSettings}
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}
@@ -1780,6 +2010,7 @@ function App() {
         subtitles={subtitles}
         markers={markers}
         zoom={timelineZoom}
+        trackSettings={trackSettings}
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
@@ -1789,6 +2020,8 @@ function App() {
         }}
         onVideoClipSelect={handleVideoClipSelect}
         onVideoClipMove={moveVideoClip}
+        onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
+        onMediaDrop={handleMediaDropOnTimeline}
         onVideoClipResize={resizeVideoClip}
         onCopyVideoClip={copySelectedVideoClip}
         onPasteVideoClip={pasteVideoClipAtPlayhead}
@@ -1800,6 +2033,9 @@ function App() {
         onSubtitleResize={resizeSubtitle}
         onMarkersChange={setMarkersWithHistory}
         onZoomChange={setTimelineZoom}
+        onToggleTrackLock={(trackId) => toggleTrackSetting(trackId, "locked")}
+        onToggleTrackMute={(trackId) => toggleTrackSetting(trackId, "muted")}
+        onToggleTrackHidden={(trackId) => toggleTrackSetting(trackId, "hidden")}
         onSeek={requestSeek}
       />
 

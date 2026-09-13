@@ -1,8 +1,12 @@
+import type { PointerEvent as ReactPointerEvent } from "react";
+
 import { formatPlaybackTime } from "../../utils/time";
 
 type TimelineRulerProps = {
   duration: number;
   zoom: number;
+  currentTime: number;
+  onSeek?: (time: number) => void;
 };
 
 function getMarkerInterval(duration: number, zoom: number) {
@@ -30,7 +34,12 @@ function formatRulerTime(time: number, interval: number) {
   return formatPlaybackTime(time);
 }
 
-function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
+function TimelineRuler({
+  duration,
+  zoom,
+  currentTime,
+  onSeek,
+}: TimelineRulerProps) {
   const interval = getMarkerInterval(duration, zoom);
   const markerTimes: number[] = [];
 
@@ -40,14 +49,75 @@ function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
 
   const lastMarker = markerTimes[markerTimes.length - 1];
 
-  if (duration > 0 && (lastMarker === undefined || Math.abs(lastMarker - duration) > 0.001)) {
+  if (
+    duration > 0 &&
+    (lastMarker === undefined || Math.abs(lastMarker - duration) > 0.001)
+  ) {
     markerTimes.push(duration);
   }
+
+  const seekFromPointer = (element: HTMLElement, clientX: number) => {
+    if (duration <= 0) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const ratio = Math.max(
+      0,
+      Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),
+    );
+
+    onSeek?.(ratio * duration);
+  };
+
+  const handlePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (duration <= 0 || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromPointer(event.currentTarget, event.clientX);
+  };
+
+  const handlePointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    event.preventDefault();
+    seekFromPointer(event.currentTarget, event.clientX);
+  };
+
+  const handlePointerUp = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const playheadPosition =
+    duration > 0
+      ? Math.max(0, Math.min(100, (currentTime / duration) * 100))
+      : 0;
 
   return (
     <div className="timeline-ruler">
       <div className="timeline-ruler-label-spacer" />
-      <div className="timeline-ruler-scale">
+
+      <div
+        className="timeline-ruler-scale"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        title="Click or drag to move the playhead"
+      >
         {markerTimes.map((time, index) => {
           const position = duration > 0 ? (time / duration) * 100 : 0;
 
@@ -64,6 +134,14 @@ function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
             </div>
           );
         })}
+
+        <div
+          className="timeline-ruler-playhead"
+          style={{ left: `${playheadPosition}%` }}
+          aria-hidden="true"
+        >
+          <span className="timeline-ruler-playhead-handle" />
+        </div>
       </div>
     </div>
   );

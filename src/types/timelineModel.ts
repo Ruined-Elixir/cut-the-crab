@@ -10,8 +10,10 @@ export type TimelineClipKind =
 
 export type TimelineTrackId =
   | "video-1"
+  | "video-2"
   | "subtitle-1"
   | "audio-1"
+  | "audio-2"
   | string;
 
 export type TimelineClipBase = {
@@ -63,4 +65,20 @@ export type TimelineTrack = {
   muted?: boolean;
   hidden?: boolean;
   clips: TimelineClip[];
+};
+
+export type TimelineTrackControlState = {
+  locked: boolean;
+  muted?: boolean;
+  hidden?: boolean;
+};
+
+export type TimelineTrackSettings = Record<string, TimelineTrackControlState>;
+
+export const DEFAULT_TIMELINE_TRACK_SETTINGS: TimelineTrackSettings = {
+  "video-2": { locked: false, hidden: false },
+  "video-1": { locked: false, hidden: false },
+  "subtitle-1": { locked: false, hidden: false },
+  "audio-1": { locked: true, muted: false },
+  "audio-2": { locked: true, muted: false },
 };

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   transcribeVideo,
   type TranscriptionEngine,
+  type TranscriptionSegment,
   type WhisperModel,
 } from "../services/transcriptionService";
 
@@ -21,6 +22,7 @@ type UseTranscriptionOptions = {
 export type GenerateSubtitlesOptions = {
   engine?: TranscriptionEngine;
   model?: WhisperModel;
+  commitResult?: boolean;
 };
 
 export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
@@ -42,19 +44,20 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
   const generateSubtitles = async (
     videoPath: string | null,
     options: GenerateSubtitlesOptions = {},
-  ) => {
+  ): Promise<TranscriptionSegment[] | null> => {
     if (!videoPath) {
       setGenerationError("Please choose a video first.");
 
-      return;
+      return null;
     }
 
     if (isGenerating) {
-      return;
+      return null;
     }
 
     const engine = options.engine ?? transcriptionEngine;
     const model = options.model ?? whisperModel;
+    const commitResult = options.commitResult ?? true;
 
     setTranscriptionEngine(engine);
 
@@ -71,10 +74,14 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
     try {
       const result = await transcribeVideo(videoPath, engine, model);
 
-      onGenerated(result.segments);
+      if (commitResult) {
+        onGenerated(result.segments);
+      }
 
       setGenerationStatus("Finished");
       setGenerationPercent(100);
+
+      return result.segments;
     } catch (error) {
       console.error("Failed to generate subtitles:", error);
 
@@ -83,6 +90,8 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
       setGenerationError(
         error instanceof Error ? error.message : String(error),
       );
+
+      return null;
     } finally {
       setIsGenerating(false);
     }

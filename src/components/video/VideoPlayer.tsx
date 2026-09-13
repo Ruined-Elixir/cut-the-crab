@@ -3,7 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
-import type { VideoTimelineClip } from "../../types/timelineModel";
+import type {
+  TimelineTrackId,
+  TimelineTrackSettings,
+  VideoTimelineClip,
+} from "../../types/timelineModel";
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
@@ -27,6 +31,7 @@ type VideoPlayerProps = {
 
   videoClips: VideoTimelineClip[];
   timelineDuration: number;
+  trackSettings: TimelineTrackSettings;
 
   subtitles: Subtitle[];
   currentTime: number;
@@ -41,19 +46,24 @@ type VideoPlayerProps = {
   ) => void;
 
   onSubtitleTextChange?: (id: string, text: string) => void;
-
   onSubtitleStyleChange?: (id: string, style: SubtitleStyle) => void;
-
   onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
+
+type VideoTrackId = "video-1" | "video-2";
+type AudioTrackId = "audio-1" | "audio-2";
+
+type VisibilityState = Record<VideoTrackId, boolean>;
 
 function findActiveVideoClip(
   videoClips: VideoTimelineClip[],
   timelineTime: number,
+  trackId: VideoTrackId,
 ) {
   return (
     videoClips.find(
       (clip) =>
+        clip.trackId === trackId &&
         timelineTime >= clip.timelineStart &&
         timelineTime < clip.timelineEnd,
     ) ?? null
@@ -67,6 +77,24 @@ function timelineTimeToSourceTime(
   return clip.sourceIn + (timelineTime - clip.timelineStart);
 }
 
+function audioTrackForVideoTrack(trackId: VideoTrackId): AudioTrackId {
+  return trackId === "video-2" ? "audio-2" : "audio-1";
+}
+
+function isTrackHidden(
+  trackSettings: TimelineTrackSettings,
+  trackId: TimelineTrackId,
+) {
+  return trackSettings[trackId]?.hidden ?? false;
+}
+
+function isTrackMuted(
+  trackSettings: TimelineTrackSettings,
+  trackId: TimelineTrackId,
+) {
+  return trackSettings[trackId]?.muted ?? false;
+}
+
 function VideoPlayer({
   videoPath,
   videoName,
@@ -76,6 +104,7 @@ function VideoPlayer({
   seekRequest,
   videoClips,
   timelineDuration,
+  trackSettings,
   subtitles,
   currentTime,
   selectedSubtitleId,
@@ -87,10 +116,15 @@ function VideoPlayer({
 }: VideoPlayerProps) {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isVideoVisible, setIsVideoVisible] = useState(false);
+  const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({
+    "video-1": false,
+    "video-2": false,
+  });
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const v1VideoRef = useRef<HTMLVideoElement | null>(null);
+  const v2VideoRef = useRef<HTMLVideoElement | null>(null);
+  const a1AudioRef = useRef<HTMLAudioElement | null>(null);
+  const a2AudioRef = useRef<HTMLAudioElement | null>(null);
   const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
@@ -98,37 +132,57 @@ function VideoPlayer({
   const timelineDurationRef = useRef(timelineDuration);
   const sourceDurationRef = useRef(duration);
   const videoClipsRef = useRef(videoClips);
+  const trackSettingsRef = useRef(trackSettings);
   const isPlayingRef = useRef(false);
 
   const onTimeChangeRef = useRef(onTimeChange);
   const onDurationChangeRef = useRef(onDurationChange);
 
-  const activeClipIdRef = useRef<string | null>(null);
-  const activeAudioClipIdRef = useRef<string | null>(null);
+  const activeVideoClipIdRefs = useRef<Record<VideoTrackId, string | null>>({
+    "video-1": null,
+    "video-2": null,
+  });
+  const activeAudioClipIdRefs = useRef<Record<AudioTrackId, string | null>>({
+    "audio-1": null,
+    "audio-2": null,
+  });
+
   const playbackAnchorTimelineRef = useRef(currentTime);
   const playbackAnchorPerformanceRef = useRef(0);
 
   const skipSeconds = 10;
 
-  const activeVideoClip = useMemo(
-    () => findActiveVideoClip(videoClips, currentTime),
+  const activeV1Clip = useMemo(
+    () => findActiveVideoClip(videoClips, currentTime, "video-1"),
     [videoClips, currentTime],
   );
 
-  const visualSourcePath = activeVideoClip?.sourcePath ?? videoPath;
-  const linkedAudioSourcePath = activeVideoClip?.sourcePath ?? null;
-
-  const videoUrl = useMemo(
-    () => (visualSourcePath ? convertFileSrc(visualSourcePath) : null),
-    [visualSourcePath],
+  const activeV2Clip = useMemo(
+    () => findActiveVideoClip(videoClips, currentTime, "video-2"),
+    [videoClips, currentTime],
   );
 
-  const linkedAudioUrl = useMemo(
-    () =>
-      linkedAudioSourcePath
-        ? convertFileSrc(linkedAudioSourcePath)
-        : null,
-    [linkedAudioSourcePath],
+  const v1SourcePath = activeV1Clip?.sourcePath ?? videoPath;
+  const v2SourcePath = activeV2Clip?.sourcePath ?? null;
+
+  const v1VideoUrl = useMemo(
+    () => (v1SourcePath ? convertFileSrc(v1SourcePath) : null),
+    [v1SourcePath],
+  );
+
+  const v2VideoUrl = useMemo(
+    () => (v2SourcePath ? convertFileSrc(v2SourcePath) : null),
+    [v2SourcePath],
+  );
+
+  const a1AudioUrl = useMemo(
+    () => (activeV1Clip ? convertFileSrc(activeV1Clip.sourcePath) : null),
+    [activeV1Clip?.sourcePath],
+  );
+
+  const a2AudioUrl = useMemo(
+    () => (activeV2Clip ? convertFileSrc(activeV2Clip.sourcePath) : null),
+    [activeV2Clip?.sourcePath],
   );
 
   const primaryVideoUrl = useMemo(
@@ -153,6 +207,10 @@ function VideoPlayer({
   }, [videoClips]);
 
   useEffect(() => {
+    trackSettingsRef.current = trackSettings;
+  }, [trackSettings]);
+
+  useEffect(() => {
     onTimeChangeRef.current = onTimeChange;
   }, [onTimeChange]);
 
@@ -160,68 +218,82 @@ function VideoPlayer({
     onDurationChangeRef.current = onDurationChange;
   }, [onDurationChange]);
 
-  const syncNativeVideoToTimeline = (
+  const videoElementForTrack = (trackId: VideoTrackId) =>
+    trackId === "video-2" ? v2VideoRef.current : v1VideoRef.current;
+
+  const audioElementForTrack = (trackId: AudioTrackId) =>
+    trackId === "audio-2" ? a2AudioRef.current : a1AudioRef.current;
+
+  const syncVideoTrackToTimeline = (
+    trackId: VideoTrackId,
     timelineTime: number,
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
+    const video = videoElementForTrack(trackId);
     const activeClip = findActiveVideoClip(
       videoClipsRef.current,
       timelineTime,
+      trackId,
     );
 
-    const loadedSourcePath = video.dataset.sourcePath ?? "";
-    const canRenderClip =
-      !!activeClip && activeClip.sourcePath === loadedSourcePath;
-
-    setIsVideoVisible(canRenderClip);
-
-    if (!activeClip || !canRenderClip) {
-      activeClipIdRef.current = null;
-
-      if (!video.paused) {
-        video.pause();
-      }
-
+    if (!video || !activeClip) {
+      activeVideoClipIdRefs.current[trackId] = null;
+      video?.pause();
+      setVideoVisibility((current) =>
+        current[trackId] ? { ...current, [trackId]: false } : current,
+      );
       return;
     }
 
-    const expectedSourceTime = timelineTimeToSourceTime(
-      activeClip,
-      timelineTime,
+    const loadedSourcePath = video.dataset.sourcePath ?? "";
+    const hidden = isTrackHidden(trackSettingsRef.current, trackId);
+    const canRenderClip =
+      activeClip.sourcePath === loadedSourcePath && !hidden;
+
+    setVideoVisibility((current) =>
+      current[trackId] === canRenderClip
+        ? current
+        : { ...current, [trackId]: canRenderClip },
     );
 
+    if (activeClip.sourcePath !== loadedSourcePath) {
+      activeVideoClipIdRefs.current[trackId] = null;
+      video.pause();
+      return;
+    }
+
+    if (hidden) {
+      activeVideoClipIdRefs.current[trackId] = null;
+      video.pause();
+      return;
+    }
+
+    const expectedSourceTime = timelineTimeToSourceTime(activeClip, timelineTime);
     const maxSourceTime = Number.isFinite(video.duration)
       ? video.duration
       : activeClip.sourceDuration ?? sourceDurationRef.current;
-
     const safeSourceTime = Math.max(
       0,
       Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
     );
-
-    const clipChanged = activeClipIdRef.current !== activeClip.id;
+    const clipChanged =
+      activeVideoClipIdRefs.current[trackId] !== activeClip.id;
 
     if (clipChanged || forceSeek) {
       try {
         video.currentTime = safeSourceTime;
       } catch (error) {
-        console.error("Timeline video seek failed:", error);
+        console.error(`${trackId} seek failed:`, error);
       }
     }
 
-    activeClipIdRef.current = activeClip.id;
+    activeVideoClipIdRefs.current[trackId] = activeClip.id;
 
     if (shouldPlay) {
       if (video.paused) {
         void video.play().catch((error) => {
-          console.error("Timeline video playback failed:", error);
+          console.error(`${trackId} playback failed:`, error);
         });
       }
     } else if (!video.paused) {
@@ -229,19 +301,22 @@ function VideoPlayer({
     }
   };
 
-  const syncLinkedAudioToTimeline = (
+  const syncAudioTrackToTimeline = (
+    videoTrackId: VideoTrackId,
     timelineTime: number,
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    const audio = audioRef.current;
+    const audioTrackId = audioTrackForVideoTrack(videoTrackId);
+    const audio = audioElementForTrack(audioTrackId);
     const activeClip = findActiveVideoClip(
       videoClipsRef.current,
       timelineTime,
+      videoTrackId,
     );
 
     if (!audio || !activeClip) {
-      activeAudioClipIdRef.current = null;
+      activeAudioClipIdRefs.current[audioTrackId] = null;
       audio?.pause();
       return;
     }
@@ -249,7 +324,7 @@ function VideoPlayer({
     const loadedSourcePath = audio.dataset.sourcePath ?? "";
 
     if (loadedSourcePath !== activeClip.sourcePath) {
-      activeAudioClipIdRef.current = null;
+      activeAudioClipIdRefs.current[audioTrackId] = null;
       audio.pause();
       return;
     }
@@ -258,46 +333,56 @@ function VideoPlayer({
       return;
     }
 
-    const expectedSourceTime = timelineTimeToSourceTime(
-      activeClip,
-      timelineTime,
-    );
-
+    const expectedSourceTime = timelineTimeToSourceTime(activeClip, timelineTime);
     const maxSourceTime = Number.isFinite(audio.duration)
       ? audio.duration
       : activeClip.sourceDuration ?? activeClip.sourceOut;
-
     const safeSourceTime = Math.max(
       0,
       Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
     );
+    const clipChanged =
+      activeAudioClipIdRefs.current[audioTrackId] !== activeClip.id;
 
-    const clipChanged = activeAudioClipIdRef.current !== activeClip.id;
-
-    /*
-     * A1 is linked to V1. Seek only when entering a different linked clip or
-     * when the user explicitly seeks. Do not chase the timeline clock every
-     * animation frame or the browser will continually flush the audio decoder.
-     */
     if (clipChanged || forceSeek) {
       try {
         audio.currentTime = safeSourceTime;
       } catch (error) {
-        console.error("Timeline audio seek failed:", error);
+        console.error(`${audioTrackId} seek failed:`, error);
       }
     }
 
-    activeAudioClipIdRef.current = activeClip.id;
+    const muted = isTrackMuted(trackSettingsRef.current, audioTrackId);
+    audio.muted = muted;
+
+    if (muted) {
+      activeAudioClipIdRefs.current[audioTrackId] = null;
+      audio.pause();
+      return;
+    }
+
+    activeAudioClipIdRefs.current[audioTrackId] = activeClip.id;
 
     if (shouldPlay) {
       if (audio.paused) {
         void audio.play().catch((error) => {
-          console.error("Timeline audio playback failed:", error);
+          console.error(`${audioTrackId} playback failed:`, error);
         });
       }
     } else if (!audio.paused) {
       audio.pause();
     }
+  };
+
+  const syncAllMediaToTimeline = (
+    timelineTime: number,
+    shouldPlay: boolean,
+    forceSeek = false,
+  ) => {
+    syncVideoTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
+    syncVideoTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
+    syncAudioTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
+    syncAudioTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
   };
 
   const seekTo = (time: number) => {
@@ -313,9 +398,7 @@ function VideoPlayer({
     playbackAnchorPerformanceRef.current = performance.now();
 
     onTimeChangeRef.current?.(nextTime);
-
-    syncNativeVideoToTimeline(nextTime, isPlayingRef.current, true);
-    syncLinkedAudioToTimeline(nextTime, isPlayingRef.current, true);
+    syncAllMediaToTimeline(nextTime, isPlayingRef.current, true);
   };
 
   const jumpBy = (seconds: number) => {
@@ -323,17 +406,13 @@ function VideoPlayer({
   };
 
   const togglePlayPause = () => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
     if (isPlayingRef.current) {
       isPlayingRef.current = false;
       setIsPlaying(false);
-      video.pause();
-      audioRef.current?.pause();
+      v1VideoRef.current?.pause();
+      v2VideoRef.current?.pause();
+      a1AudioRef.current?.pause();
+      a2AudioRef.current?.pause();
       return;
     }
 
@@ -356,23 +435,23 @@ function VideoPlayer({
 
     isPlayingRef.current = true;
     setIsPlaying(true);
-
-    syncNativeVideoToTimeline(playbackStart, true, true);
-    syncLinkedAudioToTimeline(playbackStart, true, true);
+    syncAllMediaToTimeline(playbackStart, true, true);
   };
 
   useEffect(() => {
     setDuration(0);
     setIsPlaying(false);
-    setIsVideoVisible(false);
+    setVideoVisibility({ "video-1": false, "video-2": false });
 
-    videoRef.current?.pause();
-    audioRef.current?.pause();
+    v1VideoRef.current?.pause();
+    v2VideoRef.current?.pause();
+    a1AudioRef.current?.pause();
+    a2AudioRef.current?.pause();
 
     isPlayingRef.current = false;
     currentTimeRef.current = 0;
-    activeClipIdRef.current = null;
-    activeAudioClipIdRef.current = null;
+    activeVideoClipIdRefs.current = { "video-1": null, "video-2": null };
+    activeAudioClipIdRefs.current = { "audio-1": null, "audio-2": null };
     playbackAnchorTimelineRef.current = 0;
     playbackAnchorPerformanceRef.current = 0;
 
@@ -385,9 +464,8 @@ function VideoPlayer({
       return;
     }
 
-    syncNativeVideoToTimeline(currentTime, false, true);
-    syncLinkedAudioToTimeline(currentTime, false, true);
-  }, [currentTime, isPlaying, videoClips, videoPath, duration]);
+    syncAllMediaToTimeline(currentTime, false, true);
+  }, [currentTime, isPlaying, videoClips, videoPath, duration, trackSettings]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -409,14 +487,12 @@ function VideoPlayer({
       if (maxDuration <= 0) {
         isPlayingRef.current = false;
         setIsPlaying(false);
-        syncNativeVideoToTimeline(0, false);
-        syncLinkedAudioToTimeline(0, false);
+        syncAllMediaToTimeline(0, false);
         return;
       }
 
       const elapsedSeconds =
         (now - playbackAnchorPerformanceRef.current) / 1000;
-
       const nextTime = Math.min(
         maxDuration,
         playbackAnchorTimelineRef.current + elapsedSeconds,
@@ -424,15 +500,12 @@ function VideoPlayer({
 
       currentTimeRef.current = nextTime;
       onTimeChangeRef.current?.(nextTime);
-
-      syncNativeVideoToTimeline(nextTime, true);
-      syncLinkedAudioToTimeline(nextTime, true);
+      syncAllMediaToTimeline(nextTime, true);
 
       if (nextTime >= maxDuration) {
         isPlayingRef.current = false;
         setIsPlaying(false);
-        syncNativeVideoToTimeline(maxDuration, false);
-        syncLinkedAudioToTimeline(maxDuration, false);
+        syncAllMediaToTimeline(maxDuration, false);
         return;
       }
 
@@ -446,30 +519,21 @@ function VideoPlayer({
     };
   }, [isPlaying]);
 
-  const handleLoadedMetadata = () => {
-    const video = videoRef.current;
-
-    if (!video || !Number.isFinite(video.duration)) {
-      return;
-    }
-
-    syncNativeVideoToTimeline(
+  const handleVideoLoadedMetadata = (trackId: VideoTrackId) => {
+    activeVideoClipIdRefs.current[trackId] = null;
+    syncVideoTrackToTimeline(
+      trackId,
       currentTimeRef.current,
       isPlayingRef.current,
       true,
     );
   };
 
-  const handleLinkedAudioLoadedMetadata = () => {
-    const audio = audioRef.current;
-
-    if (!audio || !Number.isFinite(audio.duration)) {
-      return;
-    }
-
-    activeAudioClipIdRef.current = null;
-
-    syncLinkedAudioToTimeline(
+  const handleAudioLoadedMetadata = (videoTrackId: VideoTrackId) => {
+    const audioTrackId = audioTrackForVideoTrack(videoTrackId);
+    activeAudioClipIdRefs.current[audioTrackId] = null;
+    syncAudioTrackToTimeline(
+      videoTrackId,
       currentTimeRef.current,
       isPlayingRef.current,
       true,
@@ -532,10 +596,15 @@ function VideoPlayer({
   }, [seekRequest]);
 
   const monitorDuration = Math.max(0, timelineDuration || 0);
-
-  const subtitleVideoTimeOffset = activeVideoClip
-    ? activeVideoClip.timelineStart - activeVideoClip.sourceIn
+  const v2Visible = !!activeV2Clip && !isTrackHidden(trackSettings, "video-2");
+  const topVisualClip = v2Visible ? activeV2Clip : activeV1Clip;
+  const subtitleVideoTimeOffset = topVisualClip
+    ? topVisualClip.timelineStart - topVisualClip.sourceIn
     : 0;
+  const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? v1SourcePath ?? "";
+  const visibleSubtitles = isTrackHidden(trackSettings, "subtitle-1")
+    ? []
+    : subtitles;
 
   return (
     <div className="video-player">
@@ -544,7 +613,7 @@ function VideoPlayer({
           className="video-file-button"
           onClick={() => void onChooseVideo?.()}
         >
-          {videoUrl ? "Change video" : "Choose video"}
+          {primaryVideoUrl ? "Change video" : "Choose video"}
         </button>
 
         {videoName && (
@@ -557,42 +626,74 @@ function VideoPlayer({
       {primaryVideoUrl ? (
         <div className="video-monitor">
           <div ref={shellRef} className="video-shell">
+            {v2Visible && v2VideoUrl && (
+              <video
+                key={`v2:${v2SourcePath}`}
+                ref={v2VideoRef}
+                src={v2VideoUrl}
+                data-source-path={v2SourcePath ?? ""}
+                className="video-element video-track-layer video-track-layer-v2"
+                muted
+                style={{
+                  visibility: videoVisibility["video-2"] ? "visible" : "hidden",
+                }}
+                onLoadedMetadata={() => handleVideoLoadedMetadata("video-2")}
+                onClick={togglePlayPause}
+              />
+            )}
+
             <video
-              key={visualSourcePath ?? undefined}
-              ref={videoRef}
-              src={videoUrl ?? undefined}
-              data-source-path={visualSourcePath ?? ""}
-              className="video-element"
+              key={`v1:${v1SourcePath ?? ""}`}
+              ref={v1VideoRef}
+              src={v1VideoUrl ?? undefined}
+              data-source-path={v1SourcePath ?? ""}
+              className="video-element video-track-layer video-track-layer-v1"
               muted
-              style={{ visibility: isVideoVisible ? "visible" : "hidden" }}
-              onLoadedMetadata={handleLoadedMetadata}
+              style={{
+                visibility:
+                  videoVisibility["video-1"] &&
+                  !isTrackHidden(trackSettings, "video-1")
+                    ? "visible"
+                    : "hidden",
+              }}
+              onLoadedMetadata={() => handleVideoLoadedMetadata("video-1")}
               onClick={togglePlayPause}
             />
 
             <audio
-              key={`linked-audio:${linkedAudioSourcePath ?? "gap"}`}
-              ref={audioRef}
-              src={linkedAudioUrl ?? undefined}
-              data-source-path={linkedAudioSourcePath ?? ""}
+              key={`a1:${activeV1Clip?.sourcePath ?? "gap"}`}
+              ref={a1AudioRef}
+              src={a1AudioUrl ?? undefined}
+              data-source-path={activeV1Clip?.sourcePath ?? ""}
               preload="auto"
               hidden
-              onLoadedMetadata={handleLinkedAudioLoadedMetadata}
+              onLoadedMetadata={() => handleAudioLoadedMetadata("video-1")}
+            />
+
+            <audio
+              key={`a2:${activeV2Clip?.sourcePath ?? "gap"}`}
+              ref={a2AudioRef}
+              src={a2AudioUrl ?? undefined}
+              data-source-path={activeV2Clip?.sourcePath ?? ""}
+              preload="auto"
+              hidden
+              onLoadedMetadata={() => handleAudioLoadedMetadata("video-2")}
             />
 
             <audio
               key={`primary-metadata:${videoPath ?? ""}`}
               ref={primaryMetadataAudioRef}
-              src={primaryVideoUrl ?? undefined}
+              src={primaryVideoUrl}
               preload="metadata"
               hidden
               onLoadedMetadata={handlePrimaryMetadataLoaded}
             />
 
             <VideoSubtitleOverlay
-              subtitles={subtitles}
+              subtitles={visibleSubtitles}
               currentTime={currentTime}
               videoTimeOffset={subtitleVideoTimeOffset}
-              videoSourceKey={visualSourcePath ?? ""}
+              videoSourceKey={subtitleVideoSourceKey}
               selectedSubtitleId={selectedSubtitleId}
               shellRef={shellRef}
               onSubtitleSelect={onSubtitleSelect}

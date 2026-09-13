@@ -162,6 +162,13 @@ struct RecentProject {
     duration: f64,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionMenuTarget {
+    clip_id: String,
+    label: String,
+}
+
 fn recent_projects_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let app_data = app
         .path()
@@ -302,23 +309,17 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let delete_subtitle =
         MenuItemBuilder::with_id("edit.delete-subtitle", "Delete Subtitle").build(app)?;
 
-    let whisper_base = MenuItemBuilder::with_id(
-        "transcription.whisper-base",
-        "Generate with Whisper Base",
-    )
-    .build(app)?;
+    let whisper_base = SubmenuBuilder::new(app, "Generate with Whisper Base")
+        .id("transcription.whisper-base-menu")
+        .build()?;
 
-    let whisper_small = MenuItemBuilder::with_id(
-        "transcription.whisper-small",
-        "Generate with Whisper Small",
-    )
-    .build(app)?;
+    let whisper_small = SubmenuBuilder::new(app, "Generate with Whisper Small")
+        .id("transcription.whisper-small-menu")
+        .build()?;
 
-    let sensevoice = MenuItemBuilder::with_id(
-        "transcription.sensevoice",
-        "Generate with SenseVoice",
-    )
-    .build(app)?;
+    let sensevoice = SubmenuBuilder::new(app, "Generate with SenseVoice")
+        .id("transcription.sensevoice-menu")
+        .build()?;
 
     let timeline_zoom_in = MenuItemBuilder::with_id("view.timeline-zoom-in", "Zoom In Timeline")
         .accelerator("CmdOrCtrl+=")
@@ -417,6 +418,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let transcription_menu = SubmenuBuilder::new(app, "Transcription")
+        .id("transcription-menu")
         .item(&whisper_base)
         .item(&whisper_small)
         .separator()
@@ -453,6 +455,13 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
 
     app.on_menu_event(|app_handle, event| {
         let id = event.id().0.as_str();
+
+        if id.starts_with("transcription.clip:") {
+            if let Err(error) = app_handle.emit(APP_MENU_COMMAND_EVENT, id.to_string()) {
+                eprintln!("Failed to emit app menu command: {error}");
+            }
+            return;
+        }
 
         let window_result = match id {
             "window.fill" => apply_window_layout(app_handle, WindowLayout::Fill),
@@ -496,6 +505,89 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             _ => {}
         }
     });
+
+    Ok(())
+}
+
+fn refill_transcription_target_menu(
+    app: &tauri::AppHandle,
+    submenu_id: &str,
+    preset: &str,
+    targets: &[TranscriptionMenuTarget],
+) -> Result<(), String> {
+    let menu = app
+        .menu()
+        .ok_or_else(|| "Application menu is not available.".to_string())?;
+
+    let transcription_item = menu
+        .get("transcription-menu")
+        .ok_or_else(|| "Transcription menu is not available.".to_string())?;
+
+    let transcription_menu = transcription_item
+        .as_submenu()
+        .ok_or_else(|| "Transcription menu has an unexpected type.".to_string())?;
+
+    let model_item = transcription_menu
+        .get(submenu_id)
+        .ok_or_else(|| format!("Transcription submenu {submenu_id} is not available."))?;
+
+    let model_menu = model_item
+        .as_submenu()
+        .ok_or_else(|| format!("Transcription submenu {submenu_id} has an unexpected type."))?;
+
+    while !model_menu
+        .items()
+        .map_err(|error| format!("Failed to read transcription menu items: {error}"))?
+        .is_empty()
+    {
+        model_menu
+            .remove_at(0)
+            .map_err(|error| format!("Failed to clear transcription menu: {error}"))?;
+    }
+
+    for target in targets {
+        let item = MenuItemBuilder::with_id(
+            format!("transcription.clip:{preset}:{}", target.clip_id),
+            &target.label,
+        )
+        .build(app)
+        .map_err(|error| format!("Failed to build transcription target item: {error}"))?;
+
+        model_menu
+            .append(&item)
+            .map_err(|error| format!("Failed to append transcription target item: {error}"))?;
+    }
+
+    model_menu
+        .set_enabled(!targets.is_empty())
+        .map_err(|error| format!("Failed to update transcription menu state: {error}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn update_transcription_menu_targets(
+    app: tauri::AppHandle,
+    targets: Vec<TranscriptionMenuTarget>,
+) -> Result<(), String> {
+    refill_transcription_target_menu(
+        &app,
+        "transcription.whisper-base-menu",
+        "whisper-base",
+        &targets,
+    )?;
+    refill_transcription_target_menu(
+        &app,
+        "transcription.whisper-small-menu",
+        "whisper-small",
+        &targets,
+    )?;
+    refill_transcription_target_menu(
+        &app,
+        "transcription.sensevoice-menu",
+        "sensevoice",
+        &targets,
+    )?;
 
     Ok(())
 }
@@ -983,6 +1075,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             extract_waveform,
+            update_transcription_menu_targets,
             transcription::transcribe_video,
             read_matching_srt,
             read_matching_project,

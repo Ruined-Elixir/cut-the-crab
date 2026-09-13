@@ -99,7 +99,7 @@ button {
   flex-shrink:0;
   display:block;
   object-fit:contain;
-  border-radius:8px
+  border-radius:9px
 }
 
 .topbar-project-title {

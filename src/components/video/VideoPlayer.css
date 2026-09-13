@@ -111,3 +111,18 @@
   background:var(--control-fill);
   color:var(--label)
 }
+
+/* Phase 4 — stacked video tracks */
+.video-track-layer {
+  position:absolute;
+  inset:0;
+}
+
+.video-track-layer-v1 {
+  z-index:1;
+}
+
+.video-track-layer-v2 {
+  z-index:2;
+  background:transparent;
+}

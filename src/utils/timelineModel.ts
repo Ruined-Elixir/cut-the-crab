@@ -3,39 +3,40 @@ import type {
   AudioTimelineClip,
   SubtitleTimelineClip,
   TimelineTrack,
+  TimelineTrackSettings,
   VideoTimelineClip,
 } from "../types/timelineModel";
+import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
 
 type BuildTimelineModelOptions = {
   duration: number;
   videoClips: VideoTimelineClip[];
   subtitles: Subtitle[];
+  trackSettings?: TimelineTrackSettings;
 };
 
-export function buildTimelineModel({
-  videoClips,
-  subtitles,
-}: BuildTimelineModelOptions): TimelineTrack[] {
-  const subtitleClips: SubtitleTimelineClip[] =
-    subtitles.map((subtitle) => ({
-      id: `subtitle-clip:${subtitle.id}`,
-      kind: "subtitle",
-      trackId: "subtitle-1",
-      subtitleId: subtitle.id,
-      timelineStart: subtitle.startTime,
-      timelineEnd: subtitle.endTime,
-    }));
+function getTrackSettings(
+  trackId: string,
+  trackSettings?: TimelineTrackSettings,
+) {
+  return {
+    ...(DEFAULT_TIMELINE_TRACK_SETTINGS[trackId] ?? {
+      locked: false,
+      muted: false,
+      hidden: false,
+    }),
+    ...(trackSettings?.[trackId] ?? {}),
+  };
+}
 
-  /*
-   * A1 is linked to V1 for now. Every video clip owns a matching audio clip
-   * with identical timeline/source in/out values. That means split, trim,
-   * move, paste, duplicate, and imported-media placement automatically stay
-   * synchronized without maintaining a second editable state tree yet.
-   */
-  const audioClips: AudioTimelineClip[] = videoClips.map((clip) => ({
+function linkedAudioClip(
+  clip: VideoTimelineClip,
+  trackId: "audio-1" | "audio-2",
+): AudioTimelineClip {
+  return {
     id: `audio:${clip.id}`,
     kind: "audio",
-    trackId: "audio-1",
+    trackId,
     sourceId: clip.sourceId,
     sourcePath: clip.sourcePath,
     sourceName: clip.sourceName,
@@ -45,7 +46,33 @@ export function buildTimelineModel({
     linkedVideoClipId: clip.id,
     timelineStart: clip.timelineStart,
     timelineEnd: clip.timelineEnd,
+  };
+}
+
+export function buildTimelineModel({
+  videoClips,
+  subtitles,
+  trackSettings,
+}: BuildTimelineModelOptions): TimelineTrack[] {
+  const subtitleClips: SubtitleTimelineClip[] = subtitles.map((subtitle) => ({
+    id: `subtitle-clip:${subtitle.id}`,
+    kind: "subtitle",
+    trackId: "subtitle-1",
+    subtitleId: subtitle.id,
+    timelineStart: subtitle.startTime,
+    timelineEnd: subtitle.endTime,
   }));
+
+  const v1Clips = videoClips.filter((clip) => clip.trackId !== "video-2");
+  const v2Clips = videoClips.filter((clip) => clip.trackId === "video-2");
+  const a1Clips = v1Clips.map((clip) => linkedAudioClip(clip, "audio-1"));
+  const a2Clips = v2Clips.map((clip) => linkedAudioClip(clip, "audio-2"));
+
+  const v2Settings = getTrackSettings("video-2", trackSettings);
+  const v1Settings = getTrackSettings("video-1", trackSettings);
+  const s1Settings = getTrackSettings("subtitle-1", trackSettings);
+  const a1Settings = getTrackSettings("audio-1", trackSettings);
+  const a2Settings = getTrackSettings("audio-2", trackSettings);
 
   return [
     {
@@ -54,9 +81,19 @@ export function buildTimelineModel({
       index: 1,
       name: "Video",
       shortLabel: "V1",
-      locked: false,
-      hidden: false,
-      clips: videoClips,
+      locked: v1Settings.locked,
+      hidden: v1Settings.hidden,
+      clips: v1Clips,
+    },
+    {
+      id: "video-2",
+      kind: "video",
+      index: 2,
+      name: "Video Overlay",
+      shortLabel: "V2",
+      locked: v2Settings.locked,
+      hidden: v2Settings.hidden,
+      clips: v2Clips,
     },
     {
       id: "subtitle-1",
@@ -64,8 +101,8 @@ export function buildTimelineModel({
       index: 1,
       name: "Subtitles",
       shortLabel: "S1",
-      locked: false,
-      hidden: false,
+      locked: s1Settings.locked,
+      hidden: s1Settings.hidden,
       clips: subtitleClips,
     },
     {
@@ -74,9 +111,19 @@ export function buildTimelineModel({
       index: 1,
       name: "Linked Audio",
       shortLabel: "A1",
-      locked: true,
-      muted: false,
-      clips: audioClips,
+      locked: a1Settings.locked,
+      muted: a1Settings.muted,
+      clips: a1Clips,
+    },
+    {
+      id: "audio-2",
+      kind: "audio",
+      index: 2,
+      name: "Overlay Audio",
+      shortLabel: "A2",
+      locked: a2Settings.locked,
+      muted: a2Settings.muted,
+      clips: a2Clips,
     },
   ];
 }

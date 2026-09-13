@@ -171,3 +171,38 @@
 .media-browser-hint {
   color:var(--tertiary-label)
 }
+
+.media-browser-item[draggable="true"] {
+  cursor: grab;
+}
+
+.media-browser-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ==========================================================================\n   Pointer-driven media drag ghost\n   ========================================================================== */
+
+.media-browser-drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  max-width: 240px;
+  padding: 7px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(28, 28, 30, 0.94);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0.82;
+}
+
+.media-browser-drag-ghost.can-drop {
+  border-color: rgba(10, 132, 255, 0.92);
+  background: rgba(10, 84, 150, 0.94);
+  opacity: 1;
+}

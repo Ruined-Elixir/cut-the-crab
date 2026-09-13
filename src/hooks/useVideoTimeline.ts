@@ -6,9 +6,18 @@ import {
 } from "react";
 
 import type { ProjectMediaAsset } from "../types/project";
-import type { VideoTimelineClip } from "../types/timelineModel";
+import type {
+  TimelineTrackId,
+  VideoTimelineClip,
+} from "../types/timelineModel";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
+const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
+
+const VIDEO_TRACK_IDS = new Set<TimelineTrackId>([
+  "video-1",
+  "video-2",
+]);
 
 type UseVideoTimelineOptions = {
   sourcePath: string | null;
@@ -16,22 +25,42 @@ type UseVideoTimelineOptions = {
   sourceDuration: number;
 };
 
+function normalizeVideoTrackId(trackId: TimelineTrackId): TimelineTrackId {
+  return VIDEO_TRACK_IDS.has(trackId) ? trackId : DEFAULT_VIDEO_TRACK_ID;
+}
+
 function sortVideoClips(clips: VideoTimelineClip[]) {
   return [...clips].sort(
     (a, b) =>
       a.timelineStart - b.timelineStart ||
-      a.timelineEnd - b.timelineEnd,
+      a.timelineEnd - b.timelineEnd ||
+      a.trackId.localeCompare(b.trackId),
   );
 }
 
+function clipsOnTrack(
+  clips: VideoTimelineClip[],
+  trackId: TimelineTrackId,
+  excludedClipId?: string,
+) {
+  return clips.filter(
+    (clip) =>
+      clip.trackId === trackId &&
+      clip.id !== excludedClipId,
+  );
+}
 
 function findNextAvailableTimelineStart(
   clips: VideoTimelineClip[],
+  trackId: TimelineTrackId,
   requestedStart: number,
   clipDuration: number,
+  excludedClipId?: string,
 ) {
   let start = Math.max(0, requestedStart);
-  const sorted = sortVideoClips(clips);
+  const sorted = sortVideoClips(
+    clipsOnTrack(clips, trackId, excludedClipId),
+  );
 
   for (const clip of sorted) {
     const end = start + clipDuration;
@@ -58,7 +87,7 @@ function createFullSourceClip(
   return {
     id: crypto.randomUUID(),
     kind: "video",
-    trackId: "video-1",
+    trackId: DEFAULT_VIDEO_TRACK_ID,
     sourceId: sourcePath,
     sourcePath,
     sourceName,
@@ -83,9 +112,7 @@ export function useVideoTimeline({
     setSelectedVideoClipId,
   ] = useState<string | null>(null);
 
-  const initializedSourceRef = useRef<string | null>(
-    null,
-  );
+  const initializedSourceRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (
@@ -111,17 +138,12 @@ export function useVideoTimeline({
     ]);
 
     setSelectedVideoClipId(null);
-  }, [
-    sourcePath,
-    sourceName,
-    sourceDuration,
-  ]);
+  }, [sourcePath, sourceName, sourceDuration]);
 
   const selectedVideoClip = useMemo(
     () =>
       videoClips.find(
-        (clip) =>
-          clip.id === selectedVideoClipId,
+        (clip) => clip.id === selectedVideoClipId,
       ) ?? null,
     [videoClips, selectedVideoClipId],
   );
@@ -142,11 +164,15 @@ export function useVideoTimeline({
       initializedSourceRef.current = sourcePath;
     }
 
-    setVideoClips(sortVideoClips(clips));
+    const normalized = clips.map((clip) => ({
+      ...clip,
+      trackId: normalizeVideoTrackId(clip.trackId),
+    }));
+
+    setVideoClips(sortVideoClips(normalized));
 
     setSelectedVideoClipId((current) =>
-      current &&
-      clips.some((clip) => clip.id === current)
+      current && normalized.some((clip) => clip.id === current)
         ? current
         : null,
     );
@@ -180,55 +206,69 @@ export function useVideoTimeline({
     requestedTimelineStart: number,
   ) => {
     setVideoClips((current) => {
-      const target = current.find(
-        (clip) => clip.id === id,
-      );
+      const target = current.find((clip) => clip.id === id);
 
       if (!target) {
         return current;
       }
 
-      const clipDuration =
-        target.timelineEnd -
-        target.timelineStart;
-
-      let newStart = Math.max(0, requestedTimelineStart);
-
-      const others = current.filter(
-        (clip) => clip.id !== id,
+      const clipDuration = target.timelineEnd - target.timelineStart;
+      const trackId = normalizeVideoTrackId(target.trackId);
+      const newStart = findNextAvailableTimelineStart(
+        current,
+        trackId,
+        requestedTimelineStart,
+        clipDuration,
+        id,
       );
-
-      for (const other of others) {
-        const newEnd = newStart + clipDuration;
-
-        if (
-          newEnd <= other.timelineStart ||
-          newStart >= other.timelineEnd
-        ) {
-          continue;
-        }
-
-        const left =
-          other.timelineStart - clipDuration;
-        const right = other.timelineEnd;
-
-        newStart =
-          Math.abs(requestedTimelineStart - left) <=
-          Math.abs(requestedTimelineStart - right)
-            ? left
-            : right;
-
-        newStart = Math.max(0, newStart);
-      }
 
       return sortVideoClips(
         current.map((clip) =>
           clip.id === id
             ? {
                 ...clip,
+                trackId,
                 timelineStart: newStart,
-                timelineEnd:
-                  newStart + clipDuration,
+                timelineEnd: newStart + clipDuration,
+              }
+            : clip,
+        ),
+      );
+    });
+  };
+
+  const moveVideoClipToTrack = (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    requestedTimelineStart?: number,
+  ) => {
+    const normalizedTrackId = normalizeVideoTrackId(targetTrackId);
+
+    setVideoClips((current) => {
+      const target = current.find((clip) => clip.id === id);
+
+      if (!target) {
+        return current;
+      }
+
+      const clipDuration = target.timelineEnd - target.timelineStart;
+      const requestedStart = requestedTimelineStart ?? target.timelineStart;
+      const timelineStart = findNextAvailableTimelineStart(
+        current,
+        normalizedTrackId,
+        requestedStart,
+        clipDuration,
+        id,
+      );
+
+      return sortVideoClips(
+        current.map((clip) =>
+          clip.id === id
+            ? {
+                ...clip,
+                trackId: normalizedTrackId,
+                timelineStart,
+                timelineEnd: timelineStart + clipDuration,
               }
             : clip,
         ),
@@ -242,9 +282,7 @@ export function useVideoTimeline({
     newTimelineEnd: number,
   ) => {
     setVideoClips((current) => {
-      const target = current.find(
-        (clip) => clip.id === id,
-      );
+      const target = current.find((clip) => clip.id === id);
 
       if (!target) {
         return current;
@@ -284,21 +322,31 @@ export function useVideoTimeline({
         ),
       );
 
-      const sourceStartDelta =
-        nextStart - target.timelineStart;
-      const sourceEndDelta =
-        nextEnd - target.timelineEnd;
+      const sourceStartDelta = nextStart - target.timelineStart;
+      const sourceEndDelta = nextEnd - target.timelineEnd;
 
-      const nextSourceIn =
-        target.sourceIn + sourceStartDelta;
-
-      const nextSourceOut =
-        target.sourceOut + sourceEndDelta;
+      const nextSourceIn = target.sourceIn + sourceStartDelta;
+      const nextSourceOut = target.sourceOut + sourceEndDelta;
 
       if (
-        nextSourceOut - nextSourceIn <
-        MIN_VIDEO_CLIP_DURATION
+        nextSourceOut - nextSourceIn < MIN_VIDEO_CLIP_DURATION
       ) {
+        return current;
+      }
+
+      const sameTrackClips = clipsOnTrack(
+        current,
+        target.trackId,
+        id,
+      );
+
+      const overlaps = sameTrackClips.some(
+        (clip) =>
+          nextEnd > clip.timelineStart &&
+          nextStart < clip.timelineEnd,
+      );
+
+      if (overlaps) {
         return current;
       }
 
@@ -323,28 +371,21 @@ export function useVideoTimeline({
     splitTime: number,
   ) => {
     setVideoClips((current) => {
-      const target = current.find(
-        (clip) => clip.id === id,
-      );
+      const target = current.find((clip) => clip.id === id);
 
       if (!target) {
         return current;
       }
 
       if (
-        splitTime <=
-          target.timelineStart +
-            MIN_VIDEO_CLIP_DURATION ||
-        splitTime >=
-          target.timelineEnd -
-            MIN_VIDEO_CLIP_DURATION
+        splitTime <= target.timelineStart + MIN_VIDEO_CLIP_DURATION ||
+        splitTime >= target.timelineEnd - MIN_VIDEO_CLIP_DURATION
       ) {
         return current;
       }
 
       const sourceSplit =
-        target.sourceIn +
-        (splitTime - target.timelineStart);
+        target.sourceIn + (splitTime - target.timelineStart);
 
       const left: VideoTimelineClip = {
         ...target,
@@ -365,14 +406,11 @@ export function useVideoTimeline({
 
       return sortVideoClips(
         current.flatMap((clip) =>
-          clip.id === id
-            ? [left, right]
-            : [clip],
+          clip.id === id ? [left, right] : [clip],
         ),
       );
     });
   };
-
 
   const insertVideoClipCopy = (
     sourceClip: VideoTimelineClip,
@@ -385,9 +423,10 @@ export function useVideoTimeline({
         MIN_VIDEO_CLIP_DURATION,
         sourceClip.timelineEnd - sourceClip.timelineStart,
       );
-
+      const trackId = normalizeVideoTrackId(sourceClip.trackId);
       const timelineStart = findNextAvailableTimelineStart(
         current,
+        trackId,
         requestedTimelineStart,
         clipDuration,
       );
@@ -395,6 +434,7 @@ export function useVideoTimeline({
       const copy: VideoTimelineClip = {
         ...sourceClip,
         id: newId,
+        trackId,
         timelineStart,
         timelineEnd: timelineStart + clipDuration,
       };
@@ -421,9 +461,10 @@ export function useVideoTimeline({
         MIN_VIDEO_CLIP_DURATION,
         sourceClip.timelineEnd - sourceClip.timelineStart,
       );
-
+      const trackId = normalizeVideoTrackId(sourceClip.trackId);
       const timelineStart = findNextAvailableTimelineStart(
         current,
+        trackId,
         sourceClip.timelineEnd,
         clipDuration,
       );
@@ -431,6 +472,7 @@ export function useVideoTimeline({
       const copy: VideoTimelineClip = {
         ...sourceClip,
         id: newId,
+        trackId,
         timelineStart,
         timelineEnd: timelineStart + clipDuration,
       };
@@ -443,20 +485,22 @@ export function useVideoTimeline({
     });
   };
 
-
   const insertVideoClipFromMedia = (
     asset: ProjectMediaAsset,
     requestedTimelineStart: number,
+    requestedTrackId: TimelineTrackId = DEFAULT_VIDEO_TRACK_ID,
   ) => {
     if (asset.duration <= 0) {
       return;
     }
 
     const newId = crypto.randomUUID();
+    const trackId = normalizeVideoTrackId(requestedTrackId);
 
     setVideoClips((current) => {
       const timelineStart = findNextAvailableTimelineStart(
         current,
+        trackId,
         requestedTimelineStart,
         asset.duration,
       );
@@ -464,7 +508,7 @@ export function useVideoTimeline({
       const clip: VideoTimelineClip = {
         id: newId,
         kind: "video",
-        trackId: "video-1",
+        trackId,
         sourceId: asset.id,
         sourcePath: asset.path,
         sourceName: asset.name,
@@ -502,6 +546,7 @@ export function useVideoTimeline({
     clearVideoClipSelection,
 
     moveVideoClip,
+    moveVideoClipToTrack,
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,

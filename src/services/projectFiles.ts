@@ -2,14 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
-import type { VideoTimelineClip } from "../types/timelineModel";
+import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
+import type { TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 6;
+export const CURRENT_PROJECT_VERSION = 7;
 
 export type SubtitleProject = {
   version: number;
@@ -21,6 +22,7 @@ export type SubtitleProject = {
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
   mediaAssets: ProjectMediaAsset[];
+  trackSettings: TimelineTrackSettings;
   updatedAt: string;
 };
 
@@ -74,6 +76,40 @@ function parseLanguages(value: unknown): ProjectLanguage[] {
       typeof language === "string" &&
       PROJECT_LANGUAGES.has(language as ProjectLanguage),
   );
+}
+
+
+function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
+  const normalized: TimelineTrackSettings = {
+    ...DEFAULT_TIMELINE_TRACK_SETTINGS,
+  };
+
+  if (!isRecord(value)) {
+    return normalized;
+  }
+
+  for (const [trackId, trackValue] of Object.entries(value)) {
+    if (!isRecord(trackValue)) {
+      continue;
+    }
+
+    normalized[trackId] = {
+      locked:
+        typeof trackValue.locked === "boolean"
+          ? trackValue.locked
+          : normalized[trackId]?.locked ?? false,
+      muted:
+        typeof trackValue.muted === "boolean"
+          ? trackValue.muted
+          : normalized[trackId]?.muted,
+      hidden:
+        typeof trackValue.hidden === "boolean"
+          ? trackValue.hidden
+          : normalized[trackId]?.hidden,
+    };
+  }
+
+  return normalized;
 }
 
 function defaultTitleFromVideoPath(videoPath: string) {
@@ -315,6 +351,7 @@ function normalizeProject(
     markers,
     videoClips,
     mediaAssets,
+    trackSettings: normalizeTrackSettings(value.trackSettings),
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
 }
@@ -367,6 +404,7 @@ export async function saveProjectFile(
   metadata?: ProjectMetadata,
   videoClips: VideoTimelineClip[] = [],
   mediaAssets: ProjectMediaAsset[] = [],
+  trackSettings: TimelineTrackSettings = DEFAULT_TIMELINE_TRACK_SETTINGS,
 ): Promise<void> {
   const project: SubtitleProject = {
     version: CURRENT_PROJECT_VERSION,
@@ -381,6 +419,7 @@ export async function saveProjectFile(
         a.timelineStart - b.timelineStart,
     ),
     mediaAssets,
+    trackSettings,
     updatedAt: new Date().toISOString(),
   };
 

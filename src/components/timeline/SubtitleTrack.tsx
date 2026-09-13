@@ -4,7 +4,7 @@ import {
 } from "react";
 
 import type { Subtitle } from "../../types/subtitle";
-import type { TimelineTrack } from "../../types/timelineModel";
+import type { TimelineTrack, TimelineTrackId } from "../../types/timelineModel";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -41,6 +41,8 @@ type SubtitleTrackProps = {
     newStartTime: number,
     newEndTime: number,
   ) => void;
+  onToggleLock?: (trackId: TimelineTrackId) => void;
+  onToggleHidden?: (trackId: TimelineTrackId) => void;
 };
 
 const MIN_SUBTITLE_DURATION = 0.1;
@@ -277,6 +279,8 @@ function SubtitleTrack({
   onSubtitleMove,
   onSubtitleGroupMove,
   onSubtitleResize,
+  onToggleLock,
+  onToggleHidden,
 }: SubtitleTrackProps) {
   const [draggingSubtitleIds, setDraggingSubtitleIds] =
     useState<string[]>([]);
@@ -288,6 +292,7 @@ function SubtitleTrack({
     subtitle: Subtitle,
   ) => {
     if (
+      track.locked ||
       (event.target as HTMLElement).closest(
         ".subtitle-resize-handle",
       )
@@ -311,9 +316,9 @@ function SubtitleTrack({
     event.preventDefault();
     event.stopPropagation();
 
-    const track = event.currentTarget.parentElement;
+    const trackElement = event.currentTarget.parentElement;
 
-    if (!track || duration <= 0) {
+    if (!trackElement || duration <= 0) {
       return;
     }
 
@@ -343,7 +348,7 @@ function SubtitleTrack({
     const subtitleDuration =
       subtitle.endTime - subtitle.startTime;
     const trackWidth =
-      track.getBoundingClientRect().width;
+      trackElement.getBoundingClientRect().width;
     const snapTolerance = getSnapTolerance(
       trackWidth,
       duration,
@@ -454,13 +459,17 @@ function SubtitleTrack({
     subtitle: Subtitle,
     edge: "left" | "right",
   ) => {
+    if (track.locked) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 
-    const track =
+    const trackElement =
       event.currentTarget.parentElement?.parentElement;
 
-    if (!track || duration <= 0) {
+    if (!trackElement || duration <= 0) {
       return;
     }
 
@@ -482,7 +491,7 @@ function SubtitleTrack({
     const originalStart = subtitle.startTime;
     const originalEnd = subtitle.endTime;
     const trackWidth =
-      track.getBoundingClientRect().width;
+      trackElement.getBoundingClientRect().width;
     const snapTolerance = getSnapTolerance(
       trackWidth,
       duration,
@@ -642,10 +651,14 @@ function SubtitleTrack({
         shortLabel={track.shortLabel}
         name={track.name}
         locked={track.locked}
+        hidden={track.hidden}
+        canHide
+        onToggleLock={() => onToggleLock?.(track.id)}
+        onToggleHidden={() => onToggleHidden?.(track.id)}
       />
 
       <div
-        className="subtitle-track"
+        className={["subtitle-track", track.locked ? "locked" : "", track.hidden ? "track-hidden" : ""].filter(Boolean).join(" ")}
         onClick={handleTrackClick}
       >
         {snapIndicator !== null && duration > 0 && (

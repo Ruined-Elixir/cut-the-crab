@@ -8,6 +8,7 @@ import {
 import type {
   AudioTimelineClip,
   TimelineTrack,
+  TimelineTrackId,
 } from "../../types/timelineModel";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
@@ -17,6 +18,7 @@ type WaveformTrackProps = {
   track: TimelineTrack;
   waveformsBySource: Record<string, number[]>;
   onSeek?: (time: number) => void;
+  onToggleMute?: (trackId: TimelineTrackId) => void;
 };
 
 function drawWaveformClip(
@@ -79,15 +81,20 @@ function drawWaveformClip(
   context.fillRect(clipLeft, 0, clipWidth, height);
 
   const sourceSampleCount = Math.max(1, sourceEndIndex - sourceStartIndex);
-  const barCount = Math.max(1, Math.min(sourceSampleCount, Math.floor(clipWidth / 2)));
+  const barCount = Math.max(
+    1,
+    Math.min(sourceSampleCount, Math.floor(clipWidth / 2)),
+  );
   const barWidth = clipWidth / barCount;
 
   context.fillStyle = "rgba(220, 220, 220, 0.76)";
 
   for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
-    const bucketStart = sourceStartIndex +
+    const bucketStart =
+      sourceStartIndex +
       Math.floor((barIndex / barCount) * sourceSampleCount);
-    const bucketEnd = sourceStartIndex +
+    const bucketEnd =
+      sourceStartIndex +
       Math.max(
         1,
         Math.floor(((barIndex + 1) / barCount) * sourceSampleCount),
@@ -135,6 +142,7 @@ function WaveformTrack({
   track,
   waveformsBySource,
   onSeek,
+  onToggleMute,
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -174,6 +182,8 @@ function WaveformTrack({
         return;
       }
 
+      context.globalAlpha = track.muted ? 0.35 : 1;
+
       for (const clip of audioClips) {
         const waveform = waveformsBySource[clip.sourcePath] ?? [];
 
@@ -186,6 +196,8 @@ function WaveformTrack({
           height,
         );
       }
+
+      context.globalAlpha = 1;
     };
 
     draw();
@@ -196,7 +208,7 @@ function WaveformTrack({
     return () => {
       observer.disconnect();
     };
-  }, [audioClips, duration, waveformsBySource]);
+  }, [audioClips, duration, waveformsBySource, track.muted]);
 
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (duration <= 0 || event.detail > 1) {
@@ -205,7 +217,10 @@ function WaveformTrack({
 
     const rect = event.currentTarget.getBoundingClientRect();
     const percentage = (event.clientX - rect.left) / rect.width;
-    const newTime = Math.max(0, Math.min(duration, percentage * duration));
+    const newTime = Math.max(
+      0,
+      Math.min(duration, percentage * duration),
+    );
 
     onSeek?.(newTime);
   };
@@ -216,9 +231,20 @@ function WaveformTrack({
         shortLabel={track.shortLabel}
         name={track.name}
         locked={track.locked}
+        muted={track.muted}
+        canMute
+        onToggleMute={() => onToggleMute?.(track.id)}
       />
 
-      <div className="waveform-track" onClick={handleClick}>
+      <div
+        className={[
+          "waveform-track",
+          track.muted ? "track-muted" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={handleClick}
+      >
         <canvas ref={canvasRef} className="waveform-canvas" />
 
         {audioClips.map((clip) => (
@@ -226,10 +252,20 @@ function WaveformTrack({
             key={clip.id}
             className="audio-clip-label"
             style={{
-              left: `${duration > 0 ? (clip.timelineStart / duration) * 100 : 0}%`,
-              width: `${duration > 0 ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100 : 0}%`,
+              left: `${
+                duration > 0
+                  ? (clip.timelineStart / duration) * 100
+                  : 0
+              }%`,
+              width: `${
+                duration > 0
+                  ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100
+                  : 0
+              }%`,
             }}
-            title={`${clip.sourceName} · linked to V1`}
+            title={`${clip.sourceName} · linked to ${
+              track.id === "audio-2" ? "V2" : "V1"
+            }`}
           >
             {clip.sourceName}
           </span>
