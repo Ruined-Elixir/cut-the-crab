@@ -90,6 +90,99 @@ type ShellDimensions = {
   height: number;
 };
 
+
+type SameTrackDissolve = {
+  trackId: VideoTrackId;
+  outgoing: VideoTimelineClip;
+  incoming: VideoTimelineClip;
+  cutTime: number;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  progress: number;
+};
+
+function findSameTrackDissolve(
+  videoClips: VideoTimelineClip[],
+  timelineTime: number,
+  trackId: VideoTrackId,
+): SameTrackDissolve | null {
+  const trackClips = videoClips
+    .filter((clip) => clip.trackId === trackId)
+    .sort((a, b) => a.timelineStart - b.timelineStart);
+
+  for (let index = 0; index < trackClips.length - 1; index += 1) {
+    const outgoing = trackClips[index];
+    const incoming = trackClips[index + 1];
+    const cutTime = outgoing.timelineEnd;
+
+    if (Math.abs(incoming.timelineStart - cutTime) > 0.03) {
+      continue;
+    }
+
+    const outEnabled = outgoing.transitionOutType === "cross-dissolve";
+    const inEnabled = incoming.transitionInType === "cross-dissolve";
+
+    if (!outEnabled && !inEnabled) {
+      continue;
+    }
+
+    const requestedDuration = outEnabled && inEnabled
+      ? Math.min(
+          outgoing.transitionOutDuration ?? 0.5,
+          incoming.transitionInDuration ?? 0.5,
+        )
+      : outEnabled
+        ? outgoing.transitionOutDuration ?? 0.5
+        : incoming.transitionInDuration ?? 0.5;
+
+    const outgoingDuration = outgoing.timelineEnd - outgoing.timelineStart;
+    const incomingDuration = incoming.timelineEnd - incoming.timelineStart;
+    const sourceDuration = outgoing.sourceDuration ?? outgoing.sourceOut;
+    const outgoingPostHandle = Math.max(0, sourceDuration - outgoing.sourceOut);
+    const incomingPreHandle = Math.max(0, incoming.sourceIn);
+
+    // A true centered dissolve needs media handles on both sides of the edit.
+    // If either clip has no handle, the ordinary per-clip transition preview
+    // remains the fallback instead of inventing/freeze-framing media.
+    const maxHandleDuration = 2 * Math.min(outgoingPostHandle, incomingPreHandle);
+    const duration = Math.max(
+      0,
+      Math.min(
+        5,
+        requestedDuration,
+        outgoingDuration,
+        incomingDuration,
+        maxHandleDuration,
+      ),
+    );
+
+    if (duration < 0.1) {
+      continue;
+    }
+
+    const startTime = cutTime - duration / 2;
+    const endTime = cutTime + duration / 2;
+
+    if (timelineTime < startTime || timelineTime >= endTime) {
+      continue;
+    }
+
+    return {
+      trackId,
+      outgoing,
+      incoming,
+      cutTime,
+      startTime,
+      endTime,
+      duration,
+      progress: Math.max(0, Math.min(1, (timelineTime - startTime) / duration)),
+    };
+  }
+
+  return null;
+}
+
 function normalizeRotation(value: number) {
   let normalized = value;
 
@@ -173,6 +266,59 @@ function videoTransformStyle(clip: VideoTimelineClip | null): CSSProperties {
   };
 }
 
+function videoTransitionStyle(
+  clip: VideoTimelineClip | null,
+  timelineTime: number,
+): CSSProperties {
+  if (!clip) {
+    return { opacity: 1, filter: "brightness(1)" };
+  }
+
+  let opacity = 1;
+  let brightness = 1;
+
+  const clipDuration = Math.max(0.1, clip.timelineEnd - clip.timelineStart);
+  const maxTransitionDuration = Math.max(0.1, Math.min(5, clipDuration / 2));
+
+  const inType = clip.transitionInType ?? "none";
+  const inDuration = Math.max(
+    0.1,
+    Math.min(maxTransitionDuration, clip.transitionInDuration ?? 0.5),
+  );
+  const inElapsed = timelineTime - clip.timelineStart;
+
+  if (inType !== "none" && inElapsed >= 0 && inElapsed < inDuration) {
+    const progress = Math.max(0, Math.min(1, inElapsed / inDuration));
+
+    if (inType === "cross-dissolve") {
+      opacity = Math.min(opacity, progress);
+    } else if (inType === "fade-black") {
+      brightness = Math.min(brightness, progress);
+    }
+  }
+
+  const outType = clip.transitionOutType ?? "none";
+  const outDuration = Math.max(
+    0.1,
+    Math.min(maxTransitionDuration, clip.transitionOutDuration ?? 0.5),
+  );
+  const remaining = clip.timelineEnd - timelineTime;
+
+  if (outType !== "none" && remaining >= 0 && remaining < outDuration) {
+    const progress = Math.max(0, Math.min(1, remaining / outDuration));
+
+    if (outType === "cross-dissolve") {
+      opacity = Math.min(opacity, progress);
+    } else if (outType === "fade-black") {
+      brightness = Math.min(brightness, progress);
+    }
+  }
+
+  return {
+    opacity,
+    filter: `brightness(${brightness})`,
+  };
+}
 
 function programBoundsForClip(
   clip: VideoTimelineClip,
@@ -285,6 +431,10 @@ function VideoPlayer({
 
   const v1VideoRef = useRef<HTMLVideoElement | null>(null);
   const v2VideoRef = useRef<HTMLVideoElement | null>(null);
+  const v1DissolveOutgoingRef = useRef<HTMLVideoElement | null>(null);
+  const v1DissolveIncomingRef = useRef<HTMLVideoElement | null>(null);
+  const v2DissolveOutgoingRef = useRef<HTMLVideoElement | null>(null);
+  const v2DissolveIncomingRef = useRef<HTMLVideoElement | null>(null);
   const a1AudioRef = useRef<HTMLAudioElement | null>(null);
   const a2AudioRef = useRef<HTMLAudioElement | null>(null);
   const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -321,6 +471,16 @@ function VideoPlayer({
 
   const activeV2Clip = useMemo(
     () => findActiveVideoClip(videoClips, currentTime, "video-2"),
+    [videoClips, currentTime],
+  );
+
+  const v1SameTrackDissolve = useMemo(
+    () => findSameTrackDissolve(videoClips, currentTime, "video-1"),
+    [videoClips, currentTime],
+  );
+
+  const v2SameTrackDissolve = useMemo(
+    () => findSameTrackDissolve(videoClips, currentTime, "video-2"),
     [videoClips, currentTime],
   );
 
@@ -409,6 +569,68 @@ function VideoPlayer({
   const audioElementForTrack = (trackId: AudioTrackId) =>
     trackId === "audio-2" ? a2AudioRef.current : a1AudioRef.current;
 
+  const dissolveElementsForTrack = (trackId: VideoTrackId) =>
+    trackId === "video-2"
+      ? { outgoing: v2DissolveOutgoingRef.current, incoming: v2DissolveIncomingRef.current }
+      : { outgoing: v1DissolveOutgoingRef.current, incoming: v1DissolveIncomingRef.current };
+
+  const syncSameTrackDissolve = (
+    trackId: VideoTrackId,
+    timelineTime: number,
+    shouldPlay: boolean,
+    forceSeek = false,
+  ) => {
+    const dissolve = findSameTrackDissolve(
+      videoClipsRef.current,
+      timelineTime,
+      trackId,
+    );
+    const elements = dissolveElementsForTrack(trackId);
+
+    if (!dissolve) {
+      elements.outgoing?.pause();
+      elements.incoming?.pause();
+      return false;
+    }
+
+    const pairs = [
+      { element: elements.outgoing, clip: dissolve.outgoing },
+      { element: elements.incoming, clip: dissolve.incoming },
+    ];
+
+    for (const { element, clip } of pairs) {
+      if (!element || element.dataset.sourcePath !== clip.sourcePath) {
+        continue;
+      }
+
+      const rawSourceTime = clip.sourceIn + (timelineTime - clip.timelineStart);
+      const maxSourceTime = Number.isFinite(element.duration)
+        ? element.duration
+        : clip.sourceDuration ?? clip.sourceOut;
+      const safeSourceTime = Math.max(0, Math.min(maxSourceTime || rawSourceTime, rawSourceTime));
+
+      if (forceSeek || Math.abs(element.currentTime - safeSourceTime) > 0.12) {
+        try {
+          element.currentTime = safeSourceTime;
+        } catch (error) {
+          console.error(`${trackId} dissolve seek failed:`, error);
+        }
+      }
+
+      if (shouldPlay) {
+        if (element.paused) {
+          void element.play().catch((error) => {
+            console.error(`${trackId} dissolve playback failed:`, error);
+          });
+        }
+      } else if (!element.paused) {
+        element.pause();
+      }
+    }
+
+    return true;
+  };
+
   const syncVideoTrackToTimeline = (
     trackId: VideoTrackId,
     timelineTime: number,
@@ -421,6 +643,20 @@ function VideoPlayer({
       timelineTime,
       trackId,
     );
+    const hasTrueDissolve = findSameTrackDissolve(
+      videoClipsRef.current,
+      timelineTime,
+      trackId,
+    ) !== null;
+
+    if (hasTrueDissolve) {
+      activeVideoClipIdRefs.current[trackId] = null;
+      video?.pause();
+      setVideoVisibility((current) =>
+        current[trackId] ? { ...current, [trackId]: false } : current,
+      );
+      return;
+    }
 
     if (!video || !activeClip) {
       activeVideoClipIdRefs.current[trackId] = null;
@@ -566,6 +802,8 @@ function VideoPlayer({
   ) => {
     syncVideoTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
     syncVideoTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
+    syncSameTrackDissolve("video-1", timelineTime, shouldPlay, forceSeek);
+    syncSameTrackDissolve("video-2", timelineTime, shouldPlay, forceSeek);
     syncAudioTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
     syncAudioTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
   };
@@ -596,6 +834,10 @@ function VideoPlayer({
       setIsPlaying(false);
       v1VideoRef.current?.pause();
       v2VideoRef.current?.pause();
+      v1DissolveOutgoingRef.current?.pause();
+      v1DissolveIncomingRef.current?.pause();
+      v2DissolveOutgoingRef.current?.pause();
+      v2DissolveIncomingRef.current?.pause();
       a1AudioRef.current?.pause();
       a2AudioRef.current?.pause();
       return;
@@ -1154,6 +1396,76 @@ function VideoPlayer({
               }
             }}
           >
+            {v1SameTrackDissolve && !isTrackHidden(trackSettings, "video-1") && (
+              <>
+                <video
+                  key={`v1-dissolve-out:${v1SameTrackDissolve.outgoing.id}`}
+                  ref={v1DissolveOutgoingRef}
+                  src={convertFileSrc(v1SameTrackDissolve.outgoing.sourcePath)}
+                  data-source-path={v1SameTrackDissolve.outgoing.sourcePath}
+                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v1"
+                  muted
+                  style={{
+                    ...videoTransformStyle(v1SameTrackDissolve.outgoing),
+                    opacity: 1 - v1SameTrackDissolve.progress,
+                  }}
+                  onLoadedMetadata={() =>
+                    syncSameTrackDissolve("video-1", currentTimeRef.current, isPlayingRef.current, true)
+                  }
+                />
+                <video
+                  key={`v1-dissolve-in:${v1SameTrackDissolve.incoming.id}`}
+                  ref={v1DissolveIncomingRef}
+                  src={convertFileSrc(v1SameTrackDissolve.incoming.sourcePath)}
+                  data-source-path={v1SameTrackDissolve.incoming.sourcePath}
+                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v1 incoming"
+                  muted
+                  style={{
+                    ...videoTransformStyle(v1SameTrackDissolve.incoming),
+                    opacity: v1SameTrackDissolve.progress,
+                  }}
+                  onLoadedMetadata={() =>
+                    syncSameTrackDissolve("video-1", currentTimeRef.current, isPlayingRef.current, true)
+                  }
+                />
+              </>
+            )}
+
+            {v2SameTrackDissolve && !isTrackHidden(trackSettings, "video-2") && (
+              <>
+                <video
+                  key={`v2-dissolve-out:${v2SameTrackDissolve.outgoing.id}`}
+                  ref={v2DissolveOutgoingRef}
+                  src={convertFileSrc(v2SameTrackDissolve.outgoing.sourcePath)}
+                  data-source-path={v2SameTrackDissolve.outgoing.sourcePath}
+                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v2"
+                  muted
+                  style={{
+                    ...videoTransformStyle(v2SameTrackDissolve.outgoing),
+                    opacity: 1 - v2SameTrackDissolve.progress,
+                  }}
+                  onLoadedMetadata={() =>
+                    syncSameTrackDissolve("video-2", currentTimeRef.current, isPlayingRef.current, true)
+                  }
+                />
+                <video
+                  key={`v2-dissolve-in:${v2SameTrackDissolve.incoming.id}`}
+                  ref={v2DissolveIncomingRef}
+                  src={convertFileSrc(v2SameTrackDissolve.incoming.sourcePath)}
+                  data-source-path={v2SameTrackDissolve.incoming.sourcePath}
+                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v2 incoming"
+                  muted
+                  style={{
+                    ...videoTransformStyle(v2SameTrackDissolve.incoming),
+                    opacity: v2SameTrackDissolve.progress,
+                  }}
+                  onLoadedMetadata={() =>
+                    syncSameTrackDissolve("video-2", currentTimeRef.current, isPlayingRef.current, true)
+                  }
+                />
+              </>
+            )}
+
             {v2Visible && v2VideoUrl && (
               <video
                 key={`v2:${v2SourcePath}`}
@@ -1165,6 +1477,7 @@ function VideoPlayer({
                 style={{
                   visibility: videoVisibility["video-2"] ? "visible" : "hidden",
                   ...videoTransformStyle(activeV2Clip),
+                  ...videoTransitionStyle(activeV2Clip, currentTime),
                 }}
                 onLoadedMetadata={() => handleVideoLoadedMetadata("video-2")}
                 onPointerDown={(event) =>
@@ -1187,6 +1500,7 @@ function VideoPlayer({
                     ? "visible"
                     : "hidden",
                 ...videoTransformStyle(activeV1Clip),
+                ...videoTransitionStyle(activeV1Clip, currentTime),
               }}
               onLoadedMetadata={() => handleVideoLoadedMetadata("video-1")}
               onPointerDown={(event) =>

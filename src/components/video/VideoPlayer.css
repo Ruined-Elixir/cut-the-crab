@@ -254,33 +254,26 @@
   border-style:solid;
 }
 
-/* Program Monitor magnetic snapping guides */
-.program-snap-guide-layer {
-  position:absolute;
-  inset:0;
-  z-index:8;
+/* True same-track A→B dissolve layers. These temporarily replace the normal
+   track video while the playhead is inside a centered dissolve region. */
+.program-dissolve-layer {
   pointer-events:none;
+  transform-origin:center center;
+  will-change:opacity,transform;
 }
 
-.program-snap-guide {
-  position:absolute;
-  pointer-events:none;
-  opacity:.95;
-  filter:drop-shadow(0 0 2px rgba(0,0,0,.65));
+.program-dissolve-v1 {
+  z-index:1;
 }
 
-.program-snap-guide.x {
-  top:0;
-  bottom:0;
-  width:0;
-  border-left:1px dashed rgba(255,255,255,.92);
-  transform:translateX(-.5px);
+.program-dissolve-v1.incoming {
+  z-index:1;
 }
 
-.program-snap-guide.y {
-  left:0;
-  right:0;
-  height:0;
-  border-top:1px dashed rgba(255,255,255,.92);
-  transform:translateY(-.5px);
+.program-dissolve-v2 {
+  z-index:2;
+}
+
+.program-dissolve-v2.incoming {
+  z-index:2;
 }

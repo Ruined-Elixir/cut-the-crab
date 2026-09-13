@@ -8,6 +8,7 @@ import type {
   TimelineTrack,
   TimelineTrackId,
   VideoTimelineClip,
+  VideoTransitionType,
 } from "../../types/timelineModel";
 import type { VideoClipFrames } from "../../hooks/useVideoClipFrames";
 import { getActiveMediaDrag } from "../../utils/mediaDrag";
@@ -44,6 +45,11 @@ type VideoTrackProps = {
   ) => void;
   onToggleLock?: (trackId: TimelineTrackId) => void;
   onToggleHidden?: (trackId: TimelineTrackId) => void;
+  onTransitionChange?: (
+    id: string,
+    edge: "in" | "out",
+    transition: { type?: VideoTransitionType; duration?: number },
+  ) => void;
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -90,6 +96,7 @@ function VideoTrack({
   onResize,
   onToggleLock,
   onToggleHidden,
+  onTransitionChange,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
     useState<string | null>(null);
@@ -351,6 +358,68 @@ function VideoTrack({
     onMediaDrop?.(payload.assetId, track.id, timelineTime);
   };
 
+  const startTransitionResize = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    clip: VideoTimelineClip,
+    edge: "in" | "out",
+  ) => {
+    if (!onTransitionChange || track.locked) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const clipElement = event.currentTarget.closest(
+      ".timeline-video-clip",
+    ) as HTMLElement | null;
+
+    if (!clipElement) {
+      return;
+    }
+
+    const rect = clipElement.getBoundingClientRect();
+    const clipDuration = Math.max(
+      MIN_VIDEO_CLIP_DURATION,
+      clip.timelineEnd - clip.timelineStart,
+    );
+    const maxDuration = Math.max(0.1, Math.min(5, clipDuration / 2));
+    const originalDuration = Math.max(
+      0.1,
+      Math.min(
+        maxDuration,
+        edge === "in"
+          ? clip.transitionInDuration ?? 0.5
+          : clip.transitionOutDuration ?? 0.5,
+      ),
+    );
+    const startX = event.clientX;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaSeconds =
+        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const nextDuration = Math.max(
+        0.1,
+        Math.min(
+          maxDuration,
+          edge === "in"
+            ? originalDuration + deltaSeconds
+            : originalDuration - deltaSeconds,
+        ),
+      );
+
+      onTransitionChange(clip.id, edge, { duration: nextDuration });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
   return (
     <div className="timeline-row timeline-video-row">
       <TimelineTrackLabel
@@ -407,6 +476,20 @@ function VideoTrack({
           const isSelected = clip.id === selectedVideoClipId;
           const isDragging = clip.id === draggingClipId;
           const frames = framesByClipId[clip.id] ?? [];
+          const clipDuration = Math.max(
+            MIN_VIDEO_CLIP_DURATION,
+            clip.timelineEnd - clip.timelineStart,
+          );
+          const transitionInDuration = Math.min(
+            clipDuration / 2,
+            clip.transitionInDuration ?? 0.5,
+          );
+          const transitionOutDuration = Math.min(
+            clipDuration / 2,
+            clip.transitionOutDuration ?? 0.5,
+          );
+          const transitionInWidth = Math.min(50, (transitionInDuration / clipDuration) * 100);
+          const transitionOutWidth = Math.min(50, (transitionOutDuration / clipDuration) * 100);
 
           return (
             <div
@@ -449,21 +532,45 @@ function VideoTrack({
               </div>
 
               {(clip.transitionInType ?? "none") !== "none" && (
-                <span
-                  className="timeline-video-transition-badge in"
-                  title={`${clip.transitionInType === "fade-black" ? "Fade from Black" : "Cross Dissolve"} · ${(clip.transitionInDuration ?? 0.5).toFixed(1)}s`}
+                <div
+                  className={`timeline-video-transition-region in ${clip.transitionInType}`}
+                  style={{ width: `${transitionInWidth}%` }}
+                  title={`${clip.transitionInType === "fade-black" ? "Fade from Black" : "Cross Dissolve"} · ${transitionInDuration.toFixed(1)}s`}
+                  onMouseDown={(event) => event.stopPropagation()}
                 >
-                  {clip.transitionInType === "fade-black" ? "B" : "D"}
-                </span>
+                  <span className="timeline-video-transition-label">
+                    {clip.transitionInType === "fade-black" ? "B" : "D"}
+                  </span>
+                  {!track.locked && (
+                    <button
+                      type="button"
+                      className="timeline-video-transition-handle in"
+                      onMouseDown={(event) => startTransitionResize(event, clip, "in")}
+                      aria-label="Adjust transition in duration"
+                    />
+                  )}
+                </div>
               )}
 
               {(clip.transitionOutType ?? "none") !== "none" && (
-                <span
-                  className="timeline-video-transition-badge out"
-                  title={`${clip.transitionOutType === "fade-black" ? "Fade to Black" : "Cross Dissolve"} · ${(clip.transitionOutDuration ?? 0.5).toFixed(1)}s`}
+                <div
+                  className={`timeline-video-transition-region out ${clip.transitionOutType}`}
+                  style={{ width: `${transitionOutWidth}%` }}
+                  title={`${clip.transitionOutType === "fade-black" ? "Fade to Black" : "Cross Dissolve"} · ${transitionOutDuration.toFixed(1)}s`}
+                  onMouseDown={(event) => event.stopPropagation()}
                 >
-                  {clip.transitionOutType === "fade-black" ? "B" : "D"}
-                </span>
+                  <span className="timeline-video-transition-label">
+                    {clip.transitionOutType === "fade-black" ? "B" : "D"}
+                  </span>
+                  {!track.locked && (
+                    <button
+                      type="button"
+                      className="timeline-video-transition-handle out"
+                      onMouseDown={(event) => startTransitionResize(event, clip, "out")}
+                      aria-label="Adjust transition out duration"
+                    />
+                  )}
+                </div>
               )}
 
               <div className="timeline-video-clip-frame-area">

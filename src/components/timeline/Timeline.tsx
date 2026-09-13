@@ -12,6 +12,7 @@ import type {
   TimelineTrackId,
   TimelineTrackSettings,
   VideoTimelineClip,
+  VideoTransitionType,
 } from "../../types/timelineModel";
 
 import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
@@ -86,6 +87,11 @@ type TimelineProps = {
   onToggleTrackLock?: (trackId: TimelineTrackId) => void;
   onToggleTrackMute?: (trackId: TimelineTrackId) => void;
   onToggleTrackHidden?: (trackId: TimelineTrackId) => void;
+  onVideoTransitionChange?: (
+    id: string,
+    edge: "in" | "out",
+    transition: { type?: VideoTransitionType; duration?: number },
+  ) => void;
 };
 
 export const MIN_TIMELINE_ZOOM = 1;
@@ -128,6 +134,7 @@ function Timeline({
   onToggleTrackLock,
   onToggleTrackMute,
   onToggleTrackHidden,
+  onVideoTransitionChange,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousZoomRef = useRef(zoom);
@@ -304,6 +311,7 @@ function Timeline({
             onResize={onVideoClipResize}
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
+            onTransitionChange={onVideoTransitionChange}
           />
         );
 

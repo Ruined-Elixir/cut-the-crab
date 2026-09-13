@@ -1202,3 +1202,96 @@
   background: rgba(255, 255, 255, 0.28);
   background-clip: padding-box;
 }
+
+/* Professional transition regions ------------------------------------------------ */
+.timeline-video-transition-region {
+  position:absolute;
+  top:18px;
+  bottom:0;
+  z-index:4;
+  min-width:12px;
+  max-width:50%;
+  pointer-events:auto;
+  overflow:hidden;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,.16) 0 5px,
+      rgba(255,255,255,.04) 5px 10px
+    );
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
+}
+
+.timeline-video-transition-region.in {
+  left:0;
+  border-radius:0 0 8px 0;
+}
+
+.timeline-video-transition-region.out {
+  right:0;
+  border-radius:0 0 0 8px;
+}
+
+.timeline-video-transition-region.cross-dissolve {
+  background:
+    linear-gradient(to bottom, rgba(10,132,255,.08), rgba(10,132,255,.2)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,.15) 0 5px,
+      rgba(255,255,255,.025) 5px 10px
+    );
+}
+
+.timeline-video-transition-region.fade-black {
+  background:
+    linear-gradient(to bottom, rgba(0,0,0,.12), rgba(0,0,0,.54)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,.11) 0 5px,
+      rgba(255,255,255,.018) 5px 10px
+    );
+}
+
+.timeline-video-transition-label {
+  position:absolute;
+  top:4px;
+  left:50%;
+  transform:translateX(-50%);
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  display:grid;
+  place-items:center;
+  border-radius:4px;
+  background:rgba(0,0,0,.62);
+  color:rgba(255,255,255,.92);
+  font-size:9px;
+  font-weight:700;
+  pointer-events:none;
+}
+
+.timeline-video-transition-handle {
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:7px;
+  padding:0;
+  border:0;
+  background:rgba(255,255,255,.1);
+  opacity:.2;
+  cursor:ew-resize;
+}
+
+.timeline-video-transition-region:hover .timeline-video-transition-handle,
+.timeline-video-transition-handle:hover {
+  opacity:.9;
+  background:rgba(255,255,255,.55);
+}
+
+.timeline-video-transition-handle.in {
+  right:0;
+}
+
+.timeline-video-transition-handle.out {
+  left:0;
+}

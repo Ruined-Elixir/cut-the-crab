@@ -186,6 +186,10 @@ function VideoInspector({
         <div className="video-inspector-section-heading">
           <h3>Transitions</h3>
         </div>
+        <p className="video-transition-help">
+          Cross Dissolve becomes a true centered A→B dissolve at an adjacent
+          same-track edit when both clips have enough source handles.
+        </p>
 
         <div className="video-transition-block">
           <div className="video-transition-title">Transition In</div>
@@ -240,6 +244,20 @@ function VideoInspector({
                   })
                 }
               />
+              <div className="video-transition-presets">
+                {[0.25, 0.5, 1].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    disabled={disabled || preset > maxTransitionDuration}
+                    onClick={() =>
+                      onTransitionChange(clip.id, "in", { duration: preset })
+                    }
+                  >
+                    {preset.toFixed(preset < 1 ? 2 : 1)}s
+                  </button>
+                ))}
+              </div>
             </label>
           )}
         </div>
@@ -297,6 +315,20 @@ function VideoInspector({
                   })
                 }
               />
+              <div className="video-transition-presets">
+                {[0.25, 0.5, 1].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    disabled={disabled || preset > maxTransitionDuration}
+                    onClick={() =>
+                      onTransitionChange(clip.id, "out", { duration: preset })
+                    }
+                  >
+                    {preset.toFixed(preset < 1 ? 2 : 1)}s
+                  </button>
+                ))}
+              </div>
             </label>
           )}
         </div>

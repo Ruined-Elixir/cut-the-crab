@@ -196,3 +196,38 @@
   color: var(--label);
   outline: none;
 }
+
+.video-transition-help {
+  margin:0 0 10px;
+  color:var(--tertiary-label);
+  font-size:10px;
+  line-height:1.4;
+}
+
+.video-transition-presets {
+  display:flex;
+  gap:5px;
+  margin-top:7px;
+}
+
+.video-transition-presets button {
+  min-width:0;
+  flex:1;
+  height:24px;
+  padding:0 6px;
+  border:1px solid var(--separator-soft);
+  border-radius:6px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:9px;
+}
+
+.video-transition-presets button:hover:not(:disabled) {
+  background:var(--control-fill-hover);
+  color:var(--label);
+}
+
+.video-transition-presets button:disabled {
+  opacity:.35;
+  cursor:default;
+}

@@ -215,7 +215,6 @@ function App() {
   const isLoadingVideoRef = useRef(false);
   const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const isClosingRef = useRef(false);
 
   const lastSavedSnapshotRef = useRef<string>(
     JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
@@ -2174,6 +2173,7 @@ function App() {
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
         onMediaDrop={handleMediaDropOnTimeline}
         onVideoClipResize={resizeVideoClip}
+        onVideoTransitionChange={handleVideoTransitionChange}
         onCopyVideoClip={copySelectedVideoClip}
         onPasteVideoClip={pasteVideoClipAtPlayhead}
         onDuplicateVideoClip={duplicateSelectedVideoClipWithHistory}
