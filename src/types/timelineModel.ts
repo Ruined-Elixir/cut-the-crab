@@ -35,6 +35,11 @@ export type VideoTimelineClip = TimelineClipBase & {
   positionX?: number;
   positionY?: number;
   scale?: number;
+  rotation?: number;
+  cropTop?: number;
+  cropRight?: number;
+  cropBottom?: number;
+  cropLeft?: number;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {

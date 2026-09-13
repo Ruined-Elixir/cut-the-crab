@@ -6,6 +6,11 @@ type VideoTransformPatch = {
   positionX?: number;
   positionY?: number;
   scale?: number;
+  rotation?: number;
+  cropTop?: number;
+  cropRight?: number;
+  cropBottom?: number;
+  cropLeft?: number;
 };
 
 type VideoInspectorProps = {
@@ -32,6 +37,11 @@ function VideoInspector({
   const positionX = clip.positionX ?? 0;
   const positionY = clip.positionY ?? 0;
   const scale = clip.scale ?? 100;
+  const rotation = clip.rotation ?? 0;
+  const cropTop = clip.cropTop ?? 0;
+  const cropRight = clip.cropRight ?? 0;
+  const cropBottom = clip.cropBottom ?? 0;
+  const cropLeft = clip.cropLeft ?? 0;
 
   const updateNumber = (
     key: keyof VideoTransformPatch,
@@ -49,6 +59,51 @@ function VideoInspector({
       [key]: clampNumber(parsed, min, max),
     });
   };
+
+  const renderRangeControl = (
+    label: string,
+    key: keyof VideoTransformPatch,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    suffix: string,
+  ) => (
+    <label className="video-inspector-control">
+      <div className="video-inspector-label-row">
+        <span>{label}</span>
+        <div className="video-inspector-number-wrap">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={Math.round(value * 10) / 10}
+            disabled={disabled}
+            onChange={(event) =>
+              updateNumber(key, event.target.value, min, max)
+            }
+          />
+          <span>{suffix}</span>
+        </div>
+      </div>
+
+      <input
+        className="video-inspector-range"
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(event) =>
+          onTransformChange(clip.id, {
+            [key]: Number(event.target.value),
+          })
+        }
+      />
+    </label>
+  );
 
   return (
     <aside className="video-inspector">
@@ -77,114 +132,41 @@ function VideoInspector({
             onClick={() => onResetTransform(clip.id)}
             disabled={disabled}
           >
-            Reset
+            Reset All
           </button>
         </div>
 
-        <label className="video-inspector-control">
-          <div className="video-inspector-label-row">
-            <span>Position X</span>
-            <div className="video-inspector-number-wrap">
-              <input
-                type="number"
-                min={-100}
-                max={100}
-                step={1}
-                value={Math.round(positionX * 10) / 10}
-                disabled={disabled}
-                onChange={(event) =>
-                  updateNumber("positionX", event.target.value, -100, 100)
-                }
-              />
-              <span>%</span>
-            </div>
-          </div>
+        {renderRangeControl("Position X", "positionX", positionX, -100, 100, 0.5, "%")}
+        {renderRangeControl("Position Y", "positionY", positionY, -100, 100, 0.5, "%")}
+        {renderRangeControl("Scale", "scale", scale, 10, 400, 1, "%")}
+        {renderRangeControl("Rotation", "rotation", rotation, -180, 180, 1, "°")}
+      </section>
 
-          <input
-            className="video-inspector-range"
-            type="range"
-            min={-100}
-            max={100}
-            step={0.5}
-            value={positionX}
+      <section className="video-inspector-section video-inspector-crop-section">
+        <div className="video-inspector-section-heading">
+          <h3>Crop</h3>
+
+          <button
+            type="button"
+            className="video-inspector-reset"
             disabled={disabled}
-            onChange={(event) =>
+            onClick={() =>
               onTransformChange(clip.id, {
-                positionX: Number(event.target.value),
+                cropTop: 0,
+                cropRight: 0,
+                cropBottom: 0,
+                cropLeft: 0,
               })
             }
-          />
-        </label>
+          >
+            Reset Crop
+          </button>
+        </div>
 
-        <label className="video-inspector-control">
-          <div className="video-inspector-label-row">
-            <span>Position Y</span>
-            <div className="video-inspector-number-wrap">
-              <input
-                type="number"
-                min={-100}
-                max={100}
-                step={1}
-                value={Math.round(positionY * 10) / 10}
-                disabled={disabled}
-                onChange={(event) =>
-                  updateNumber("positionY", event.target.value, -100, 100)
-                }
-              />
-              <span>%</span>
-            </div>
-          </div>
-
-          <input
-            className="video-inspector-range"
-            type="range"
-            min={-100}
-            max={100}
-            step={0.5}
-            value={positionY}
-            disabled={disabled}
-            onChange={(event) =>
-              onTransformChange(clip.id, {
-                positionY: Number(event.target.value),
-              })
-            }
-          />
-        </label>
-
-        <label className="video-inspector-control">
-          <div className="video-inspector-label-row">
-            <span>Scale</span>
-            <div className="video-inspector-number-wrap">
-              <input
-                type="number"
-                min={10}
-                max={400}
-                step={1}
-                value={Math.round(scale * 10) / 10}
-                disabled={disabled}
-                onChange={(event) =>
-                  updateNumber("scale", event.target.value, 10, 400)
-                }
-              />
-              <span>%</span>
-            </div>
-          </div>
-
-          <input
-            className="video-inspector-range"
-            type="range"
-            min={10}
-            max={400}
-            step={1}
-            value={scale}
-            disabled={disabled}
-            onChange={(event) =>
-              onTransformChange(clip.id, {
-                scale: Number(event.target.value),
-              })
-            }
-          />
-        </label>
+        {renderRangeControl("Top", "cropTop", cropTop, 0, 49, 0.5, "%")}
+        {renderRangeControl("Right", "cropRight", cropRight, 0, 49, 0.5, "%")}
+        {renderRangeControl("Bottom", "cropBottom", cropBottom, 0, 49, 0.5, "%")}
+        {renderRangeControl("Left", "cropLeft", cropLeft, 0, 49, 0.5, "%")}
       </section>
 
       {disabled && (

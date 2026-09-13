@@ -97,6 +97,11 @@ function createFullSourceClip(
     positionX: 0,
     positionY: 0,
     scale: 100,
+    rotation: 0,
+    cropTop: 0,
+    cropRight: 0,
+    cropBottom: 0,
+    cropLeft: 0,
     timelineStart: 0,
     timelineEnd: sourceDuration,
   };
@@ -521,6 +526,11 @@ export function useVideoTimeline({
         positionX: 0,
         positionY: 0,
         scale: 100,
+        rotation: 0,
+        cropTop: 0,
+        cropRight: 0,
+        cropBottom: 0,
+        cropLeft: 0,
         timelineStart,
         timelineEnd: timelineStart + asset.duration,
       };
@@ -540,6 +550,11 @@ export function useVideoTimeline({
       positionX?: number;
       positionY?: number;
       scale?: number;
+      rotation?: number;
+      cropTop?: number;
+      cropRight?: number;
+      cropBottom?: number;
+      cropLeft?: number;
     },
   ) => {
     setVideoClips((current) =>
@@ -560,12 +575,30 @@ export function useVideoTimeline({
           transform.scale === undefined
             ? clip.scale ?? 100
             : Math.max(10, Math.min(400, transform.scale));
+        const nextRotation =
+          transform.rotation === undefined
+            ? clip.rotation ?? 0
+            : Math.max(-180, Math.min(180, transform.rotation));
+        const clampCrop = (value: number) => Math.max(0, Math.min(49, value));
+        const nextCropTop =
+          transform.cropTop === undefined ? clip.cropTop ?? 0 : clampCrop(transform.cropTop);
+        const nextCropRight =
+          transform.cropRight === undefined ? clip.cropRight ?? 0 : clampCrop(transform.cropRight);
+        const nextCropBottom =
+          transform.cropBottom === undefined ? clip.cropBottom ?? 0 : clampCrop(transform.cropBottom);
+        const nextCropLeft =
+          transform.cropLeft === undefined ? clip.cropLeft ?? 0 : clampCrop(transform.cropLeft);
 
         return {
           ...clip,
           positionX: nextPositionX,
           positionY: nextPositionY,
           scale: nextScale,
+          rotation: nextRotation,
+          cropTop: nextCropTop,
+          cropRight: nextCropRight,
+          cropBottom: nextCropBottom,
+          cropLeft: nextCropLeft,
         };
       }),
     );
@@ -576,6 +609,11 @@ export function useVideoTimeline({
       positionX: 0,
       positionY: 0,
       scale: 100,
+      rotation: 0,
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+      cropLeft: 0,
     });
   };
 

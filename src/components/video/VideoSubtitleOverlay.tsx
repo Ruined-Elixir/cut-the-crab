@@ -28,6 +28,7 @@ import {
   getRenderedVideoRect,
   type RenderedVideoRect,
 } from "../../utils/videoGeometry";
+import { snapProgramPercent, type ProgramSnapGuide } from "../../utils/programSnapping";
 
 import "./VideoSubtitleOverlay.css";
 
@@ -140,6 +141,7 @@ function VideoSubtitleOverlay({
   const [draftPosition, setDraftPosition] = useState<DraftPosition | null>(
     null,
   );
+  const [subtitleSnapGuides, setSubtitleSnapGuides] = useState<ProgramSnapGuide[]>([]);
 
   const styleScopeRef = useRef<SubtitleStyleScope>("current");
 
@@ -395,6 +397,7 @@ function VideoSubtitleOverlay({
     event.stopPropagation();
 
     setStyleMenu(null);
+    setSubtitleSnapGuides([]);
     onSubtitleSelect?.(activeSubtitle.id);
 
     const subtitleId = activeSubtitle.id;
@@ -438,16 +441,47 @@ function VideoSubtitleOverlay({
       let x = ((moveEvent.clientX - videoLeft) / videoRect.width) * 100;
       let y = ((moveEvent.clientY - videoTop) / videoRect.height) * 100;
 
+      let minX = 0;
+      let maxX = 100;
+      let minY = 0;
+      let maxY = 100;
+
       if (proxyRect) {
         const halfWidthPercent = (proxyRect.width / videoRect.width) * 50;
         const halfHeightPercent = (proxyRect.height / videoRect.height) * 50;
 
-        x = Math.max(halfWidthPercent, Math.min(100 - halfWidthPercent, x));
-        y = Math.max(halfHeightPercent, Math.min(100 - halfHeightPercent, y));
-      } else {
-        x = Math.max(0, Math.min(100, x));
-        y = Math.max(0, Math.min(100, y));
+        minX = halfWidthPercent;
+        maxX = 100 - halfWidthPercent;
+        minY = halfHeightPercent;
+        maxY = 100 - halfHeightPercent;
       }
+
+      x = Math.max(minX, Math.min(maxX, x));
+      y = Math.max(minY, Math.min(maxY, y));
+
+      const snappedX = snapProgramPercent(x, videoRect.width, "x");
+      const snappedY = snapProgramPercent(y, videoRect.height, "y");
+
+      const snappedClampedX = Math.max(minX, Math.min(maxX, snappedX.value));
+      const snappedClampedY = Math.max(minY, Math.min(maxY, snappedY.value));
+
+      const xGuide =
+        snappedX.guide && Math.abs(snappedClampedX - snappedX.value) < 0.001
+          ? snappedX.guide
+          : null;
+      const yGuide =
+        snappedY.guide && Math.abs(snappedClampedY - snappedY.value) < 0.001
+          ? snappedY.guide
+          : null;
+
+      setSubtitleSnapGuides(
+        [xGuide, yGuide].filter(
+          (guide): guide is ProgramSnapGuide => guide !== null,
+        ),
+      );
+
+      x = snappedClampedX;
+      y = snappedClampedY;
 
       const currentDraft = draftPositionRef.current;
 
@@ -469,6 +503,7 @@ function VideoSubtitleOverlay({
     };
 
     const handlePointerUp = () => {
+      setSubtitleSnapGuides([]);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
 
@@ -759,6 +794,38 @@ function VideoSubtitleOverlay({
   return (
     <>
       <div className="video-subtitle-layer">
+        {subtitleSnapGuides.length > 0 && (
+          <div className="subtitle-snap-guide-layer" aria-hidden="true">
+            {subtitleSnapGuides.map((guide) => {
+              const rect = renderedVideoRect;
+
+              if (!rect) {
+                return null;
+              }
+
+              return (
+                <span
+                  key={`${guide.axis}-${guide.percent}`}
+                  className={`subtitle-snap-guide ${guide.axis}`}
+                  style={
+                    guide.axis === "x"
+                      ? {
+                          left: `${rect.left + rect.width * (guide.percent / 100)}px`,
+                          top: `${rect.top}px`,
+                          height: `${rect.height}px`,
+                        }
+                      : {
+                          top: `${rect.top + rect.height * (guide.percent / 100)}px`,
+                          left: `${rect.left}px`,
+                          width: `${rect.width}px`,
+                        }
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+
         <canvas
           ref={canvas0Ref}
           className="ass-subtitle-canvas"

@@ -455,6 +455,11 @@ function App() {
       positionX?: number;
       positionY?: number;
       scale?: number;
+      rotation?: number;
+      cropTop?: number;
+      cropRight?: number;
+      cropBottom?: number;
+      cropLeft?: number;
     },
   ) => {
     const clip = videoClips.find((item) => item.id === id);
@@ -2006,6 +2011,9 @@ function App() {
             videoClips={videoClips}
             timelineDuration={timelineDuration}
             trackSettings={trackSettings}
+            selectedVideoClipId={selectedVideoClipId}
+            onVideoClipSelect={handleVideoClipSelect}
+            onVideoTransformChange={handleVideoTransformChange}
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}

@@ -79,7 +79,7 @@
   height:100%;
   object-fit:contain;
   background:#000;
-  cursor:pointer
+  cursor:default
 }
 
 .video-placeholder {
@@ -131,4 +131,156 @@
 .video-track-layer {
   transform-origin: center center;
   will-change: transform;
+}
+
+/* Program Monitor direct transform controls */
+.program-transform-layer {
+  position:absolute;
+  inset:0;
+  z-index:6;
+  pointer-events:none;
+  transform-origin:center center;
+}
+
+.program-transform-box {
+  position:absolute;
+  pointer-events:auto;
+  border:1px dashed rgba(255,255,255,.92);
+  border-radius:2px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.35),0 0 10px rgba(0,0,0,.22);
+  cursor:move;
+  touch-action:none;
+}
+
+.program-transform-layer.locked .program-transform-box {
+  border-color:rgba(255,255,255,.44);
+  cursor:default;
+}
+
+.program-transform-track-badge {
+  position:absolute;
+  left:6px;
+  top:6px;
+  min-width:22px;
+  height:18px;
+  display:grid;
+  place-items:center;
+  padding:0 5px;
+  border-radius:5px;
+  background:rgba(0,0,0,.62);
+  color:rgba(255,255,255,.9);
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.02em;
+  pointer-events:none;
+}
+
+.program-transform-handle {
+  position:absolute;
+  z-index:2;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid rgba(0,0,0,.56);
+  background:#fff;
+  color:#161616;
+  box-shadow:0 1px 4px rgba(0,0,0,.38);
+  touch-action:none;
+}
+
+.program-transform-handle.corner {
+  width:10px;
+  height:10px;
+  border-radius:3px;
+}
+
+.program-transform-handle.corner.top-left {
+  left:0;
+  top:0;
+  transform:translate(-50%,-50%);
+  cursor:nwse-resize;
+}
+
+.program-transform-handle.corner.top-right {
+  right:0;
+  top:0;
+  transform:translate(50%,-50%);
+  cursor:nesw-resize;
+}
+
+.program-transform-handle.corner.bottom-left {
+  left:0;
+  bottom:0;
+  transform:translate(-50%,50%);
+  cursor:nesw-resize;
+}
+
+.program-transform-handle.corner.bottom-right {
+  right:0;
+  bottom:0;
+  transform:translate(50%,50%);
+  cursor:nwse-resize;
+}
+
+.program-transform-rotation-stem {
+  position:absolute;
+  left:50%;
+  top:-28px;
+  width:1px;
+  height:27px;
+  transform:translateX(-50%);
+  background:rgba(255,255,255,.85);
+  box-shadow:0 0 0 1px rgba(0,0,0,.18);
+  pointer-events:none;
+}
+
+.program-transform-handle.rotation {
+  left:50%;
+  top:-40px;
+  width:22px;
+  height:22px;
+  transform:translateX(-50%);
+  border-radius:50%;
+  font-size:13px;
+  line-height:1;
+  cursor:grab;
+}
+
+.program-transform-handle.rotation:active {
+  cursor:grabbing;
+}
+
+.program-transform-box:hover {
+  border-style:solid;
+}
+
+/* Program Monitor magnetic snapping guides */
+.program-snap-guide-layer {
+  position:absolute;
+  inset:0;
+  z-index:8;
+  pointer-events:none;
+}
+
+.program-snap-guide {
+  position:absolute;
+  pointer-events:none;
+  opacity:.95;
+  filter:drop-shadow(0 0 2px rgba(0,0,0,.65));
+}
+
+.program-snap-guide.x {
+  top:0;
+  bottom:0;
+  width:0;
+  border-left:1px dashed rgba(255,255,255,.92);
+  transform:translateX(-.5px);
+}
+
+.program-snap-guide.y {
+  left:0;
+  right:0;
+  height:0;
+  border-top:1px dashed rgba(255,255,255,.92);
+  transform:translateY(-.5px);
 }

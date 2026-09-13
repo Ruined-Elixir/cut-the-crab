@@ -104,3 +104,30 @@
 
   pointer-events: auto;
 }
+
+/* Subtitle magnetic snapping guides, constrained to the rendered video rect. */
+.subtitle-snap-guide-layer {
+  position:absolute;
+  inset:0;
+  z-index:6;
+  pointer-events:none;
+}
+
+.subtitle-snap-guide {
+  position:absolute;
+  pointer-events:none;
+  opacity:.95;
+  filter:drop-shadow(0 0 2px rgba(0,0,0,.65));
+}
+
+.subtitle-snap-guide.x {
+  width:0;
+  border-left:1px dashed rgba(255,255,255,.92);
+  transform:translateX(-.5px);
+}
+
+.subtitle-snap-guide.y {
+  height:0;
+  border-top:1px dashed rgba(255,255,255,.92);
+  transform:translateY(-.5px);
+}

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -11,6 +18,13 @@ import type {
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
+import {
+  PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
+  snapProgramBoundsToBounds,
+  snapProgramPercent,
+  type ProgramBounds,
+  type ProgramSnapGuide,
+} from "../../utils/programSnapping";
 
 import "./VideoPlayer.css";
 
@@ -32,6 +46,17 @@ type VideoPlayerProps = {
   videoClips: VideoTimelineClip[];
   timelineDuration: number;
   trackSettings: TimelineTrackSettings;
+  selectedVideoClipId?: string | null;
+  onVideoClipSelect?: (id: string) => void;
+  onVideoTransformChange?: (
+    id: string,
+    transform: {
+      positionX?: number;
+      positionY?: number;
+      scale?: number;
+      rotation?: number;
+    },
+  ) => void;
 
   subtitles: Subtitle[];
   currentTime: number;
@@ -54,6 +79,34 @@ type VideoTrackId = "video-1" | "video-2";
 type AudioTrackId = "audio-1" | "audio-2";
 
 type VisibilityState = Record<VideoTrackId, boolean>;
+
+type VideoDimensions = {
+  width: number;
+  height: number;
+};
+
+type ShellDimensions = {
+  width: number;
+  height: number;
+};
+
+function normalizeRotation(value: number) {
+  let normalized = value;
+
+  while (normalized > 180) normalized -= 360;
+  while (normalized < -180) normalized += 360;
+
+  return normalized;
+}
+
+function pointerAngleDegrees(
+  clientX: number,
+  clientY: number,
+  centerX: number,
+  centerY: number,
+) {
+  return (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
+}
 
 function findActiveVideoClip(
   videoClips: VideoTimelineClip[],
@@ -98,18 +151,94 @@ function isTrackMuted(
 function videoTransformStyle(clip: VideoTimelineClip | null): CSSProperties {
   if (!clip) {
     return {
-      transform: "translate3d(0%, 0%, 0) scale(1)",
+      transform: "translate3d(0%, 0%, 0) scale(1) rotate(0deg)",
       transformOrigin: "center center",
+      clipPath: "inset(0% 0% 0% 0%)",
     };
   }
 
   const positionX = clip.positionX ?? 0;
   const positionY = clip.positionY ?? 0;
   const scale = Math.max(10, Math.min(400, clip.scale ?? 100));
+  const rotation = Math.max(-180, Math.min(180, clip.rotation ?? 0));
+  const cropTop = Math.max(0, Math.min(49, clip.cropTop ?? 0));
+  const cropRight = Math.max(0, Math.min(49, clip.cropRight ?? 0));
+  const cropBottom = Math.max(0, Math.min(49, clip.cropBottom ?? 0));
+  const cropLeft = Math.max(0, Math.min(49, clip.cropLeft ?? 0));
 
   return {
-    transform: `translate3d(${positionX}%, ${positionY}%, 0) scale(${scale / 100})`,
+    transform: `translate3d(${positionX}%, ${positionY}%, 0) scale(${scale / 100}) rotate(${rotation}deg)`,
     transformOrigin: "center center",
+    clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`,
+  };
+}
+
+
+function programBoundsForClip(
+  clip: VideoTimelineClip,
+  dimensions: VideoDimensions,
+  shell: ShellDimensions,
+): ProgramBounds {
+  const shellWidth = Math.max(1, shell.width);
+  const shellHeight = Math.max(1, shell.height);
+  const sourceWidth = Math.max(1, dimensions.width);
+  const sourceHeight = Math.max(1, dimensions.height);
+
+  const containScale = Math.min(
+    shellWidth / sourceWidth,
+    shellHeight / sourceHeight,
+  );
+
+  const baseWidth = sourceWidth * containScale;
+  const baseHeight = sourceHeight * containScale;
+
+  const cropTop = Math.max(0, Math.min(49, clip.cropTop ?? 0));
+  const cropRight = Math.max(0, Math.min(49, clip.cropRight ?? 0));
+  const cropBottom = Math.max(0, Math.min(49, clip.cropBottom ?? 0));
+  const cropLeft = Math.max(0, Math.min(49, clip.cropLeft ?? 0));
+
+  const localLeft = -baseWidth / 2 + (cropLeft / 100) * baseWidth;
+  const localRight = baseWidth / 2 - (cropRight / 100) * baseWidth;
+  const localTop = -baseHeight / 2 + (cropTop / 100) * baseHeight;
+  const localBottom = baseHeight / 2 - (cropBottom / 100) * baseHeight;
+
+  const scale = Math.max(10, Math.min(400, clip.scale ?? 100)) / 100;
+  const radians = (Math.max(-180, Math.min(180, clip.rotation ?? 0)) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  const centerX = shellWidth / 2 + ((clip.positionX ?? 0) / 100) * shellWidth;
+  const centerY = shellHeight / 2 + ((clip.positionY ?? 0) / 100) * shellHeight;
+
+  const corners = [
+    [localLeft, localTop],
+    [localRight, localTop],
+    [localRight, localBottom],
+    [localLeft, localBottom],
+  ].map(([x, y]) => {
+    const scaledX = x * scale;
+    const scaledY = y * scale;
+
+    return {
+      x: centerX + scaledX * cos - scaledY * sin,
+      y: centerY + scaledX * sin + scaledY * cos,
+    };
+  });
+
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
   };
 }
 
@@ -123,6 +252,9 @@ function VideoPlayer({
   videoClips,
   timelineDuration,
   trackSettings,
+  selectedVideoClipId,
+  onVideoClipSelect,
+  onVideoTransformChange,
   subtitles,
   currentTime,
   selectedSubtitleId,
@@ -138,6 +270,18 @@ function VideoPlayer({
     "video-1": false,
     "video-2": false,
   });
+  const [videoDimensions, setVideoDimensions] = useState<
+    Record<VideoTrackId, VideoDimensions>
+  >({
+    "video-1": { width: 16, height: 9 },
+    "video-2": { width: 16, height: 9 },
+  });
+  const [shellDimensions, setShellDimensions] = useState<ShellDimensions>({
+    width: 0,
+    height: 0,
+  });
+  const [programTransformClipId, setProgramTransformClipId] = useState<string | null>(null);
+  const [programSnapGuides, setProgramSnapGuides] = useState<ProgramSnapGuide[]>([]);
 
   const v1VideoRef = useRef<HTMLVideoElement | null>(null);
   const v2VideoRef = useRef<HTMLVideoElement | null>(null);
@@ -235,6 +379,29 @@ function VideoPlayer({
   useEffect(() => {
     onDurationChangeRef.current = onDurationChange;
   }, [onDurationChange]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+
+    if (!shell) {
+      return;
+    }
+
+    const updateShellDimensions = () => {
+      const rect = shell.getBoundingClientRect();
+      setShellDimensions({
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    updateShellDimensions();
+
+    const observer = new ResizeObserver(updateShellDimensions);
+    observer.observe(shell);
+
+    return () => observer.disconnect();
+  }, [videoPath]);
 
   const videoElementForTrack = (trackId: VideoTrackId) =>
     trackId === "video-2" ? v2VideoRef.current : v1VideoRef.current;
@@ -451,6 +618,8 @@ function VideoPlayer({
     playbackAnchorTimelineRef.current = playbackStart;
     playbackAnchorPerformanceRef.current = performance.now();
 
+    setProgramTransformClipId(null);
+    setProgramSnapGuides([]);
     isPlayingRef.current = true;
     setIsPlaying(true);
     syncAllMediaToTimeline(playbackStart, true, true);
@@ -538,6 +707,18 @@ function VideoPlayer({
   }, [isPlaying]);
 
   const handleVideoLoadedMetadata = (trackId: VideoTrackId) => {
+    const video = videoElementForTrack(trackId);
+
+    if (video?.videoWidth && video.videoHeight) {
+      setVideoDimensions((current) => ({
+        ...current,
+        [trackId]: {
+          width: video.videoWidth,
+          height: video.videoHeight,
+        },
+      }));
+    }
+
     activeVideoClipIdRefs.current[trackId] = null;
     syncVideoTrackToTimeline(
       trackId,
@@ -582,6 +763,11 @@ function VideoPlayer({
         return;
       }
 
+      if (event.code === "Escape") {
+        setProgramTransformClipId(null);
+        setProgramSnapGuides([]);
+      }
+
       if (event.code === "Space") {
         event.preventDefault();
         togglePlayPause();
@@ -624,6 +810,321 @@ function VideoPlayer({
     ? []
     : subtitles;
 
+  const selectedActiveClip =
+    selectedVideoClipId && activeV2Clip?.id === selectedVideoClipId
+      ? activeV2Clip
+      : selectedVideoClipId && activeV1Clip?.id === selectedVideoClipId
+        ? activeV1Clip
+        : null;
+
+  const selectedTrackId = selectedActiveClip?.trackId as VideoTrackId | undefined;
+  const selectedTrackVisible =
+    !!selectedActiveClip &&
+    !!selectedTrackId &&
+    videoVisibility[selectedTrackId] &&
+    !isTrackHidden(trackSettings, selectedTrackId);
+  const selectedTrackLocked =
+    !!selectedTrackId && (trackSettings[selectedTrackId]?.locked ?? false);
+
+  const selectedVideoSize = selectedTrackId
+    ? videoDimensions[selectedTrackId]
+    : { width: 16, height: 9 };
+
+  const fittedVideoRect = useMemo(() => {
+    const shellWidth = shellDimensions.width;
+    const shellHeight = shellDimensions.height;
+    const sourceWidth = Math.max(1, selectedVideoSize.width);
+    const sourceHeight = Math.max(1, selectedVideoSize.height);
+
+    if (shellWidth <= 0 || shellHeight <= 0) {
+      return { left: 0, top: 0, width: 0, height: 0 };
+    }
+
+    const scale = Math.min(shellWidth / sourceWidth, shellHeight / sourceHeight);
+    const width = sourceWidth * scale;
+    const height = sourceHeight * scale;
+
+    return {
+      left: (shellWidth - width) / 2,
+      top: (shellHeight - height) / 2,
+      width,
+      height,
+    };
+  }, [
+    shellDimensions.width,
+    shellDimensions.height,
+    selectedVideoSize.width,
+    selectedVideoSize.height,
+  ]);
+
+  const beginMoveTransform = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      !selectedActiveClip ||
+      selectedTrackLocked ||
+      !onVideoTransformChange ||
+      shellDimensions.width <= 0 ||
+      shellDimensions.height <= 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startPositionX = selectedActiveClip.positionX ?? 0;
+    const startPositionY = selectedActiveClip.positionY ?? 0;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      const rawPositionX = startPositionX + (deltaX / shellDimensions.width) * 100;
+      const rawPositionY = startPositionY + (deltaY / shellDimensions.height) * 100;
+
+      const movingClip = {
+        ...selectedActiveClip,
+        positionX: rawPositionX,
+        positionY: rawPositionY,
+      };
+
+      const movingBounds = programBoundsForClip(
+        movingClip,
+        selectedVideoSize,
+        shellDimensions,
+      );
+
+      const otherVisibleBounds: ProgramBounds[] = [];
+
+      if (
+        activeV1Clip &&
+        activeV1Clip.id !== selectedActiveClip.id &&
+        videoVisibility["video-1"] &&
+        !isTrackHidden(trackSettings, "video-1")
+      ) {
+        otherVisibleBounds.push(
+          programBoundsForClip(
+            activeV1Clip,
+            videoDimensions["video-1"],
+            shellDimensions,
+          ),
+        );
+      }
+
+      if (
+        activeV2Clip &&
+        activeV2Clip.id !== selectedActiveClip.id &&
+        videoVisibility["video-2"] &&
+        !isTrackHidden(trackSettings, "video-2")
+      ) {
+        otherVisibleBounds.push(
+          programBoundsForClip(
+            activeV2Clip,
+            videoDimensions["video-2"],
+            shellDimensions,
+          ),
+        );
+      }
+
+      const objectSnapX = snapProgramBoundsToBounds(
+        movingBounds,
+        otherVisibleBounds,
+        shellDimensions.width,
+        "x",
+        PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
+      );
+      const objectSnapY = snapProgramBoundsToBounds(
+        movingBounds,
+        otherVisibleBounds,
+        shellDimensions.height,
+        "y",
+        PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
+      );
+
+      // Object-to-object snapping gets priority. If there is no nearby visible
+      // clip edge/center, fall back to the Program layout guides.
+      const layoutSnapX = snapProgramPercent(
+        50 + rawPositionX,
+        shellDimensions.width,
+        "x",
+      );
+      const layoutSnapY = snapProgramPercent(
+        50 + rawPositionY,
+        shellDimensions.height,
+        "y",
+      );
+
+      const nextPositionX = objectSnapX.guide
+        ? rawPositionX + (objectSnapX.deltaPx / shellDimensions.width) * 100
+        : layoutSnapX.value - 50;
+      const nextPositionY = objectSnapY.guide
+        ? rawPositionY + (objectSnapY.deltaPx / shellDimensions.height) * 100
+        : layoutSnapY.value - 50;
+
+      setProgramSnapGuides(
+        [
+          objectSnapX.guide ?? layoutSnapX.guide,
+          objectSnapY.guide ?? layoutSnapY.guide,
+        ].filter((guide): guide is ProgramSnapGuide => guide !== null),
+      );
+
+      onVideoTransformChange(selectedActiveClip.id, {
+        positionX: nextPositionX,
+        positionY: nextPositionY,
+      });
+    };
+
+    const handlePointerUp = () => {
+      setProgramSnapGuides([]);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  const beginScaleTransform = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    setProgramSnapGuides([]);
+    if (
+      !selectedActiveClip ||
+      selectedTrackLocked ||
+      !onVideoTransformChange
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const transformBox = event.currentTarget.closest(
+      ".program-transform-box",
+    ) as HTMLElement | null;
+    const rect = transformBox?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const startDistance = Math.max(1, Math.hypot(
+      event.clientX - centerX,
+      event.clientY - centerY,
+    ));
+    const startScale = selectedActiveClip.scale ?? 100;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const distance = Math.max(1, Math.hypot(
+        moveEvent.clientX - centerX,
+        moveEvent.clientY - centerY,
+      ));
+
+      onVideoTransformChange(selectedActiveClip.id, {
+        scale: startScale * (distance / startDistance),
+      });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  const beginRotateTransform = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    setProgramSnapGuides([]);
+    if (
+      !selectedActiveClip ||
+      selectedTrackLocked ||
+      !onVideoTransformChange
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const transformBox = event.currentTarget.closest(
+      ".program-transform-box",
+    ) as HTMLElement | null;
+    const rect = transformBox?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const startPointerAngle = pointerAngleDegrees(
+      event.clientX,
+      event.clientY,
+      centerX,
+      centerY,
+    );
+    const startRotation = selectedActiveClip.rotation ?? 0;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const nextPointerAngle = pointerAngleDegrees(
+        moveEvent.clientX,
+        moveEvent.clientY,
+        centerX,
+        centerY,
+      );
+
+      onVideoTransformChange(selectedActiveClip.id, {
+        rotation: normalizeRotation(
+          startRotation + (nextPointerAngle - startPointerAngle),
+        ),
+      });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  const handleProgramClipPointerDown = (
+    event: ReactPointerEvent<HTMLVideoElement>,
+    clip: VideoTimelineClip | null,
+  ) => {
+    if (!clip) {
+      return;
+    }
+
+    event.stopPropagation();
+    onVideoClipSelect?.(clip.id);
+    setProgramTransformClipId(clip.id);
+  };
+
+  const isProgramTransformActive =
+    !!selectedActiveClip && programTransformClipId === selectedActiveClip.id;
+
+  const transformOverlayStyle: CSSProperties | undefined = selectedActiveClip
+    ? {
+        transform: `translate3d(${selectedActiveClip.positionX ?? 0}%, ${
+          selectedActiveClip.positionY ?? 0
+        }%, 0) scale(${Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100)) / 100}) rotate(${Math.max(
+          -180,
+          Math.min(180, selectedActiveClip.rotation ?? 0),
+        )}deg)`,
+        transformOrigin: "center center",
+      }
+    : undefined;
+
   return (
     <div className="video-player">
       <div className="video-player-toolbar">
@@ -643,7 +1144,16 @@ function VideoPlayer({
 
       {primaryVideoUrl ? (
         <div className="video-monitor">
-          <div ref={shellRef} className="video-shell">
+          <div
+            ref={shellRef}
+            className="video-shell"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setProgramTransformClipId(null);
+                setProgramSnapGuides([]);
+              }
+            }}
+          >
             {v2Visible && v2VideoUrl && (
               <video
                 key={`v2:${v2SourcePath}`}
@@ -657,7 +1167,9 @@ function VideoPlayer({
                   ...videoTransformStyle(activeV2Clip),
                 }}
                 onLoadedMetadata={() => handleVideoLoadedMetadata("video-2")}
-                onClick={togglePlayPause}
+                onPointerDown={(event) =>
+                  handleProgramClipPointerDown(event, activeV2Clip)
+                }
               />
             )}
 
@@ -677,8 +1189,92 @@ function VideoPlayer({
                 ...videoTransformStyle(activeV1Clip),
               }}
               onLoadedMetadata={() => handleVideoLoadedMetadata("video-1")}
-              onClick={togglePlayPause}
+              onPointerDown={(event) =>
+                handleProgramClipPointerDown(event, activeV1Clip)
+              }
             />
+
+            {programSnapGuides.length > 0 && (
+              <div className="program-snap-guide-layer" aria-hidden="true">
+                {programSnapGuides.map((guide) => (
+                  <span
+                    key={`${guide.axis}-${guide.percent}`}
+                    className={`program-snap-guide ${guide.axis}`}
+                    style={
+                      guide.axis === "x"
+                        ? { left: `${guide.percent}%` }
+                        : { top: `${guide.percent}%` }
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {isProgramTransformActive && selectedActiveClip && selectedTrackVisible && (
+              <div
+                className={[
+                  "program-transform-layer",
+                  selectedTrackLocked ? "locked" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={transformOverlayStyle}
+              >
+                <div
+                  className="program-transform-box"
+                  style={{
+                    left: fittedVideoRect.left,
+                    top: fittedVideoRect.top,
+                    width: fittedVideoRect.width,
+                    height: fittedVideoRect.height,
+                  }}
+                  onPointerDown={beginMoveTransform}
+                >
+                  <span className="program-transform-track-badge">
+                    {selectedActiveClip.trackId === "video-2" ? "V2" : "V1"}
+                  </span>
+
+                  {!selectedTrackLocked && (
+                    <>
+                      <button
+                        type="button"
+                        className="program-transform-handle corner top-left"
+                        onPointerDown={beginScaleTransform}
+                        aria-label="Scale clip from top left"
+                      />
+                      <button
+                        type="button"
+                        className="program-transform-handle corner top-right"
+                        onPointerDown={beginScaleTransform}
+                        aria-label="Scale clip from top right"
+                      />
+                      <button
+                        type="button"
+                        className="program-transform-handle corner bottom-left"
+                        onPointerDown={beginScaleTransform}
+                        aria-label="Scale clip from bottom left"
+                      />
+                      <button
+                        type="button"
+                        className="program-transform-handle corner bottom-right"
+                        onPointerDown={beginScaleTransform}
+                        aria-label="Scale clip from bottom right"
+                      />
+
+                      <span className="program-transform-rotation-stem" />
+                      <button
+                        type="button"
+                        className="program-transform-handle rotation"
+                        onPointerDown={beginRotateTransform}
+                        aria-label="Rotate clip"
+                      >
+                        ↻
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             <audio
               key={`a1:${activeV1Clip?.sourcePath ?? "gap"}`}
