@@ -94,6 +94,9 @@ function createFullSourceClip(
     sourceIn: 0,
     sourceOut: sourceDuration,
     sourceDuration,
+    positionX: 0,
+    positionY: 0,
+    scale: 100,
     timelineStart: 0,
     timelineEnd: sourceDuration,
   };
@@ -515,6 +518,9 @@ export function useVideoTimeline({
         sourceIn: 0,
         sourceOut: asset.duration,
         sourceDuration: asset.duration,
+        positionX: 0,
+        positionY: 0,
+        scale: 100,
         timelineStart,
         timelineEnd: timelineStart + asset.duration,
       };
@@ -524,6 +530,52 @@ export function useVideoTimeline({
       });
 
       return sortVideoClips([...current, clip]);
+    });
+  };
+
+
+  const updateVideoClipTransform = (
+    id: string,
+    transform: {
+      positionX?: number;
+      positionY?: number;
+      scale?: number;
+    },
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) => {
+        if (clip.id !== id) {
+          return clip;
+        }
+
+        const nextPositionX =
+          transform.positionX === undefined
+            ? clip.positionX ?? 0
+            : Math.max(-100, Math.min(100, transform.positionX));
+        const nextPositionY =
+          transform.positionY === undefined
+            ? clip.positionY ?? 0
+            : Math.max(-100, Math.min(100, transform.positionY));
+        const nextScale =
+          transform.scale === undefined
+            ? clip.scale ?? 100
+            : Math.max(10, Math.min(400, transform.scale));
+
+        return {
+          ...clip,
+          positionX: nextPositionX,
+          positionY: nextPositionY,
+          scale: nextScale,
+        };
+      }),
+    );
+  };
+
+  const resetVideoClipTransform = (id: string) => {
+    updateVideoClipTransform(id, {
+      positionX: 0,
+      positionY: 0,
+      scale: 100,
     });
   };
 
@@ -553,6 +605,8 @@ export function useVideoTimeline({
     insertVideoClipCopy,
     duplicateVideoClip,
     insertVideoClipFromMedia,
+    updateVideoClipTransform,
+    resetVideoClipTransform,
 
     replaceVideoClips,
     initializeDefaultVideoClip,

@@ -32,6 +32,9 @@ export type VideoTimelineClip = TimelineClipBase & {
   sourceIn: number;
   sourceOut: number;
   sourceDuration?: number;
+  positionX?: number;
+  positionY?: number;
+  scale?: number;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {

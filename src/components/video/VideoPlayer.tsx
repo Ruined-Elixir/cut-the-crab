@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -93,6 +93,24 @@ function isTrackMuted(
   trackId: TimelineTrackId,
 ) {
   return trackSettings[trackId]?.muted ?? false;
+}
+
+function videoTransformStyle(clip: VideoTimelineClip | null): CSSProperties {
+  if (!clip) {
+    return {
+      transform: "translate3d(0%, 0%, 0) scale(1)",
+      transformOrigin: "center center",
+    };
+  }
+
+  const positionX = clip.positionX ?? 0;
+  const positionY = clip.positionY ?? 0;
+  const scale = Math.max(10, Math.min(400, clip.scale ?? 100));
+
+  return {
+    transform: `translate3d(${positionX}%, ${positionY}%, 0) scale(${scale / 100})`,
+    transformOrigin: "center center",
+  };
 }
 
 function VideoPlayer({
@@ -636,6 +654,7 @@ function VideoPlayer({
                 muted
                 style={{
                   visibility: videoVisibility["video-2"] ? "visible" : "hidden",
+                  ...videoTransformStyle(activeV2Clip),
                 }}
                 onLoadedMetadata={() => handleVideoLoadedMetadata("video-2")}
                 onClick={togglePlayPause}
@@ -655,6 +674,7 @@ function VideoPlayer({
                   !isTrackHidden(trackSettings, "video-1")
                     ? "visible"
                     : "hidden",
+                ...videoTransformStyle(activeV1Clip),
               }}
               onLoadedMetadata={() => handleVideoLoadedMetadata("video-1")}
               onClick={togglePlayPause}

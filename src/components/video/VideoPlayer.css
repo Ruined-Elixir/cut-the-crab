@@ -126,3 +126,9 @@
   z-index:2;
   background:transparent;
 }
+
+/* Clip transform preview: update immediately while dragging Inspector controls. */
+.video-track-layer {
+  transform-origin: center center;
+  will-change: transform;
+}

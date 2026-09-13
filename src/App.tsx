@@ -8,6 +8,7 @@ import CtcLogo from "./components/brand/CtcLogo";
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
 import VideoPlayer from "./components/video/VideoPlayer";
+import VideoInspector from "./components/video/VideoInspector";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
   clampTimelineZoom,
@@ -279,6 +280,8 @@ function App() {
     insertVideoClipCopy,
     duplicateVideoClip,
     insertVideoClipFromMedia,
+    updateVideoClipTransform,
+    resetVideoClipTransform,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -443,6 +446,35 @@ function App() {
 
     markNextChangeImmediate();
     moveVideoClipToTrack(id, targetTrackId, newTimelineStart);
+  };
+
+
+  const handleVideoTransformChange = (
+    id: string,
+    transform: {
+      positionX?: number;
+      positionY?: number;
+      scale?: number;
+    },
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    updateVideoClipTransform(id, transform);
+  };
+
+  const handleResetVideoTransform = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    resetVideoClipTransform(id);
   };
 
   const handleSubtitleTrackSelect = (
@@ -1985,21 +2017,30 @@ function App() {
           />
         </section>
 
-        <SubtitlePanel
-          subtitles={filteredSubtitles}
-          selectedSubtitle={selectedSubtitle}
-          selectedSubtitleId={selectedSubtitleId}
-          selectedSubtitleIds={selectedSubtitleIds}
-          selectedSubtitleCount={selectedSubtitleIds.length}
-          activeSubtitleId={activeSubtitleId}
-          search={subtitleSearch}
-          onSearchChange={setSubtitleSearch}
-          onSelect={handleSubtitleSelect}
-          onTextChange={updateSubtitleText}
-          onStyleChange={updateSubtitleStyleWithSelection}
-          onAdd={() => addSubtitleWithHistory(currentTime)}
-          onDelete={deleteSubtitleWithHistory}
-        />
+        {selectedVideoClip ? (
+          <VideoInspector
+            clip={selectedVideoClip}
+            disabled={trackSettings[selectedVideoClip.trackId]?.locked ?? false}
+            onTransformChange={handleVideoTransformChange}
+            onResetTransform={handleResetVideoTransform}
+          />
+        ) : (
+          <SubtitlePanel
+            subtitles={filteredSubtitles}
+            selectedSubtitle={selectedSubtitle}
+            selectedSubtitleId={selectedSubtitleId}
+            selectedSubtitleIds={selectedSubtitleIds}
+            selectedSubtitleCount={selectedSubtitleIds.length}
+            activeSubtitleId={activeSubtitleId}
+            search={subtitleSearch}
+            onSearchChange={setSubtitleSearch}
+            onSelect={handleSubtitleSelect}
+            onTextChange={updateSubtitleText}
+            onStyleChange={updateSubtitleStyleWithSelection}
+            onAdd={() => addSubtitleWithHistory(currentTime)}
+            onDelete={deleteSubtitleWithHistory}
+          />
+        )}
       </div>
 
       <Timeline
