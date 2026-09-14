@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useState,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
@@ -22,6 +21,7 @@ type VideoTrackProps = {
   track: TimelineTrack;
   selectedVideoClipId: string | null;
   framesByClipId: VideoClipFrames;
+  showLabel?: boolean;
 
   onSeek?: (time: number) => void;
   onSelect?: (id: string) => void;
@@ -54,114 +54,6 @@ type VideoTrackProps = {
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
-
-function SmoothFilmstripFrame({
-  clipId,
-  index,
-  frame,
-}: {
-  clipId: string;
-  index: number;
-  frame: VideoClipFrames[string][number];
-}) {
-  const [displayedUrl, setDisplayedUrl] = useState(frame.url);
-  const [incomingUrl, setIncomingUrl] = useState<string | null>(null);
-  const [incomingVisible, setIncomingVisible] = useState(false);
-
-  useEffect(() => {
-    if (frame.url === displayedUrl || frame.url === incomingUrl) {
-      return;
-    }
-
-    let cancelled = false;
-    let revealFrame = 0;
-    let finishTimer = 0;
-    const image = new Image();
-    image.src = frame.url;
-
-    const reveal = () => {
-      if (cancelled) {
-        return;
-      }
-
-      setIncomingUrl(frame.url);
-      setIncomingVisible(false);
-
-      revealFrame = window.requestAnimationFrame(() => {
-        if (cancelled) {
-          return;
-        }
-
-        setIncomingVisible(true);
-        finishTimer = window.setTimeout(() => {
-          if (cancelled) {
-            return;
-          }
-
-          setDisplayedUrl(frame.url);
-          setIncomingUrl(null);
-          setIncomingVisible(false);
-        }, 150);
-      });
-    };
-
-    if (typeof image.decode === "function") {
-      void image.decode().then(reveal).catch(() => {
-        if (image.complete) {
-          reveal();
-        } else {
-          image.onload = reveal;
-        }
-      });
-    } else if (image.complete) {
-      reveal();
-    } else {
-      image.onload = reveal;
-    }
-
-    return () => {
-      cancelled = true;
-      image.onload = null;
-
-      if (revealFrame) {
-        window.cancelAnimationFrame(revealFrame);
-      }
-
-      if (finishTimer) {
-        window.clearTimeout(finishTimer);
-      }
-    };
-  }, [frame.url, displayedUrl, incomingUrl]);
-
-  return (
-    <span
-      key={`${clipId}-frame-${index}`}
-      className="timeline-video-frame-slot"
-      style={{
-        left: `${frame.leftPercent}%`,
-        width: `${frame.widthPercent}%`,
-      }}
-    >
-      <img
-        className="timeline-video-frame-image base"
-        src={displayedUrl}
-        alt=""
-        draggable={false}
-      />
-
-      {incomingUrl && (
-        <img
-          className={`timeline-video-frame-image incoming ${
-            incomingVisible ? "visible" : ""
-          }`}
-          src={incomingUrl}
-          alt=""
-          draggable={false}
-        />
-      )}
-    </span>
-  );
-}
 
 function clearExternalTrackPreview() {
   document
@@ -206,6 +98,7 @@ function VideoTrack({
   onToggleLock,
   onToggleHidden,
   onTransitionChange,
+  showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
     useState<string | null>(null);
@@ -392,14 +285,17 @@ function VideoTrack({
         return;
       }
 
-      const nextEnd = Math.min(
-        duration,
-        Math.max(
-          originalStart + MIN_VIDEO_CLIP_DURATION,
-          originalEnd + deltaTime,
-        ),
+      const nextEnd = Math.max(
+        originalStart + MIN_VIDEO_CLIP_DURATION,
+        originalEnd + deltaTime,
       );
 
+      /*
+       * Do not clamp to the current visual workspace. If the user drags a
+       * previously-trimmed edge farther right, the clip grows at the current
+       * pixels-per-second scale and Timeline expands its canvas as needed.
+       * Source-media limits are still enforced by the timeline model/hook.
+       */
       onResize?.(clip.id, originalStart, nextEnd);
     };
 
@@ -530,7 +426,8 @@ function VideoTrack({
   };
 
   return (
-    <div className="timeline-row timeline-video-row">
+    <div className={`timeline-row timeline-video-row ${showLabel ? "" : "track-only"}`.trim()}>
+      {showLabel && (
       <TimelineTrackLabel
         shortLabel={track.shortLabel}
         name={track.name}
@@ -540,6 +437,7 @@ function VideoTrack({
         onToggleLock={() => onToggleLock?.(track.id)}
         onToggleHidden={() => onToggleHidden?.(track.id)}
       />
+      )}
 
       <div
         className={[
@@ -689,12 +587,21 @@ function VideoTrack({
                     aria-hidden="true"
                   >
                     {frames.map((frame, index) => (
-                      <SmoothFilmstripFrame
+                      <span
                         key={`${clip.id}-frame-${index}`}
-                        clipId={clip.id}
-                        index={index}
-                        frame={frame}
-                      />
+                        className="timeline-video-frame-slot"
+                        style={{
+                          left: `${frame.leftPercent}%`,
+                          width: `${frame.widthPercent}%`,
+                        }}
+                      >
+                        <img
+                          className="timeline-video-frame-image"
+                          src={frame.url}
+                          alt=""
+                          draggable={false}
+                        />
+                      </span>
                     ))}
                   </div>
                 ) : (

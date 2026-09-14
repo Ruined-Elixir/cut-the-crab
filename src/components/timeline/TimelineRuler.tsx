@@ -7,6 +7,7 @@ type TimelineRulerProps = {
   zoom: number;
   currentTime: number;
   onSeek?: (time: number) => void;
+  showLabelSpacer?: boolean;
 };
 
 function getMarkerInterval(duration: number, zoom: number) {
@@ -39,6 +40,7 @@ function TimelineRuler({
   zoom,
   currentTime,
   onSeek,
+  showLabelSpacer = true,
 }: TimelineRulerProps) {
   const interval = getMarkerInterval(duration, zoom);
   const markerTimes: number[] = [];
@@ -107,8 +109,8 @@ function TimelineRuler({
       : 0;
 
   return (
-    <div className="timeline-ruler">
-      <div className="timeline-ruler-label-spacer" />
+    <div className={`timeline-ruler ${showLabelSpacer ? "" : "track-only"}`.trim()}>
+      {showLabelSpacer && <div className="timeline-ruler-label-spacer" />}
 
       <div
         className="timeline-ruler-scale"

@@ -2134,6 +2134,7 @@ function App() {
 
       <Timeline
         duration={timelineDuration}
+        scaleDuration={videoDuration}
         currentTime={currentTime}
         waveformsBySource={waveformsBySource}
         videoClips={videoClips}

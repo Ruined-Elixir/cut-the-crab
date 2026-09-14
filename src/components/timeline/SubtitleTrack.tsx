@@ -43,6 +43,7 @@ type SubtitleTrackProps = {
   ) => void;
   onToggleLock?: (trackId: TimelineTrackId) => void;
   onToggleHidden?: (trackId: TimelineTrackId) => void;
+  showLabel?: boolean;
 };
 
 const MIN_SUBTITLE_DURATION = 0.1;
@@ -281,6 +282,7 @@ function SubtitleTrack({
   onSubtitleResize,
   onToggleLock,
   onToggleHidden,
+  showLabel = true,
 }: SubtitleTrackProps) {
   const [draggingSubtitleIds, setDraggingSubtitleIds] =
     useState<string[]>([]);
@@ -646,7 +648,8 @@ function SubtitleTrack({
   };
 
   return (
-    <div className="timeline-row timeline-subtitle-row">
+    <div className={`timeline-row timeline-subtitle-row ${showLabel ? "" : "track-only"}`.trim()}>
+      {showLabel && (
       <TimelineTrackLabel
         shortLabel={track.shortLabel}
         name={track.name}
@@ -656,6 +659,7 @@ function SubtitleTrack({
         onToggleLock={() => onToggleLock?.(track.id)}
         onToggleHidden={() => onToggleHidden?.(track.id)}
       />
+      )}
 
       <div
         className={["subtitle-track", track.locked ? "locked" : "", track.hidden ? "track-hidden" : ""].filter(Boolean).join(" ")}

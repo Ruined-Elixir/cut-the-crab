@@ -19,6 +19,7 @@ type WaveformTrackProps = {
   waveformsBySource: Record<string, number[]>;
   onSeek?: (time: number) => void;
   onToggleMute?: (trackId: TimelineTrackId) => void;
+  showLabel?: boolean;
 };
 
 function drawWaveformClip(
@@ -152,6 +153,7 @@ function WaveformTrack({
   waveformsBySource,
   onSeek,
   onToggleMute,
+  showLabel = true,
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -235,7 +237,8 @@ function WaveformTrack({
   };
 
   return (
-    <div className="timeline-row timeline-waveform-row">
+    <div className={`timeline-row timeline-waveform-row ${showLabel ? "" : "track-only"}`.trim()}>
+      {showLabel && (
       <TimelineTrackLabel
         shortLabel={track.shortLabel}
         name={track.name}
@@ -244,6 +247,7 @@ function WaveformTrack({
         canMute
         onToggleMute={() => onToggleMute?.(track.id)}
       />
+      )}
 
       <div
         className={[

@@ -124,6 +124,10 @@
 }
 
 .timeline-ruler-label-spacer {
+  position:sticky;
+  left:0;
+  z-index:12;
+  background:#18181a;
   box-shadow:inset -1px 0 var(--separator-soft)
 }
 
@@ -183,6 +187,9 @@
 }
 
 .timeline-row-label {
+  position:sticky;
+  left:0;
+  z-index:10;
   display:flex;
   align-items:center;
   padding:0 10px;
@@ -190,7 +197,8 @@
   font-size:10px;
   font-weight:600;
   user-select:none;
-  box-shadow:inset -1px 0 var(--separator-soft)
+  background:#18181a;
+  box-shadow:inset -1px 0 var(--separator-soft), 8px 0 12px -12px rgba(0,0,0,.9)
 }
 
 .timeline-waveform-row {
@@ -1035,7 +1043,7 @@
   z-index: 4;
 }
 
-.timeline-video-clip-frame-area {
+ .timeline-video-clip-frame-area {
   position: absolute;
   top: var(--video-clip-header-height);
   left: 0;
@@ -1053,6 +1061,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .timeline-video-clip-frame-area .timeline-video-frame-slot {
@@ -1062,7 +1071,8 @@
   display: block;
   min-width: 1px;
   overflow: hidden;
-  border-left: 1px solid rgba(0, 0, 0, 0.18);
+  background: #101112;
+  border-left: 1px solid rgba(0, 0, 0, 0.16);
 }
 
 .timeline-video-clip-frame-area .timeline-video-frame-slot:first-child {
@@ -1070,24 +1080,102 @@
 }
 
 .timeline-video-clip-frame-area .timeline-video-frame-image {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center;
+  object-fit: fill;
   border: 0;
   opacity: 1;
   filter: none;
 }
 
-.timeline-video-clip-frame-area .timeline-video-frame-image.incoming {
-  opacity: 0;
-  transition: opacity 140ms ease-out;
-  will-change: opacity;
+
+/* ========================================================================== 
+   Fixed track headers + track-only horizontal scrolling
+   ========================================================================== */
+
+.timeline-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
 }
 
-.timeline-video-clip-frame-area .timeline-video-frame-image.incoming.visible {
-  opacity: 1;
+.timeline-fixed-column {
+  min-width: 0;
+  overflow: hidden;
+  background: #18181a;
+  box-shadow: inset -1px 0 var(--separator-soft);
+  z-index: 20;
 }
 
+.timeline-fixed-ruler-spacer {
+  height: 30px;
+  box-shadow: inset 0 -1px var(--separator-soft);
+}
+
+.timeline-fixed-track-stack {
+  position: relative;
+}
+
+.timeline-fixed-label-row {
+  width: 118px;
+}
+
+.timeline-fixed-label-row + .timeline-fixed-label-row {
+  margin-top: 5px;
+}
+
+.timeline-fixed-label-row > .timeline-row-label {
+  position: static;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+.timeline-body > .timeline-scroll {
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline-ruler.track-only {
+  display: block;
+}
+
+.timeline-ruler.track-only > .timeline-ruler-scale {
+  width: 100%;
+  height: 30px;
+}
+
+.timeline-row.track-only {
+  display: block;
+}
+
+.timeline-row.track-only > .video-track,
+.timeline-row.track-only > .subtitle-track,
+.timeline-row.track-only > .waveform-track {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.timeline-body .timeline-marker-layer {
+  left: 0;
+}
+
+/* Filmstrip previews should preserve the source aspect ratio.  Narrow/tall
+   media is letterboxed inside each time slot instead of being cropped or
+   stretched to fill the track height. */
+.timeline-video-clip-frame-area .timeline-video-frame-slot {
+  background: #0b0b0c;
+}
+
+.timeline-video-clip-frame-area .timeline-video-frame-image {
+  object-fit: contain;
+  object-position: center center;
+  background: #0b0b0c;
+}

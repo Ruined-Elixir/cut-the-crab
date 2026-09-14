@@ -21,6 +21,7 @@ import { buildTimelineModel } from "../../utils/timelineModel";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
+import TimelineTrackLabel from "./TimelineTrackLabel";
 import VideoTrack from "./VideoTrack";
 import WaveformTrack from "./WaveformTrack";
 
@@ -28,6 +29,7 @@ import "./Timeline.css";
 
 type TimelineProps = {
   duration: number;
+  scaleDuration: number;
   currentTime: number;
   waveformsBySource: Record<string, number[]>;
   videoClips: VideoTimelineClip[];
@@ -99,12 +101,34 @@ export const MIN_TIMELINE_ZOOM = 1;
 export const MAX_TIMELINE_ZOOM = 12;
 export const TIMELINE_ZOOM_STEP = 0.25;
 
+const MIN_MAJOR_RULER_INTERVAL_SECONDS = 1;
+const HALF_SECOND_RULER_THRESHOLD_SECONDS = 10;
+
+const MIN_TRAILING_WORKSPACE_SECONDS = 10;
+const MAX_TRAILING_WORKSPACE_SECONDS = 120;
+const TRAILING_WORKSPACE_RATIO = 0.25;
+
+function trailingWorkspaceDuration(contentDuration: number) {
+  if (!Number.isFinite(contentDuration) || contentDuration <= 0) {
+    return 30;
+  }
+
+  return Math.max(
+    MIN_TRAILING_WORKSPACE_SECONDS,
+    Math.min(
+      MAX_TRAILING_WORKSPACE_SECONDS,
+      contentDuration * TRAILING_WORKSPACE_RATIO,
+    ),
+  );
+}
+
 export function clampTimelineZoom(value: number) {
   return Math.max(MIN_TIMELINE_ZOOM, Math.min(MAX_TIMELINE_ZOOM, value));
 }
 
 function Timeline({
   duration,
+  scaleDuration,
   currentTime,
   waveformsBySource,
   videoClips,
@@ -140,13 +164,64 @@ function Timeline({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousZoomRef = useRef(zoom);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
+  const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
+  const [workspaceDuration, setWorkspaceDuration] = useState(30);
 
-  const playheadPosition = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const timelineTrackWidthPx = Math.max(1, timelineViewportWidth - 118) * zoom;
+
+  /*
+   * Timeline scale is expressed as pixels per second. `scaleDuration` is the
+   * stable project/source duration supplied by App, so moving or trimming clips
+   * cannot alter visual scale. Workspace duration only controls how much blank
+   * timeline exists to the right.
+   */
+  const scaleReferenceDuration = Math.max(1, scaleDuration || duration || 1);
+
+  /*
+   * Do not let normal projects zoom far enough for the ruler to switch from
+   * 1-second major labels to 0.5-second labels. Besides being more useful for
+   * editing, this bounds thumbnail density at the most expensive zoom level.
+   *
+   * TimelineRuler switches to 0.5 s once visibleDuration <= 10 s. Round the
+   * cap down to our existing 0.25 zoom increments so we remain safely on the
+   * 1-second side of that boundary. Very short projects may already be below
+   * 10 seconds at 100%, in which case 100% remains the minimum/maximum.
+   */
+  const oneSecondRulerZoomLimit =
+    scaleReferenceDuration > HALF_SECOND_RULER_THRESHOLD_SECONDS
+      ? Math.max(
+          MIN_TIMELINE_ZOOM,
+          Math.floor(
+            (scaleReferenceDuration /
+              (HALF_SECOND_RULER_THRESHOLD_SECONDS + 0.001)) /
+              TIMELINE_ZOOM_STEP,
+          ) * TIMELINE_ZOOM_STEP,
+        )
+      : MIN_TIMELINE_ZOOM;
+  const effectiveMaxZoom = Math.max(
+    MIN_TIMELINE_ZOOM,
+    Math.min(MAX_TIMELINE_ZOOM, oneSecondRulerZoomLimit),
+  );
+
+  const baseTrackWidthPx = Math.max(1, timelineViewportWidth);
+  const pixelsPerSecondAt100 = baseTrackWidthPx / scaleReferenceDuration;
+  const pixelsPerSecond = pixelsPerSecondAt100 * zoom;
+  const timelineTrackWidthPx = Math.max(1, workspaceDuration * pixelsPerSecond);
+
+  const workspaceWidthRatio = workspaceDuration / scaleReferenceDuration;
+  const playheadPosition =
+    workspaceDuration > 0 ? (currentTime / workspaceDuration) * 100 : 0;
+  const visibleTimelineStart =
+    pixelsPerSecond > 0 ? timelineScrollLeft / pixelsPerSecond : 0;
+  const visibleTimelineEnd =
+    pixelsPerSecond > 0
+      ? (timelineScrollLeft + timelineViewportWidth) / pixelsPerSecond
+      : workspaceDuration;
+
   const framesByClipId = useVideoClipFrames(
     videoClips,
-    duration,
-    timelineTrackWidthPx,
+    pixelsPerSecond,
+    visibleTimelineStart,
+    visibleTimelineEnd,
   );
 
   const markerTimes = useMemo(
@@ -157,13 +232,13 @@ function Timeline({
   const timelineTracks = useMemo(
     () =>
       buildTimelineModel({
-        duration,
+        duration: workspaceDuration,
         videoClips,
         subtitles,
         trackSettings,
       }),
     [
-      duration,
+      workspaceDuration,
       videoClips,
       subtitles,
       trackSettings,
@@ -171,8 +246,44 @@ function Timeline({
   );
 
   const setTimelineZoom = (nextZoom: number) => {
-    onZoomChange?.(clampTimelineZoom(nextZoom));
+    const clamped = Math.max(
+      MIN_TIMELINE_ZOOM,
+      Math.min(effectiveMaxZoom, nextZoom),
+    );
+    onZoomChange?.(clamped);
   };
+
+  useEffect(() => {
+    if (zoom > effectiveMaxZoom + 0.0001) {
+      onZoomChange?.(effectiveMaxZoom);
+    }
+  }, [effectiveMaxZoom, onZoomChange, zoom]);
+
+  useEffect(() => {
+    const stableDuration = Math.max(0, scaleDuration || duration || 0);
+
+    if (stableDuration <= 0) {
+      setWorkspaceDuration(30);
+      return;
+    }
+
+    setWorkspaceDuration((current) => {
+      const reserve = trailingWorkspaceDuration(stableDuration);
+      const minimumWorkspace = stableDuration + reserve;
+      const contentNeeds = Math.max(duration, stableDuration);
+      const growThreshold = current - Math.max(4, reserve * 0.25);
+
+      if (current < minimumWorkspace) {
+        return minimumWorkspace;
+      }
+
+      if (contentNeeds >= growThreshold) {
+        return Math.max(current, contentNeeds + reserve);
+      }
+
+      return current;
+    });
+  }, [duration, scaleDuration]);
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -181,16 +292,23 @@ function Timeline({
       return;
     }
 
-    const updateViewportWidth = () => {
+    const updateViewportMetrics = () => {
       setTimelineViewportWidth(scroll.clientWidth);
+      setTimelineScrollLeft(scroll.scrollLeft);
     };
 
-    updateViewportWidth();
+    updateViewportMetrics();
 
-    const observer = new ResizeObserver(updateViewportWidth);
+    const handleScroll = () => setTimelineScrollLeft(scroll.scrollLeft);
+    scroll.addEventListener("scroll", handleScroll, { passive: true });
+
+    const observer = new ResizeObserver(updateViewportMetrics);
     observer.observe(scroll);
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      scroll.removeEventListener("scroll", handleScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -199,33 +317,35 @@ function Timeline({
 
     previousZoomRef.current = zoom;
 
-    if (!scroll || previousZoom === zoom) {
+    if (!scroll || previousZoom === zoom || pixelsPerSecondAt100 <= 0) {
       return;
     }
 
-    const previousContentWidth =
-      zoom > 0 ? (scroll.scrollWidth * previousZoom) / zoom : scroll.scrollWidth;
-    const viewportCenter = scroll.scrollLeft + scroll.clientWidth / 2;
-    const centerRatio = previousContentWidth > 0 ? viewportCenter / previousContentWidth : 0;
+    const previousPixelsPerSecond = pixelsPerSecondAt100 * previousZoom;
+    const viewportCenterX = scroll.scrollLeft + scroll.clientWidth / 2;
+    const centerTime = Math.max(
+      0,
+      viewportCenterX / Math.max(0.0001, previousPixelsPerSecond),
+    );
 
     window.requestAnimationFrame(() => {
-      const nextContentWidth = scroll.scrollWidth;
+      const nextCenterX = centerTime * pixelsPerSecond;
       scroll.scrollLeft = Math.max(
         0,
-        centerRatio * nextContentWidth - scroll.clientWidth / 2,
+        nextCenterX - scroll.clientWidth / 2,
       );
     });
-  }, [zoom]);
+  }, [zoom, pixelsPerSecond, pixelsPerSecondAt100]);
 
   const zoomOut = () => setTimelineZoom(zoom - TIMELINE_ZOOM_STEP);
   const zoomIn = () => setTimelineZoom(zoom + TIMELINE_ZOOM_STEP);
 
   const addMarker = (time: number) => {
-    if (duration <= 0) {
+    if (workspaceDuration <= 0) {
       return;
     }
 
-    const safeTime = Math.max(0, Math.min(duration, time));
+    const safeTime = Math.max(0, Math.min(workspaceDuration, time));
     const existing = markers.find((marker) => Math.abs(marker.time - safeTime) < 0.05);
 
     if (existing) {
@@ -240,16 +360,14 @@ function Timeline({
   };
 
   const addMarkerAtEvent = (event: ReactMouseEvent<HTMLElement>) => {
-    if (duration <= 0) {
+    if (workspaceDuration <= 0) {
       return;
     }
 
     const rect = event.currentTarget.getBoundingClientRect();
-    const labelWidth = 118;
-    const trackWidth = Math.max(1, rect.width - labelWidth);
-    const ratio = (event.clientX - rect.left - labelWidth) / trackWidth;
+    const ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
 
-    addMarker(ratio * duration);
+    addMarker(ratio * workspaceDuration);
   };
 
   const removeMarker = (id: string) => {
@@ -305,7 +423,7 @@ function Timeline({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [currentTime, duration, markers]);
+  }, [currentTime, workspaceDuration, markers]);
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!event.metaKey && !event.ctrlKey) {
@@ -324,11 +442,12 @@ function Timeline({
         return (
           <VideoTrack
             key={track.id}
-            duration={duration}
+            duration={workspaceDuration}
             currentTime={currentTime}
             track={track}
             selectedVideoClipId={selectedVideoClipId}
             framesByClipId={framesByClipId}
+            showLabel={false}
             onSeek={onSeek}
             onSelect={onVideoClipSelect}
             onMove={onVideoClipMove}
@@ -345,13 +464,14 @@ function Timeline({
         return (
           <SubtitleTrack
             key={track.id}
-            duration={duration}
+            duration={workspaceDuration}
             track={track}
             subtitles={subtitles}
             selectedSubtitleId={selectedSubtitleId}
             selectedSubtitleIds={selectedSubtitleIds}
             markerTimes={markerTimes}
             playheadTime={currentTime}
+            showLabel={false}
             onSubtitleSelect={onSubtitleSelect}
             onSubtitleMove={onSubtitleMove}
             onSubtitleGroupMove={onSubtitleGroupMove}
@@ -366,9 +486,10 @@ function Timeline({
         return (
           <WaveformTrack
             key={track.id}
-            duration={duration}
+            duration={workspaceDuration}
             track={track}
             waveformsBySource={waveformsBySource}
+            showLabel={false}
             onSeek={onSeek}
             onToggleMute={onToggleTrackMute}
           />
@@ -378,6 +499,45 @@ function Timeline({
         return null;
     }
   };
+
+  const renderFixedTrackLabel = (track: TimelineTrackModel) => {
+    const rowClass =
+      track.kind === "video"
+        ? "timeline-video-row"
+        : track.kind === "subtitle"
+          ? "timeline-subtitle-row"
+          : "timeline-waveform-row";
+
+    return (
+      <div key={`label-${track.id}`} className={`timeline-fixed-label-row ${rowClass}`}>
+        <TimelineTrackLabel
+          shortLabel={track.shortLabel}
+          name={track.name}
+          locked={track.locked}
+          muted={track.muted}
+          hidden={track.hidden}
+          canMute={track.kind === "audio"}
+          canHide={track.kind !== "audio"}
+          onToggleLock={
+            track.kind !== "audio"
+              ? () => onToggleTrackLock?.(track.id)
+              : undefined
+          }
+          onToggleMute={
+            track.kind === "audio"
+              ? () => onToggleTrackMute?.(track.id)
+              : undefined
+          }
+          onToggleHidden={
+            track.kind !== "audio"
+              ? () => onToggleTrackHidden?.(track.id)
+              : undefined
+          }
+        />
+      </div>
+    );
+  };
+
 
 
   return (
@@ -437,7 +597,7 @@ function Timeline({
             className="timeline-zoom-slider"
             type="range"
             min={MIN_TIMELINE_ZOOM}
-            max={MAX_TIMELINE_ZOOM}
+            max={effectiveMaxZoom}
             step={TIMELINE_ZOOM_STEP}
             value={zoom}
             onChange={(event) => setTimelineZoom(Number(event.target.value))}
@@ -448,7 +608,7 @@ function Timeline({
             type="button"
             className="timeline-zoom-button"
             onClick={zoomIn}
-            disabled={zoom >= MAX_TIMELINE_ZOOM}
+            disabled={zoom >= effectiveMaxZoom - 0.0001}
             aria-label="Zoom timeline in"
           >
             +
@@ -458,68 +618,82 @@ function Timeline({
         </div>
       </div>
 
-      <div ref={scrollRef} className="timeline-scroll" onWheel={handleWheel}>
-        <div
-          className="timeline-content"
-          style={{
-            width: `${zoom * 100}%`,
-          }}
-        >
-          <TimelineRuler
-            duration={duration}
-            zoom={zoom}
-            currentTime={currentTime}
-            onSeek={onSeek}
-          />
+      <div className="timeline-body">
+        <div className="timeline-fixed-column" aria-label="Timeline tracks">
+          <div className="timeline-fixed-ruler-spacer" />
+          <div className="timeline-fixed-track-stack">
+            {timelineTracks.map(renderFixedTrackLabel)}
+          </div>
+        </div>
 
+        <div ref={scrollRef} className="timeline-scroll" onWheel={handleWheel}>
           <div
-            className="timeline-track-stack"
-            onDoubleClick={addMarkerAtEvent}
-            onMouseDown={(event) => {
-              const target = event.target as HTMLElement;
-
-              if (
-                target.closest(".subtitle-clip") ||
-                target.closest(".timeline-user-marker") ||
-                target.closest("button") ||
-                target.closest("input")
-              ) {
-                return;
-              }
-
-              onClearSubtitleSelection?.();
+            className="timeline-content"
+            style={{
+              width: `${timelineTrackWidthPx}px`,
             }}
           >
-            {timelineTracks.map(renderTimelineTrack)}
-
-            <div className="timeline-marker-layer" aria-hidden="true">
-              {markers.map((marker) => (
-                <button
-                  key={marker.id}
-                  type="button"
-                  className="timeline-user-marker"
-                  style={{
-                    left: `${duration > 0 ? (marker.time / duration) * 100 : 0}%`,
-                  }}
-                  title={`Marker ${marker.time.toFixed(2)}s — click to remove`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeMarker(marker.id);
-                  }}
-                >
-                  <span className="timeline-user-marker-cap" />
-                </button>
-              ))}
-            </div>
+            <TimelineRuler
+              duration={workspaceDuration}
+              zoom={zoom * workspaceWidthRatio}
+              currentTime={currentTime}
+              onSeek={onSeek}
+              showLabelSpacer={false}
+            />
 
             <div
-              className="timeline-playhead"
-              style={{
-                left: `calc(118px + (100% - 118px) * ${playheadPosition / 100})`,
+              className="timeline-track-stack"
+              onDoubleClick={addMarkerAtEvent}
+              onMouseDown={(event) => {
+                const target = event.target as HTMLElement;
+
+                if (
+                  target.closest(".subtitle-clip") ||
+                  target.closest(".timeline-user-marker") ||
+                  target.closest("button") ||
+                  target.closest("input")
+                ) {
+                  return;
+                }
+
+                onClearSubtitleSelection?.();
               }}
-              aria-hidden="true"
             >
-              <span className="timeline-playhead-cap" />
+              {timelineTracks.map(renderTimelineTrack)}
+
+              <div className="timeline-marker-layer" aria-hidden="true">
+                {markers.map((marker) => (
+                  <button
+                    key={marker.id}
+                    type="button"
+                    className="timeline-user-marker"
+                    style={{
+                      left: `${
+                        workspaceDuration > 0
+                          ? (marker.time / workspaceDuration) * 100
+                          : 0
+                      }%`,
+                    }}
+                    title={`Marker ${marker.time.toFixed(2)}s — click to remove`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeMarker(marker.id);
+                    }}
+                  >
+                    <span className="timeline-user-marker-cap" />
+                  </button>
+                ))}
+              </div>
+
+              <div
+                className="timeline-playhead"
+                style={{
+                  left: `${playheadPosition}%`,
+                }}
+                aria-hidden="true"
+              >
+                <span className="timeline-playhead-cap" />
+              </div>
             </div>
           </div>
         </div>
