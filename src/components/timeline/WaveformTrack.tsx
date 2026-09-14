@@ -2,6 +2,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -19,6 +20,8 @@ type WaveformTrackProps = {
   waveformsBySource: Record<string, number[]>;
   onSeek?: (time: number) => void;
   onToggleMute?: (trackId: TimelineTrackId) => void;
+  onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onVolumeChange?: (id: string, volume: number) => void;
   showLabel?: boolean;
 };
 
@@ -117,8 +120,8 @@ function drawWaveformClip(
     const positionRatio = barCount <= 1 ? 0 : barIndex / (barCount - 1);
     const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
     const localTime = positionRatio * clipDuration;
-    const fadeInDuration = Math.max(0, Math.min(clip.fadeInDuration ?? 0, clipDuration / 2));
-    const fadeOutDuration = Math.max(0, Math.min(clip.fadeOutDuration ?? 0, clipDuration / 2));
+    const fadeInDuration = Math.max(0, Math.min(clip.fadeInDuration ?? 0, clipDuration));
+    const fadeOutDuration = Math.max(0, Math.min(clip.fadeOutDuration ?? 0, clipDuration));
     const fadeInGain = fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
     const fadeOutGain = fadeOutDuration > 0 ? Math.min(1, (clipDuration - localTime) / fadeOutDuration) : 1;
     const volumeGain = Math.max(0, Math.min(100, clip.volume ?? 100)) / 100;
@@ -153,9 +156,20 @@ function WaveformTrack({
   waveformsBySource,
   onSeek,
   onToggleMute,
+  onFadeChange,
+  onVolumeChange,
   showLabel = true,
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [fadeDrag, setFadeDrag] = useState<{
+    clipId: string;
+    edge: "in" | "out";
+    duration: number;
+  } | null>(null);
+  const [volumeDrag, setVolumeDrag] = useState<{
+    clipId: string;
+    volume: number;
+  } | null>(null);
 
   const audioClips = useMemo(
     () =>
@@ -221,6 +235,116 @@ function WaveformTrack({
     };
   }, [audioClips, duration, waveformsBySource, track.muted]);
 
+  const startAudioFadeResize = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    clip: AudioTimelineClip,
+    edge: "in" | "out",
+  ) => {
+    const fadeChange = onFadeChange;
+    const linkedVideoClipId = clip.linkedVideoClipId;
+
+    if (!fadeChange || !linkedVideoClipId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const clipElement = event.currentTarget.closest(
+      ".audio-clip-label",
+    ) as HTMLElement | null;
+
+    if (!clipElement) {
+      return;
+    }
+
+    const rect = clipElement.getBoundingClientRect();
+    const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
+    const maxDuration = clipDuration;
+    const originalDuration = Math.max(
+      0,
+      Math.min(
+        maxDuration,
+        edge === "in" ? clip.fadeInDuration ?? 0 : clip.fadeOutDuration ?? 0,
+      ),
+    );
+    const startX = event.clientX;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaSeconds =
+        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const nextDuration = Math.max(
+        0,
+        Math.min(
+          maxDuration,
+          edge === "in"
+            ? originalDuration + deltaSeconds
+            : originalDuration - deltaSeconds,
+        ),
+      );
+
+      setFadeDrag({ clipId: clip.id, edge, duration: nextDuration });
+      fadeChange(linkedVideoClipId, edge, nextDuration);
+    };
+
+    const handleMouseUp = () => {
+      setFadeDrag(null);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const startAudioVolumeDrag = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    clip: AudioTimelineClip,
+  ) => {
+    const volumeChange = onVolumeChange;
+    const linkedVideoClipId = clip.linkedVideoClipId;
+
+    if (!volumeChange || !linkedVideoClipId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const envelope = event.currentTarget.closest(
+      ".audio-volume-envelope",
+    ) as HTMLElement | null;
+
+    if (!envelope) {
+      return;
+    }
+
+    const rect = envelope.getBoundingClientRect();
+
+    const applyVolumeAtY = (clientY: number) => {
+      const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / Math.max(1, rect.height)));
+      const nextVolume = Math.round((1 - ratio) * 100);
+
+      setVolumeDrag({ clipId: clip.id, volume: nextVolume });
+      volumeChange(linkedVideoClipId, nextVolume);
+    };
+
+    applyVolumeAtY(event.clientY);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      applyVolumeAtY(moveEvent.clientY);
+    };
+
+    const handleMouseUp = () => {
+      setVolumeDrag(null);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (duration <= 0 || event.detail > 1) {
       return;
@@ -260,29 +384,169 @@ function WaveformTrack({
       >
         <canvas ref={canvasRef} className="waveform-canvas" />
 
-        {audioClips.map((clip) => (
-          <span
-            key={clip.id}
-            className="audio-clip-label"
-            style={{
-              left: `${
-                duration > 0
-                  ? (clip.timelineStart / duration) * 100
-                  : 0
-              }%`,
-              width: `${
-                duration > 0
-                  ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100
-                  : 0
-              }%`,
-            }}
-            title={`${clip.sourceName} · linked to ${
-              track.id === "audio-2" ? "V2" : "V1"
-            } · ${clip.muted ? "Muted" : `${Math.round(clip.volume ?? 100)}%`}`}
-          >
-            {clip.sourceName}{clip.muted ? " · Muted" : ""}
-          </span>
-        ))}
+        {audioClips.map((clip) => {
+          const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
+          const fadeInDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.fadeInDuration ?? 0),
+          );
+          const fadeOutDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.fadeOutDuration ?? 0),
+          );
+          const fadeInWidth = (fadeInDuration / clipDuration) * 100;
+          const fadeOutWidth = (fadeOutDuration / clipDuration) * 100;
+          const volume = Math.max(0, Math.min(100, clip.volume ?? 100));
+          const volumeY = 100 - volume;
+          const videoTrackLabel = `V${track.index}`;
+
+          return (
+            <span
+              key={clip.id}
+              className="audio-clip-label"
+              style={{
+                left: `${
+                  duration > 0
+                    ? (clip.timelineStart / duration) * 100
+                    : 0
+                }%`,
+                width: `${
+                  duration > 0
+                    ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100
+                    : 0
+                }%`,
+              }}
+              title={`${clip.sourceName} · linked to ${videoTrackLabel} · ${
+                clip.muted ? "Muted" : `${Math.round(clip.volume ?? 100)}%`
+              }`}
+            >
+              <span className="audio-clip-name">
+                {clip.sourceName}{clip.muted ? " · Muted" : ""}
+              </span>
+
+              {fadeInDuration > 0 && (
+                <span
+                  className="clip-fade-region audio in"
+                  style={{ width: `${fadeInWidth}%` }}
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <path d={`M0 100 C22 100 38 ${volumeY} 100 ${volumeY}`} />
+                  </svg>
+                </span>
+              )}
+
+              {fadeOutDuration > 0 && (
+                <span
+                  className="clip-fade-region audio out"
+                  style={{ width: `${fadeOutWidth}%` }}
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <path d={`M0 ${volumeY} C62 ${volumeY} 78 100 100 100`} />
+                  </svg>
+                </span>
+              )}
+
+              {clip.linkedVideoClipId && (onVolumeChange || onFadeChange) && (
+                <span className="audio-volume-envelope">
+                  {onVolumeChange && (
+                    <>
+                      <span
+                        className="audio-volume-line"
+                        style={{ top: `${volumeY}%` }}
+                      />
+                      <button
+                        type="button"
+                        className={[
+                          "audio-volume-handle",
+                          volumeDrag?.clipId === clip.id ? "active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        style={{ top: `${volumeY}%` }}
+                        onMouseDown={(event) => startAudioVolumeDrag(event, clip)}
+                        onClick={(event) => event.stopPropagation()}
+                        title={`Volume · ${Math.round(volume)}%`}
+                        aria-label={`Adjust audio volume, currently ${Math.round(volume)} percent`}
+                      />
+                    </>
+                  )}
+
+                  {onFadeChange && (
+                    <>
+                      <button
+                        type="button"
+                        className={[
+                          "clip-fade-handle",
+                          "audio",
+                          "in",
+                          fadeDrag?.clipId === clip.id && fadeDrag.edge === "in"
+                            ? "active"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        style={{
+                          left: `clamp(5px, ${fadeInWidth}%, calc(100% - 5px))`,
+                          top: `${volumeY}%`,
+                        }}
+                        onMouseDown={(event) => startAudioFadeResize(event, clip, "in")}
+                        onClick={(event) => event.stopPropagation()}
+                        title={`Audio fade in · ${fadeInDuration.toFixed(2)}s`}
+                        aria-label="Adjust audio fade in"
+                      />
+                      <button
+                        type="button"
+                        className={[
+                          "clip-fade-handle",
+                          "audio",
+                          "out",
+                          fadeDrag?.clipId === clip.id && fadeDrag.edge === "out"
+                            ? "active"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        style={{
+                          right: `clamp(5px, ${fadeOutWidth}%, calc(100% - 5px))`,
+                          top: `${volumeY}%`,
+                        }}
+                        onMouseDown={(event) => startAudioFadeResize(event, clip, "out")}
+                        onClick={(event) => event.stopPropagation()}
+                        title={`Audio fade out · ${fadeOutDuration.toFixed(2)}s`}
+                        aria-label="Adjust audio fade out"
+                      />
+                    </>
+                  )}
+                </span>
+              )}
+
+              {fadeDrag?.clipId === clip.id && (
+                <span
+                  className={`clip-fade-duration-label audio ${fadeDrag.edge}`}
+                  style={
+                    fadeDrag.edge === "in"
+                      ? { left: `${(fadeDrag.duration / clipDuration) * 100}%` }
+                      : { right: `${(fadeDrag.duration / clipDuration) * 100}%` }
+                  }
+                >
+                  {fadeDrag.duration.toFixed(2)}s
+                </span>
+              )}
+
+              {volumeDrag?.clipId === clip.id && (
+                <span
+                  className="audio-volume-value-label"
+                  style={{ top: `${100 - volumeDrag.volume}%` }}
+                >
+                  {volumeDrag.volume}%
+                </span>
+              )}
+            </span>
+          );
+        })}
+
       </div>
     </div>
   );

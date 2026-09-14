@@ -97,13 +97,15 @@ type TimelineProps = {
     edge: "in" | "out",
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
+  onVideoFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onAudioVolumeChange?: (id: string, volume: number) => void;
 };
 
 export const MIN_TIMELINE_ZOOM = 1;
 export const MAX_TIMELINE_ZOOM = 12;
 export const TIMELINE_ZOOM_STEP = 0.25;
 
-const MIN_MAJOR_RULER_INTERVAL_SECONDS = 1;
 const HALF_SECOND_RULER_THRESHOLD_SECONDS = 10;
 
 const MIN_TRAILING_WORKSPACE_SECONDS = 10;
@@ -163,6 +165,9 @@ function Timeline({
   onToggleTrackMute,
   onToggleTrackHidden,
   onVideoTransitionChange,
+  onVideoFadeChange,
+  onAudioFadeChange,
+  onAudioVolumeChange,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousZoomRef = useRef(zoom);
@@ -461,6 +466,7 @@ function Timeline({
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
+            onFadeChange={onVideoFadeChange}
           />
         );
 
@@ -496,6 +502,8 @@ function Timeline({
             showLabel={false}
             onSeek={onSeek}
             onToggleMute={onToggleTrackMute}
+            onFadeChange={onAudioFadeChange}
+            onVolumeChange={onAudioVolumeChange}
           />
         );
 

@@ -104,6 +104,8 @@ function createFullSourceClip(
     transitionInDuration: 0.5,
     transitionOutType: "none",
     transitionOutDuration: 0.5,
+    videoFadeInDuration: 0,
+    videoFadeOutDuration: 0,
     audioVolume: 100,
     audioMuted: false,
     audioFadeInDuration: 0,
@@ -406,6 +408,7 @@ export function useVideoTimeline({
         timelineEnd: splitTime,
         sourceOut: sourceSplit,
         transitionOutType: "none",
+        videoFadeOutDuration: 0,
         audioFadeOutDuration: 0,
       };
 
@@ -415,6 +418,7 @@ export function useVideoTimeline({
         timelineStart: splitTime,
         sourceIn: sourceSplit,
         transitionInType: "none",
+        videoFadeInDuration: 0,
         audioFadeInDuration: 0,
       };
 
@@ -545,6 +549,8 @@ export function useVideoTimeline({
         transitionInDuration: 0.5,
         transitionOutType: "none",
         transitionOutDuration: 0.5,
+        videoFadeInDuration: 0,
+        videoFadeOutDuration: 0,
     audioVolume: 100,
     audioMuted: false,
     audioFadeInDuration: 0,
@@ -710,6 +716,32 @@ export function useVideoTimeline({
   };
 
 
+  const updateVideoClipOpacityFade = (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) => {
+        if (clip.id !== id) {
+          return clip;
+        }
+
+        const clipDuration = Math.max(
+          MIN_VIDEO_CLIP_DURATION,
+          clip.timelineEnd - clip.timelineStart,
+        );
+        const maxFadeDuration = clipDuration;
+        const nextDuration = Math.max(0, Math.min(maxFadeDuration, duration));
+
+        return edge === "in"
+          ? { ...clip, videoFadeInDuration: nextDuration }
+          : { ...clip, videoFadeOutDuration: nextDuration };
+      }),
+    );
+  };
+
+
   const updateVideoClipAudio = (
     id: string,
     audio: {
@@ -729,7 +761,7 @@ export function useVideoTimeline({
           MIN_VIDEO_CLIP_DURATION,
           clip.timelineEnd - clip.timelineStart,
         );
-        const maxFadeDuration = Math.max(0, Math.min(5, clipDuration / 2));
+        const maxFadeDuration = clipDuration;
         const clampFade = (value: number) =>
           Math.max(0, Math.min(maxFadeDuration, value));
 
@@ -786,6 +818,7 @@ export function useVideoTimeline({
     applyVideoClipCropToTrack,
     resetVideoClipTransform,
     updateVideoClipTransition,
+    updateVideoClipOpacityFade,
     updateVideoClipAudio,
 
     replaceVideoClips,

@@ -51,6 +51,7 @@ type VideoTrackProps = {
     edge: "in" | "out",
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
+  onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -98,12 +99,18 @@ function VideoTrack({
   onToggleLock,
   onToggleHidden,
   onTransitionChange,
+  onFadeChange,
   showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
     useState<string | null>(null);
   const [mediaDropPreview, setMediaDropPreview] = useState<{
     timelineStart: number;
+    duration: number;
+  } | null>(null);
+  const [fadeDrag, setFadeDrag] = useState<{
+    clipId: string;
+    edge: "in" | "out";
     duration: number;
   } | null>(null);
 
@@ -144,7 +151,8 @@ function VideoTrack({
   ) => {
     if (
       track.locked ||
-      (event.target as HTMLElement).closest(".video-resize-handle")
+      (event.target as HTMLElement).closest(".video-resize-handle") ||
+      (event.target as HTMLElement).closest(".clip-fade-handle")
     ) {
       return;
     }
@@ -301,6 +309,72 @@ function VideoTrack({
 
     const handleMouseUp = () => {
       setDraggingClipId(null);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const startFadeResize = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    clip: VideoTimelineClip,
+    edge: "in" | "out",
+  ) => {
+    if (!onFadeChange || track.locked) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const clipElement = event.currentTarget.closest(
+      ".timeline-video-clip",
+    ) as HTMLElement | null;
+
+    if (!clipElement) {
+      return;
+    }
+
+    onSelect?.(clip.id);
+
+    const rect = clipElement.getBoundingClientRect();
+    const clipDuration = Math.max(
+      MIN_VIDEO_CLIP_DURATION,
+      clip.timelineEnd - clip.timelineStart,
+    );
+    const maxDuration = clipDuration;
+    const originalDuration = Math.max(
+      0,
+      Math.min(
+        maxDuration,
+        edge === "in"
+          ? clip.videoFadeInDuration ?? 0
+          : clip.videoFadeOutDuration ?? 0,
+      ),
+    );
+    const startX = event.clientX;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaSeconds =
+        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const nextDuration = Math.max(
+        0,
+        Math.min(
+          maxDuration,
+          edge === "in"
+            ? originalDuration + deltaSeconds
+            : originalDuration - deltaSeconds,
+        ),
+      );
+
+      setFadeDrag({ clipId: clip.id, edge, duration: nextDuration });
+      onFadeChange(clip.id, edge, nextDuration);
+    };
+
+    const handleMouseUp = () => {
+      setFadeDrag(null);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -497,6 +571,16 @@ function VideoTrack({
           );
           const transitionInWidth = Math.min(50, (transitionInDuration / clipDuration) * 100);
           const transitionOutWidth = Math.min(50, (transitionOutDuration / clipDuration) * 100);
+          const videoFadeInDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.videoFadeInDuration ?? 0),
+          );
+          const videoFadeOutDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.videoFadeOutDuration ?? 0),
+          );
+          const videoFadeInWidth = (videoFadeInDuration / clipDuration) * 100;
+          const videoFadeOutWidth = (videoFadeOutDuration / clipDuration) * 100;
 
           return (
             <div
@@ -537,6 +621,83 @@ function VideoTrack({
                     <span className="timeline-video-active-dot" />
                   )}
               </div>
+
+              <div className="timeline-video-fade-layer" aria-hidden="true">
+                {videoFadeInDuration > 0 && (
+                  <div
+                    className="clip-fade-region video in"
+                    style={{ width: `${videoFadeInWidth}%` }}
+                  >
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <path d="M0 100 C22 100 38 0 100 0" />
+                    </svg>
+                  </div>
+                )}
+                {videoFadeOutDuration > 0 && (
+                  <div
+                    className="clip-fade-region video out"
+                    style={{ width: `${videoFadeOutWidth}%` }}
+                  >
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <path d="M0 0 C62 0 78 100 100 100" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {!track.locked && onFadeChange && (
+                <>
+                  <button
+                    type="button"
+                    className={[
+                      "clip-fade-handle",
+                      "video",
+                      "in",
+                      fadeDrag?.clipId === clip.id && fadeDrag.edge === "in"
+                        ? "active"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={{ left: `clamp(5px, ${videoFadeInWidth}%, calc(100% - 5px))` }}
+                    onMouseDown={(event) => startFadeResize(event, clip, "in")}
+                    onClick={(event) => event.stopPropagation()}
+                    title={`Video fade in · ${videoFadeInDuration.toFixed(2)}s`}
+                    aria-label="Adjust video fade in"
+                  />
+                  <button
+                    type="button"
+                    className={[
+                      "clip-fade-handle",
+                      "video",
+                      "out",
+                      fadeDrag?.clipId === clip.id && fadeDrag.edge === "out"
+                        ? "active"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={{ right: `clamp(5px, ${videoFadeOutWidth}%, calc(100% - 5px))` }}
+                    onMouseDown={(event) => startFadeResize(event, clip, "out")}
+                    onClick={(event) => event.stopPropagation()}
+                    title={`Video fade out · ${videoFadeOutDuration.toFixed(2)}s`}
+                    aria-label="Adjust video fade out"
+                  />
+                </>
+              )}
+
+              {fadeDrag?.clipId === clip.id && (
+                <span
+                  className={`clip-fade-duration-label ${fadeDrag.edge}`}
+                  style={
+                    fadeDrag.edge === "in"
+                      ? { left: `${(fadeDrag.duration / clipDuration) * 100}%` }
+                      : { right: `${(fadeDrag.duration / clipDuration) * 100}%` }
+                  }
+                >
+                  {fadeDrag.duration.toFixed(2)}s
+                </span>
+              )}
 
               {(clip.transitionInType ?? "none") !== "none" && (
                 <div

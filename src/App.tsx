@@ -286,6 +286,8 @@ function App() {
     updateVideoClipTransform,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
+    updateVideoClipOpacityFade,
+    updateVideoClipAudio,
     replaceVideoClips,
     initializeDefaultVideoClip,
   } = useVideoTimeline({
@@ -553,6 +555,52 @@ function App() {
     }
 
     updateVideoClipTransition(id, edge, transition);
+  };
+
+
+  const handleVideoFadeChange = (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    updateVideoClipOpacityFade(id, edge, duration);
+  };
+
+  const handleAudioFadeChange = (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip) {
+      return;
+    }
+
+    updateVideoClipAudio(id,
+      edge === "in"
+        ? { fadeInDuration: duration }
+        : { fadeOutDuration: duration },
+    );
+  };
+
+  const handleAudioVolumeChange = (
+    id: string,
+    volume: number,
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip) {
+      return;
+    }
+
+    updateVideoClipAudio(id, { volume });
   };
 
 
@@ -2198,6 +2246,9 @@ function App() {
         onMediaDrop={handleMediaDropOnTimeline}
         onVideoClipResize={resizeVideoClip}
         onVideoTransitionChange={handleVideoTransitionChange}
+        onVideoFadeChange={handleVideoFadeChange}
+        onAudioFadeChange={handleAudioFadeChange}
+        onAudioVolumeChange={handleAudioVolumeChange}
         onCopyVideoClip={copySelectedVideoClip}
         onPasteVideoClip={pasteVideoClipAtPlayhead}
         onDuplicateVideoClip={duplicateSelectedVideoClipWithHistory}

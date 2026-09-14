@@ -46,6 +46,8 @@ export type VideoTimelineClip = TimelineClipBase & {
   transitionInDuration?: number;
   transitionOutType?: VideoTransitionType;
   transitionOutDuration?: number;
+  videoFadeInDuration?: number;
+  videoFadeOutDuration?: number;
   audioVolume?: number;
   audioMuted?: boolean;
   audioFadeInDuration?: number;

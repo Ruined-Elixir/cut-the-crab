@@ -345,6 +345,22 @@ function videoTransformStyle(
   };
 }
 
+
+function videoOpacityFadeFactor(
+  clip: VideoTimelineClip,
+  timelineTime: number,
+) {
+  const clipDuration = Math.max(0.1, clip.timelineEnd - clip.timelineStart);
+  const maxFadeDuration = clipDuration;
+  const fadeIn = Math.max(0, Math.min(maxFadeDuration, clip.videoFadeInDuration ?? 0));
+  const fadeOut = Math.max(0, Math.min(maxFadeDuration, clip.videoFadeOutDuration ?? 0));
+  const elapsed = Math.max(0, timelineTime - clip.timelineStart);
+  const remaining = Math.max(0, clip.timelineEnd - timelineTime);
+  const inGain = fadeIn > 0 ? Math.min(1, elapsed / fadeIn) : 1;
+  const outGain = fadeOut > 0 ? Math.min(1, remaining / fadeOut) : 1;
+  return Math.max(0, Math.min(1, inGain, outGain));
+}
+
 function videoTransitionStyle(
   clip: VideoTimelineClip | null,
   timelineTime: number,
@@ -358,6 +374,25 @@ function videoTransitionStyle(
 
   const clipDuration = Math.max(0.1, clip.timelineEnd - clip.timelineStart);
   const maxTransitionDuration = Math.max(0.1, Math.min(5, clipDuration / 2));
+  const maxOpacityFadeDuration = clipDuration;
+  const localElapsed = Math.max(0, timelineTime - clip.timelineStart);
+  const localRemaining = Math.max(0, clip.timelineEnd - timelineTime);
+  const videoFadeInDuration = Math.max(
+    0,
+    Math.min(maxOpacityFadeDuration, clip.videoFadeInDuration ?? 0),
+  );
+  const videoFadeOutDuration = Math.max(
+    0,
+    Math.min(maxOpacityFadeDuration, clip.videoFadeOutDuration ?? 0),
+  );
+
+  if (videoFadeInDuration > 0 && localElapsed < videoFadeInDuration) {
+    opacity = Math.min(opacity, localElapsed / videoFadeInDuration);
+  }
+
+  if (videoFadeOutDuration > 0 && localRemaining < videoFadeOutDuration) {
+    opacity = Math.min(opacity, localRemaining / videoFadeOutDuration);
+  }
 
   const inType = clip.transitionInType ?? "none";
   const inDuration = Math.max(
@@ -854,11 +889,11 @@ function VideoPlayer({
     const clipDuration = Math.max(0.001, activeClip.timelineEnd - activeClip.timelineStart);
     const fadeInDuration = Math.max(
       0,
-      Math.min(activeClip.audioFadeInDuration ?? 0, clipDuration / 2),
+      Math.min(activeClip.audioFadeInDuration ?? 0, clipDuration),
     );
     const fadeOutDuration = Math.max(
       0,
-      Math.min(activeClip.audioFadeOutDuration ?? 0, clipDuration / 2),
+      Math.min(activeClip.audioFadeOutDuration ?? 0, clipDuration),
     );
     const localTime = Math.max(0, timelineTime - activeClip.timelineStart);
     const timeToEnd = Math.max(0, activeClip.timelineEnd - timelineTime);
@@ -1828,7 +1863,9 @@ function VideoPlayer({
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
                         shellDimensions,
                       ),
-                      opacity: 1 - dissolve.progress,
+                      opacity:
+                        (1 - dissolve.progress) *
+                        videoOpacityFadeFactor(dissolve.outgoing, currentTime),
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)
@@ -1848,7 +1885,9 @@ function VideoPlayer({
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
                         shellDimensions,
                       ),
-                      opacity: dissolve.progress,
+                      opacity:
+                        dissolve.progress *
+                        videoOpacityFadeFactor(dissolve.incoming, currentTime),
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)

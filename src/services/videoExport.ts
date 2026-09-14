@@ -248,6 +248,30 @@ function buildTimelineFilterGraph(
 
     const transitionInType = clip.transitionInType ?? "none";
     const transitionOutType = clip.transitionOutType ?? "none";
+    const videoFadeInDuration = clamp(
+      clip.videoFadeInDuration ?? 0,
+      0,
+      localDuration,
+    );
+    const videoFadeOutDuration = clamp(
+      clip.videoFadeOutDuration ?? 0,
+      0,
+      localDuration,
+    );
+
+    if (videoFadeInDuration > 0.001) {
+      videoFilters.push(
+        `fade=t=in:st=0:d=${n(videoFadeInDuration)}:alpha=1`,
+      );
+    }
+
+    if (videoFadeOutDuration > 0.001) {
+      videoFilters.push(
+        `fade=t=out:st=${n(
+          Math.max(0, localDuration - videoFadeOutDuration),
+        )}:d=${n(videoFadeOutDuration)}:alpha=1`,
+      );
+    }
 
     if (window.transitionInCross) {
       videoFilters.push(
