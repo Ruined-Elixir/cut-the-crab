@@ -15,10 +15,7 @@ import type {
 const MIN_VIDEO_CLIP_DURATION = 0.1;
 const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
 
-const VIDEO_TRACK_IDS = new Set<TimelineTrackId>([
-  "video-1",
-  "video-2",
-]);
+const VIDEO_TRACK_ID_PATTERN = /^video-(\d+)$/;
 
 type UseVideoTimelineOptions = {
   sourcePath: string | null;
@@ -27,7 +24,7 @@ type UseVideoTimelineOptions = {
 };
 
 function normalizeVideoTrackId(trackId: TimelineTrackId): TimelineTrackId {
-  return VIDEO_TRACK_IDS.has(trackId) ? trackId : DEFAULT_VIDEO_TRACK_ID;
+  return VIDEO_TRACK_ID_PATTERN.test(trackId) ? trackId : DEFAULT_VIDEO_TRACK_ID;
 }
 
 function sortVideoClips(clips: VideoTimelineClip[]) {
@@ -625,6 +622,32 @@ export function useVideoTimeline({
     );
   };
 
+  const applyVideoClipCropToTrack = (id: string) => {
+    setVideoClips((current) => {
+      const source = current.find((clip) => clip.id === id);
+      if (!source) {
+        return current;
+      }
+
+      const cropTop = source.cropTop ?? 0;
+      const cropRight = source.cropRight ?? 0;
+      const cropBottom = source.cropBottom ?? 0;
+      const cropLeft = source.cropLeft ?? 0;
+
+      return current.map((clip) =>
+        clip.trackId === source.trackId
+          ? {
+              ...clip,
+              cropTop,
+              cropRight,
+              cropBottom,
+              cropLeft,
+            }
+          : clip,
+      );
+    });
+  };
+
   const resetVideoClipTransform = (id: string) => {
     updateVideoClipTransform(id, {
       positionX: 0,
@@ -760,6 +783,7 @@ export function useVideoTimeline({
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipTransform,
+    applyVideoClipCropToTrack,
     resetVideoClipTransform,
     updateVideoClipTransition,
     updateVideoClipAudio,

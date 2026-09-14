@@ -11,6 +11,7 @@ import type { TimelineMarker } from "../../types/timeline";
 import type {
   TimelineTrack as TimelineTrackModel,
   TimelineTrackId,
+  TimelineTrackKind,
   TimelineTrackSettings,
   VideoTimelineClip,
   VideoTransitionType,
@@ -43,6 +44,7 @@ type TimelineProps = {
   selectedVideoClipId: string | null;
 
   onSeek?: (time: number) => void;
+  onAddTrack?: (kind: TimelineTrackKind) => void;
   onClearSubtitleSelection?: () => void;
 
   onVideoClipSelect?: (id: string) => void;
@@ -140,6 +142,7 @@ function Timeline({
   selectedSubtitleIds,
   selectedVideoClipId,
   onSeek,
+  onAddTrack,
   onClearSubtitleSelection,
   onVideoClipSelect,
   onVideoClipMove,
@@ -166,6 +169,7 @@ function Timeline({
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
   const [workspaceDuration, setWorkspaceDuration] = useState(30);
+  const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
 
 
   /*
@@ -500,6 +504,22 @@ function Timeline({
     }
   };
 
+  useEffect(() => {
+    if (!addTrackMenuOpen) return;
+
+    const close = () => setAddTrackMenuOpen(false);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [addTrackMenuOpen]);
+
   const renderFixedTrackLabel = (track: TimelineTrackModel) => {
     const rowClass =
       track.kind === "video"
@@ -544,9 +564,50 @@ function Timeline({
     <section className="timeline-panel">
       <div className="timeline-header">
         <div className="timeline-title-group">
-          <h2>Timeline</h2>
+          <div className="timeline-title-with-add">
+            <h2>Timeline</h2>
+            <div
+              className="timeline-add-track-wrap"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="timeline-add-track-button"
+                aria-label="Add timeline track"
+                aria-haspopup="menu"
+                aria-expanded={addTrackMenuOpen}
+                title="Add track"
+                onClick={() => setAddTrackMenuOpen((current) => !current)}
+              >
+                +
+              </button>
+
+              {addTrackMenuOpen && (
+                <div className="timeline-add-track-menu" role="menu">
+                  {[
+                    ["video", "Add Video Track", "V"],
+                    ["audio", "Add Audio Track", "A"],
+                    ["subtitle", "Add Subtitle Track", "S"],
+                  ].map(([kind, label, badge]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        onAddTrack?.(kind as TimelineTrackKind);
+                        setAddTrackMenuOpen(false);
+                      }}
+                    >
+                      <span className={`timeline-add-track-badge ${kind}`}>{badge}</span>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <span className="timeline-help">
-            V1/V2 compositing · linked A1/A2 · drag media or clips between video tracks
+            Dynamic video, subtitle, and audio tracks · drag media or clips between video tracks
           </span>
         </div>
 

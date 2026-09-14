@@ -55,8 +55,13 @@ type VideoPlayerProps = {
       positionY?: number;
       scale?: number;
       rotation?: number;
+      cropTop?: number;
+      cropRight?: number;
+      cropBottom?: number;
+      cropLeft?: number;
     },
   ) => void;
+  onApplyVideoCropToTrack?: (id: string) => void;
 
   subtitles: Subtitle[];
   currentTime: number;
@@ -75,8 +80,8 @@ type VideoPlayerProps = {
   onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
 
-type VideoTrackId = "video-1" | "video-2";
-type AudioTrackId = "audio-1" | "audio-2";
+type VideoTrackId = string;
+type AudioTrackId = string;
 
 type VisibilityState = Record<VideoTrackId, boolean>;
 
@@ -245,7 +250,17 @@ function timelineTimeToSourceTime(
 }
 
 function audioTrackForVideoTrack(trackId: VideoTrackId): AudioTrackId {
-  return trackId === "video-2" ? "audio-2" : "audio-1";
+  const match = /^video-(\d+)$/.exec(trackId);
+  return match ? `audio-${match[1]}` : "audio-1";
+}
+
+function videoTrackIndex(trackId: string) {
+  const match = /^video-(\d+)$/.exec(trackId);
+  return match ? Number(match[1]) : 1;
+}
+
+function videoTrackLabel(trackId: string) {
+  return `V${videoTrackIndex(trackId)}`;
 }
 
 function isTrackHidden(
@@ -262,7 +277,11 @@ function isTrackMuted(
   return trackSettings[trackId]?.muted ?? false;
 }
 
-function videoTransformStyle(clip: VideoTimelineClip | null): CSSProperties {
+function videoTransformStyle(
+  clip: VideoTimelineClip | null,
+  sourceSize: VideoDimensions = { width: 16, height: 9 },
+  shellSize: ShellDimensions = { width: 0, height: 0 },
+): CSSProperties {
   if (!clip) {
     return {
       transform: "translate3d(0%, 0%, 0) scale(1) rotate(0deg)",
@@ -280,10 +299,49 @@ function videoTransformStyle(clip: VideoTimelineClip | null): CSSProperties {
   const cropBottom = Math.max(0, Math.min(49, clip.cropBottom ?? 0));
   const cropLeft = Math.max(0, Math.min(49, clip.cropLeft ?? 0));
 
+  let clipPath = `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`;
+
+  /*
+   * The media element spans the whole Program canvas and uses object-fit:contain.
+   * Crop values, however, are defined relative to the actual source image. Convert
+   * source-image crop percentages into canvas insets so transparent letterbox space
+   * never becomes part of the crop geometry.
+   */
+  if (
+    shellSize.width > 0 &&
+    shellSize.height > 0 &&
+    sourceSize.width > 0 &&
+    sourceSize.height > 0
+  ) {
+    const fitScale = Math.min(
+      shellSize.width / sourceSize.width,
+      shellSize.height / sourceSize.height,
+    );
+    const fittedWidth = sourceSize.width * fitScale;
+    const fittedHeight = sourceSize.height * fitScale;
+    const fittedLeft = (shellSize.width - fittedWidth) / 2;
+    const fittedTop = (shellSize.height - fittedHeight) / 2;
+
+    const topPx = fittedTop + (cropTop / 100) * fittedHeight;
+    const rightPx =
+      shellSize.width -
+      (fittedLeft + (1 - cropRight / 100) * fittedWidth);
+    const bottomPx =
+      shellSize.height -
+      (fittedTop + (1 - cropBottom / 100) * fittedHeight);
+    const leftPx = fittedLeft + (cropLeft / 100) * fittedWidth;
+
+    clipPath = `inset(${(topPx / shellSize.height) * 100}% ${
+      (rightPx / shellSize.width) * 100
+    }% ${(bottomPx / shellSize.height) * 100}% ${
+      (leftPx / shellSize.width) * 100
+    }%)`;
+  }
+
   return {
     transform: `translate3d(${positionX}%, ${positionY}%, 0) scale(${scale / 100}) rotate(${rotation}deg)`,
     transformOrigin: "center center",
-    clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`,
+    clipPath,
   };
 }
 
@@ -422,6 +480,7 @@ function VideoPlayer({
   selectedVideoClipId,
   onVideoClipSelect,
   onVideoTransformChange,
+  onApplyVideoCropToTrack,
   subtitles,
   currentTime,
   selectedSubtitleId,
@@ -433,31 +492,29 @@ function VideoPlayer({
 }: VideoPlayerProps) {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({
-    "video-1": false,
-    "video-2": false,
-  });
+  const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
   const [videoDimensions, setVideoDimensions] = useState<
     Record<VideoTrackId, VideoDimensions>
-  >({
-    "video-1": { width: 16, height: 9 },
-    "video-2": { width: 16, height: 9 },
-  });
+  >({});
   const [shellDimensions, setShellDimensions] = useState<ShellDimensions>({
     width: 0,
     height: 0,
   });
   const [programTransformClipId, setProgramTransformClipId] = useState<string | null>(null);
+  const [cropModeClipId, setCropModeClipId] = useState<string | null>(null);
+  const cropStartRef = useRef<{
+    clipId: string;
+    cropTop: number;
+    cropRight: number;
+    cropBottom: number;
+    cropLeft: number;
+  } | null>(null);
   const [programSnapGuides, setProgramSnapGuides] = useState<ProgramSnapGuide[]>([]);
 
-  const v1VideoRef = useRef<HTMLVideoElement | null>(null);
-  const v2VideoRef = useRef<HTMLVideoElement | null>(null);
-  const v1DissolveOutgoingRef = useRef<HTMLVideoElement | null>(null);
-  const v1DissolveIncomingRef = useRef<HTMLVideoElement | null>(null);
-  const v2DissolveOutgoingRef = useRef<HTMLVideoElement | null>(null);
-  const v2DissolveIncomingRef = useRef<HTMLVideoElement | null>(null);
-  const a1AudioRef = useRef<HTMLAudioElement | null>(null);
-  const a2AudioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
+  const dissolveOutgoingRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
+  const dissolveIncomingRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
+  const audioRefs = useRef<Record<AudioTrackId, HTMLAudioElement | null>>({});
   const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
@@ -467,66 +524,57 @@ function VideoPlayer({
   const videoClipsRef = useRef(videoClips);
   const trackSettingsRef = useRef(trackSettings);
   const isPlayingRef = useRef(false);
+  const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
 
   const onTimeChangeRef = useRef(onTimeChange);
   const onDurationChangeRef = useRef(onDurationChange);
 
-  const activeVideoClipIdRefs = useRef<Record<VideoTrackId, string | null>>({
-    "video-1": null,
-    "video-2": null,
-  });
-  const activeAudioClipIdRefs = useRef<Record<AudioTrackId, string | null>>({
-    "audio-1": null,
-    "audio-2": null,
-  });
+  const activeVideoClipIdRefs = useRef<Record<VideoTrackId, string | null>>({});
+  const activeAudioClipIdRefs = useRef<Record<AudioTrackId, string | null>>({});
 
   const playbackAnchorTimelineRef = useRef(currentTime);
   const playbackAnchorPerformanceRef = useRef(0);
 
   const skipSeconds = 10;
 
-  const activeV1Clip = useMemo(
-    () => findActiveVideoClip(videoClips, currentTime, "video-1"),
-    [videoClips, currentTime],
-  );
+  const videoTrackIds = useMemo(() => {
+    const ids = new Set<string>(["video-1", "video-2"]);
 
-  const activeV2Clip = useMemo(
-    () => findActiveVideoClip(videoClips, currentTime, "video-2"),
-    [videoClips, currentTime],
-  );
+    for (const clip of videoClips) {
+      if (/^video-\d+$/.test(clip.trackId)) ids.add(clip.trackId);
+    }
 
-  const v1SameTrackDissolve = useMemo(
-    () => findSameTrackDissolve(videoClips, currentTime, "video-1"),
-    [videoClips, currentTime],
-  );
+    for (const id of Object.keys(trackSettings)) {
+      if (/^video-\d+$/.test(id)) ids.add(id);
+    }
 
-  const v2SameTrackDissolve = useMemo(
-    () => findSameTrackDissolve(videoClips, currentTime, "video-2"),
-    [videoClips, currentTime],
-  );
+    return [...ids].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
+  }, [trackSettings, videoClips]);
 
-  const v1SourcePath = activeV1Clip?.sourcePath ?? videoPath;
-  const v2SourcePath = activeV2Clip?.sourcePath ?? null;
+  const activeClipsByTrack = useMemo(() => {
+    const result: Record<string, VideoTimelineClip | null> = {};
+    for (const trackId of videoTrackIds) {
+      result[trackId] = findActiveVideoClip(videoClips, currentTime, trackId);
+    }
+    return result;
+  }, [currentTime, videoClips, videoTrackIds]);
 
-  const v1VideoUrl = useMemo(
-    () => (v1SourcePath ? convertFileSrc(v1SourcePath) : null),
-    [v1SourcePath],
-  );
+  const dissolvesByTrack = useMemo(() => {
+    const result: Record<string, SameTrackDissolve | null> = {};
+    for (const trackId of videoTrackIds) {
+      result[trackId] = findSameTrackDissolve(videoClips, currentTime, trackId);
+    }
+    return result;
+  }, [currentTime, videoClips, videoTrackIds]);
 
-  const v2VideoUrl = useMemo(
-    () => (v2SourcePath ? convertFileSrc(v2SourcePath) : null),
-    [v2SourcePath],
-  );
-
-  const a1AudioUrl = useMemo(
-    () => (activeV1Clip ? convertFileSrc(activeV1Clip.sourcePath) : null),
-    [activeV1Clip?.sourcePath],
-  );
-
-  const a2AudioUrl = useMemo(
-    () => (activeV2Clip ? convertFileSrc(activeV2Clip.sourcePath) : null),
-    [activeV2Clip?.sourcePath],
-  );
+  const sourceUrlsByTrack = useMemo(() => {
+    const result: Record<string, string | null> = {};
+    for (const trackId of videoTrackIds) {
+      const clip = activeClipsByTrack[trackId];
+      result[trackId] = clip?.sourcePath ? convertFileSrc(clip.sourcePath) : null;
+    }
+    return result;
+  }, [activeClipsByTrack, videoTrackIds]);
 
   const primaryVideoUrl = useMemo(
     () => (videoPath ? convertFileSrc(videoPath) : null),
@@ -552,6 +600,10 @@ function VideoPlayer({
   useEffect(() => {
     trackSettingsRef.current = trackSettings;
   }, [trackSettings]);
+
+  useEffect(() => {
+    videoTrackIdsRef.current = videoTrackIds;
+  }, [videoTrackIds]);
 
   useEffect(() => {
     onTimeChangeRef.current = onTimeChange;
@@ -585,15 +637,15 @@ function VideoPlayer({
   }, [videoPath]);
 
   const videoElementForTrack = (trackId: VideoTrackId) =>
-    trackId === "video-2" ? v2VideoRef.current : v1VideoRef.current;
+    videoRefs.current[trackId] ?? null;
 
   const audioElementForTrack = (trackId: AudioTrackId) =>
-    trackId === "audio-2" ? a2AudioRef.current : a1AudioRef.current;
+    audioRefs.current[trackId] ?? null;
 
-  const dissolveElementsForTrack = (trackId: VideoTrackId) =>
-    trackId === "video-2"
-      ? { outgoing: v2DissolveOutgoingRef.current, incoming: v2DissolveIncomingRef.current }
-      : { outgoing: v1DissolveOutgoingRef.current, incoming: v1DissolveIncomingRef.current };
+  const dissolveElementsForTrack = (trackId: VideoTrackId) => ({
+    outgoing: dissolveOutgoingRefs.current[trackId] ?? null,
+    incoming: dissolveIncomingRefs.current[trackId] ?? null,
+  });
 
   const syncSameTrackDissolve = (
     trackId: VideoTrackId,
@@ -840,12 +892,11 @@ function VideoPlayer({
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    syncVideoTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
-    syncVideoTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
-    syncSameTrackDissolve("video-1", timelineTime, shouldPlay, forceSeek);
-    syncSameTrackDissolve("video-2", timelineTime, shouldPlay, forceSeek);
-    syncAudioTrackToTimeline("video-1", timelineTime, shouldPlay, forceSeek);
-    syncAudioTrackToTimeline("video-2", timelineTime, shouldPlay, forceSeek);
+    for (const trackId of videoTrackIdsRef.current) {
+      syncVideoTrackToTimeline(trackId, timelineTime, shouldPlay, forceSeek);
+      syncSameTrackDissolve(trackId, timelineTime, shouldPlay, forceSeek);
+      syncAudioTrackToTimeline(trackId, timelineTime, shouldPlay, forceSeek);
+    }
   };
 
   const seekTo = (time: number) => {
@@ -872,14 +923,10 @@ function VideoPlayer({
     if (isPlayingRef.current) {
       isPlayingRef.current = false;
       setIsPlaying(false);
-      v1VideoRef.current?.pause();
-      v2VideoRef.current?.pause();
-      v1DissolveOutgoingRef.current?.pause();
-      v1DissolveIncomingRef.current?.pause();
-      v2DissolveOutgoingRef.current?.pause();
-      v2DissolveIncomingRef.current?.pause();
-      a1AudioRef.current?.pause();
-      a2AudioRef.current?.pause();
+      (Object.values(videoRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+      (Object.values(dissolveOutgoingRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+      (Object.values(dissolveIncomingRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+      (Object.values(audioRefs.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
       return;
     }
 
@@ -901,6 +948,8 @@ function VideoPlayer({
     playbackAnchorPerformanceRef.current = performance.now();
 
     setProgramTransformClipId(null);
+    setCropModeClipId(null);
+    cropStartRef.current = null;
     setProgramSnapGuides([]);
     isPlayingRef.current = true;
     setIsPlaying(true);
@@ -910,17 +959,15 @@ function VideoPlayer({
   useEffect(() => {
     setDuration(0);
     setIsPlaying(false);
-    setVideoVisibility({ "video-1": false, "video-2": false });
+    setVideoVisibility({});
 
-    v1VideoRef.current?.pause();
-    v2VideoRef.current?.pause();
-    a1AudioRef.current?.pause();
-    a2AudioRef.current?.pause();
+    (Object.values(videoRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+    (Object.values(audioRefs.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
 
     isPlayingRef.current = false;
     currentTimeRef.current = 0;
-    activeVideoClipIdRefs.current = { "video-1": null, "video-2": null };
-    activeAudioClipIdRefs.current = { "audio-1": null, "audio-2": null };
+    activeVideoClipIdRefs.current = {};
+    activeAudioClipIdRefs.current = {};
     playbackAnchorTimelineRef.current = 0;
     playbackAnchorPerformanceRef.current = 0;
 
@@ -1082,34 +1129,44 @@ function VideoPlayer({
   }, [seekRequest]);
 
   const monitorDuration = Math.max(0, timelineDuration || 0);
-  const v2Visible = !!activeV2Clip && !isTrackHidden(trackSettings, "video-2");
-  const topVisualClip = v2Visible ? activeV2Clip : activeV1Clip;
+  const visibleActiveClips = videoTrackIds
+    .map((trackId) => activeClipsByTrack[trackId])
+    .filter(
+      (clip): clip is VideoTimelineClip =>
+        !!clip && !isTrackHidden(trackSettings, clip.trackId),
+    )
+    .sort((a, b) => videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId));
+  const topVisualClip = visibleActiveClips[visibleActiveClips.length - 1] ?? null;
   const subtitleVideoTimeOffset = topVisualClip
     ? topVisualClip.timelineStart - topVisualClip.sourceIn
     : 0;
-  const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? v1SourcePath ?? "";
+  const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? videoPath ?? "";
   const visibleSubtitles = isTrackHidden(trackSettings, "subtitle-1")
     ? []
     : subtitles;
 
-  const selectedActiveClip =
-    selectedVideoClipId && activeV2Clip?.id === selectedVideoClipId
-      ? activeV2Clip
-      : selectedVideoClipId && activeV1Clip?.id === selectedVideoClipId
-        ? activeV1Clip
-        : null;
+  const selectedActiveClip = selectedVideoClipId
+    ? visibleActiveClips.find((clip) => clip.id === selectedVideoClipId) ??
+      videoClips.find(
+        (clip) =>
+          clip.id === selectedVideoClipId &&
+          currentTime >= clip.timelineStart &&
+          currentTime < clip.timelineEnd,
+      ) ??
+      null
+    : null;
 
   const selectedTrackId = selectedActiveClip?.trackId as VideoTrackId | undefined;
   const selectedTrackVisible =
     !!selectedActiveClip &&
     !!selectedTrackId &&
-    videoVisibility[selectedTrackId] &&
+    !!videoVisibility[selectedTrackId] &&
     !isTrackHidden(trackSettings, selectedTrackId);
   const selectedTrackLocked =
     !!selectedTrackId && (trackSettings[selectedTrackId]?.locked ?? false);
 
   const selectedVideoSize = selectedTrackId
-    ? videoDimensions[selectedTrackId]
+    ? videoDimensions[selectedTrackId] ?? { width: 16, height: 9 }
     : { width: 16, height: 9 };
 
   const fittedVideoRect = useMemo(() => {
@@ -1179,31 +1236,19 @@ function VideoPlayer({
 
       const otherVisibleBounds: ProgramBounds[] = [];
 
-      if (
-        activeV1Clip &&
-        activeV1Clip.id !== selectedActiveClip.id &&
-        videoVisibility["video-1"] &&
-        !isTrackHidden(trackSettings, "video-1")
-      ) {
-        otherVisibleBounds.push(
-          programBoundsForClip(
-            activeV1Clip,
-            videoDimensions["video-1"],
-            shellDimensions,
-          ),
-        );
-      }
+      for (const otherClip of visibleActiveClips) {
+        if (
+          otherClip.id === selectedActiveClip.id ||
+          !videoVisibility[otherClip.trackId] ||
+          isTrackHidden(trackSettings, otherClip.trackId)
+        ) {
+          continue;
+        }
 
-      if (
-        activeV2Clip &&
-        activeV2Clip.id !== selectedActiveClip.id &&
-        videoVisibility["video-2"] &&
-        !isTrackHidden(trackSettings, "video-2")
-      ) {
         otherVisibleBounds.push(
           programBoundsForClip(
-            activeV2Clip,
-            videoDimensions["video-2"],
+            otherClip,
+            videoDimensions[otherClip.trackId] ?? { width: 16, height: 9 },
             shellDimensions,
           ),
         );
@@ -1458,6 +1503,155 @@ function VideoPlayer({
     window.addEventListener("pointercancel", handlePointerUp);
   };
 
+  const isCropModeActive =
+    !!selectedActiveClip && cropModeClipId === selectedActiveClip.id;
+
+  const enterCropMode = () => {
+    if (!selectedActiveClip || selectedTrackLocked || !onVideoTransformChange) {
+      return;
+    }
+
+    cropStartRef.current = {
+      clipId: selectedActiveClip.id,
+      cropTop: selectedActiveClip.cropTop ?? 0,
+      cropRight: selectedActiveClip.cropRight ?? 0,
+      cropBottom: selectedActiveClip.cropBottom ?? 0,
+      cropLeft: selectedActiveClip.cropLeft ?? 0,
+    };
+    setProgramTransformClipId(selectedActiveClip.id);
+    setCropModeClipId(selectedActiveClip.id);
+    setProgramSnapGuides([]);
+  };
+
+  const finishCropMode = () => {
+    cropStartRef.current = null;
+    setCropModeClipId(null);
+  };
+
+  const cancelCropMode = () => {
+    const snapshot = cropStartRef.current;
+    if (snapshot && onVideoTransformChange) {
+      onVideoTransformChange(snapshot.clipId, {
+        cropTop: snapshot.cropTop,
+        cropRight: snapshot.cropRight,
+        cropBottom: snapshot.cropBottom,
+        cropLeft: snapshot.cropLeft,
+      });
+    }
+    cropStartRef.current = null;
+    setCropModeClipId(null);
+  };
+
+  const resetSelectedCrop = () => {
+    if (!selectedActiveClip || selectedTrackLocked || !onVideoTransformChange) {
+      return;
+    }
+    onVideoTransformChange(selectedActiveClip.id, {
+      cropTop: 0,
+      cropRight: 0,
+      cropBottom: 0,
+      cropLeft: 0,
+    });
+  };
+
+  const beginCropTransform = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    edge: "top" | "right" | "bottom" | "left",
+  ) => {
+    if (
+      !selectedActiveClip ||
+      selectedTrackLocked ||
+      !onVideoTransformChange ||
+      fittedVideoRect.width <= 0 ||
+      fittedVideoRect.height <= 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startTop = Math.max(0, Math.min(49, selectedActiveClip.cropTop ?? 0));
+    const startRight = Math.max(0, Math.min(49, selectedActiveClip.cropRight ?? 0));
+    const startBottom = Math.max(0, Math.min(49, selectedActiveClip.cropBottom ?? 0));
+    const startLeft = Math.max(0, Math.min(49, selectedActiveClip.cropLeft ?? 0));
+    const rotationRadians = ((selectedActiveClip.rotation ?? 0) * Math.PI) / 180;
+    const clipScale = Math.max(0.1, Math.min(4, (selectedActiveClip.scale ?? 100) / 100));
+    const cos = Math.cos(rotationRadians);
+    const sin = Math.sin(rotationRadians);
+
+    const clampCrop = (value: number) => Math.max(0, Math.min(49, value));
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const screenDx = moveEvent.clientX - startX;
+      const screenDy = moveEvent.clientY - startY;
+
+      // Convert screen-space motion back into the clip's unrotated local axes.
+      const localDx = (screenDx * cos + screenDy * sin) / clipScale;
+      const localDy = (-screenDx * sin + screenDy * cos) / clipScale;
+      const deltaXPct = (localDx / fittedVideoRect.width) * 100;
+      const deltaYPct = (localDy / fittedVideoRect.height) * 100;
+
+      if (edge === "left") {
+        onVideoTransformChange(selectedActiveClip.id, {
+          cropLeft: clampCrop(startLeft + deltaXPct),
+        });
+      } else if (edge === "right") {
+        onVideoTransformChange(selectedActiveClip.id, {
+          cropRight: clampCrop(startRight - deltaXPct),
+        });
+      } else if (edge === "top") {
+        onVideoTransformChange(selectedActiveClip.id, {
+          cropTop: clampCrop(startTop + deltaYPct),
+        });
+      } else {
+        onVideoTransformChange(selectedActiveClip.id, {
+          cropBottom: clampCrop(startBottom - deltaYPct),
+        });
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  useEffect(() => {
+    if (!cropModeClipId) {
+      return;
+    }
+
+    const handleCropKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finishCropMode();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        cancelCropMode();
+      }
+    };
+
+    window.addEventListener("keydown", handleCropKeyDown, true);
+    return () => window.removeEventListener("keydown", handleCropKeyDown, true);
+  }, [cropModeClipId, onVideoTransformChange]);
+
   const handleProgramClipPointerDown = (
     event: ReactPointerEvent<HTMLVideoElement>,
     clip: VideoTimelineClip | null,
@@ -1467,6 +1661,9 @@ function VideoPlayer({
     }
 
     event.stopPropagation();
+    if (cropModeClipId && cropModeClipId !== clip.id) {
+      finishCropMode();
+    }
     onVideoClipSelect?.(clip.id);
     setProgramTransformClipId(clip.id);
   };
@@ -1494,9 +1691,93 @@ function VideoPlayer({
       })()
     : undefined;
 
+  const selectedCropInsets = selectedActiveClip
+    ? {
+        left: Math.max(0, Math.min(49, selectedActiveClip.cropLeft ?? 0)),
+        top: Math.max(0, Math.min(49, selectedActiveClip.cropTop ?? 0)),
+        right: Math.max(0, Math.min(49, selectedActiveClip.cropRight ?? 0)),
+        bottom: Math.max(0, Math.min(49, selectedActiveClip.cropBottom ?? 0)),
+      }
+    : null;
+
+  const cropWindowStyle: CSSProperties | undefined = selectedCropInsets
+    ? {
+        left: `${selectedCropInsets.left}%`,
+        top: `${selectedCropInsets.top}%`,
+        right: `${selectedCropInsets.right}%`,
+        bottom: `${selectedCropInsets.bottom}%`,
+      }
+    : undefined;
+
+  /*
+   * Outside crop-edit mode the transform frame should hug the pixels that are
+   * actually visible after crop, not the original uncropped source bounds.
+   * During crop mode we intentionally expand back to the full fitted source so
+   * the discarded regions remain visible/dimmed and can be restored by dragging.
+   */
+  const transformBoxRect = (() => {
+    if (!selectedCropInsets || isCropModeActive) {
+      return fittedVideoRect;
+    }
+
+    const visibleWidthRatio = Math.max(
+      0.02,
+      1 - (selectedCropInsets.left + selectedCropInsets.right) / 100,
+    );
+    const visibleHeightRatio = Math.max(
+      0.02,
+      1 - (selectedCropInsets.top + selectedCropInsets.bottom) / 100,
+    );
+
+    return {
+      left:
+        fittedVideoRect.left +
+        fittedVideoRect.width * (selectedCropInsets.left / 100),
+      top:
+        fittedVideoRect.top +
+        fittedVideoRect.height * (selectedCropInsets.top / 100),
+      width: fittedVideoRect.width * visibleWidthRatio,
+      height: fittedVideoRect.height * visibleHeightRatio,
+    };
+  })();
+
   return (
     <div className="video-player">
       <div className="video-player-toolbar">
+        {selectedActiveClip && selectedTrackVisible && (
+          <div className="program-crop-toolbar" aria-label="Video crop controls">
+            {!isCropModeActive ? (
+              <button
+                type="button"
+                className="program-crop-button"
+                onClick={enterCropMode}
+                disabled={selectedTrackLocked}
+              >
+                Crop {videoTrackLabel(selectedActiveClip.trackId)}
+              </button>
+            ) : (
+              <>
+                <button type="button" className="program-crop-button primary" onClick={finishCropMode}>
+                  Done
+                </button>
+                <button
+                  type="button"
+                  className="program-crop-button"
+                  onClick={() => onApplyVideoCropToTrack?.(selectedActiveClip.id)}
+                >
+                  Apply to {videoTrackLabel(selectedActiveClip.trackId)}
+                </button>
+                <button type="button" className="program-crop-button" onClick={resetSelectedCrop}>
+                  Reset Crop
+                </button>
+                <button type="button" className="program-crop-button" onClick={cancelCropMode}>
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <button
           className="video-file-button"
           onClick={() => void onChooseVideo?.()}
@@ -1518,122 +1799,98 @@ function VideoPlayer({
             className="video-shell"
             onPointerDown={(event) => {
               if (event.target === event.currentTarget) {
+                if (cropModeClipId) {
+                  finishCropMode();
+                }
                 setProgramTransformClipId(null);
                 setProgramSnapGuides([]);
               }
             }}
           >
-            {v1SameTrackDissolve && !isTrackHidden(trackSettings, "video-1") && (
-              <>
-                <video
-                  key={`v1-dissolve-out:${v1SameTrackDissolve.outgoing.id}`}
-                  ref={v1DissolveOutgoingRef}
-                  src={convertFileSrc(v1SameTrackDissolve.outgoing.sourcePath)}
-                  data-source-path={v1SameTrackDissolve.outgoing.sourcePath}
-                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v1"
-                  muted
-                  style={{
-                    ...videoTransformStyle(v1SameTrackDissolve.outgoing),
-                    opacity: 1 - v1SameTrackDissolve.progress,
-                  }}
-                  onLoadedMetadata={() =>
-                    syncSameTrackDissolve("video-1", currentTimeRef.current, isPlayingRef.current, true)
-                  }
-                />
-                <video
-                  key={`v1-dissolve-in:${v1SameTrackDissolve.incoming.id}`}
-                  ref={v1DissolveIncomingRef}
-                  src={convertFileSrc(v1SameTrackDissolve.incoming.sourcePath)}
-                  data-source-path={v1SameTrackDissolve.incoming.sourcePath}
-                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v1 incoming"
-                  muted
-                  style={{
-                    ...videoTransformStyle(v1SameTrackDissolve.incoming),
-                    opacity: v1SameTrackDissolve.progress,
-                  }}
-                  onLoadedMetadata={() =>
-                    syncSameTrackDissolve("video-1", currentTimeRef.current, isPlayingRef.current, true)
-                  }
-                />
-              </>
-            )}
+            {videoTrackIds.map((trackId) => {
+              const dissolve = dissolvesByTrack[trackId];
+              if (!dissolve || isTrackHidden(trackSettings, trackId)) return null;
 
-            {v2SameTrackDissolve && !isTrackHidden(trackSettings, "video-2") && (
-              <>
+              const zIndex = videoTrackIndex(trackId);
+              return (
+                <div key={`dissolve:${trackId}`} className="program-dissolve-pair">
+                  <video
+                    key={`${trackId}-dissolve-out:${dissolve.outgoing.id}`}
+                    ref={(element) => { dissolveOutgoingRefs.current[trackId] = element; }}
+                    src={convertFileSrc(dissolve.outgoing.sourcePath)}
+                    data-source-path={dissolve.outgoing.sourcePath}
+                    className="video-element video-track-layer program-dissolve-layer"
+                    muted
+                    style={{
+                      zIndex,
+                      ...videoTransformStyle(
+                        dissolve.outgoing,
+                        videoDimensions[trackId] ?? { width: 16, height: 9 },
+                        shellDimensions,
+                      ),
+                      opacity: 1 - dissolve.progress,
+                    }}
+                    onLoadedMetadata={() =>
+                      syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)
+                    }
+                  />
+                  <video
+                    key={`${trackId}-dissolve-in:${dissolve.incoming.id}`}
+                    ref={(element) => { dissolveIncomingRefs.current[trackId] = element; }}
+                    src={convertFileSrc(dissolve.incoming.sourcePath)}
+                    data-source-path={dissolve.incoming.sourcePath}
+                    className="video-element video-track-layer program-dissolve-layer incoming"
+                    muted
+                    style={{
+                      zIndex,
+                      ...videoTransformStyle(
+                        dissolve.incoming,
+                        videoDimensions[trackId] ?? { width: 16, height: 9 },
+                        shellDimensions,
+                      ),
+                      opacity: dissolve.progress,
+                    }}
+                    onLoadedMetadata={() =>
+                      syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)
+                    }
+                  />
+                </div>
+              );
+            })}
+
+            {videoTrackIds.map((trackId) => {
+              const clip = activeClipsByTrack[trackId];
+              const sourceUrl = sourceUrlsByTrack[trackId];
+              if (!clip || !sourceUrl || dissolvesByTrack[trackId]) return null;
+
+              return (
                 <video
-                  key={`v2-dissolve-out:${v2SameTrackDissolve.outgoing.id}`}
-                  ref={v2DissolveOutgoingRef}
-                  src={convertFileSrc(v2SameTrackDissolve.outgoing.sourcePath)}
-                  data-source-path={v2SameTrackDissolve.outgoing.sourcePath}
-                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v2"
+                  key={`${trackId}:${clip.id}:${clip.sourcePath}`}
+                  ref={(element) => { videoRefs.current[trackId] = element; }}
+                  src={sourceUrl}
+                  data-source-path={clip.sourcePath}
+                  className="video-element video-track-layer"
                   muted
                   style={{
-                    ...videoTransformStyle(v2SameTrackDissolve.outgoing),
-                    opacity: 1 - v2SameTrackDissolve.progress,
+                    zIndex: videoTrackIndex(trackId),
+                    visibility:
+                      videoVisibility[trackId] && !isTrackHidden(trackSettings, trackId)
+                        ? "visible"
+                        : "hidden",
+                    ...videoTransformStyle(
+                      clip,
+                      videoDimensions[trackId] ?? { width: 16, height: 9 },
+                      shellDimensions,
+                    ),
+                    ...videoTransitionStyle(clip, currentTime),
                   }}
-                  onLoadedMetadata={() =>
-                    syncSameTrackDissolve("video-2", currentTimeRef.current, isPlayingRef.current, true)
+                  onLoadedMetadata={() => handleVideoLoadedMetadata(trackId)}
+                  onPointerDown={(event) =>
+                    handleProgramClipPointerDown(event, clip)
                   }
                 />
-                <video
-                  key={`v2-dissolve-in:${v2SameTrackDissolve.incoming.id}`}
-                  ref={v2DissolveIncomingRef}
-                  src={convertFileSrc(v2SameTrackDissolve.incoming.sourcePath)}
-                  data-source-path={v2SameTrackDissolve.incoming.sourcePath}
-                  className="video-element video-track-layer program-dissolve-layer program-dissolve-v2 incoming"
-                  muted
-                  style={{
-                    ...videoTransformStyle(v2SameTrackDissolve.incoming),
-                    opacity: v2SameTrackDissolve.progress,
-                  }}
-                  onLoadedMetadata={() =>
-                    syncSameTrackDissolve("video-2", currentTimeRef.current, isPlayingRef.current, true)
-                  }
-                />
-              </>
-            )}
-
-            {v2Visible && v2VideoUrl && (
-              <video
-                key={`v2:${v2SourcePath}`}
-                ref={v2VideoRef}
-                src={v2VideoUrl}
-                data-source-path={v2SourcePath ?? ""}
-                className="video-element video-track-layer video-track-layer-v2"
-                muted
-                style={{
-                  visibility: videoVisibility["video-2"] ? "visible" : "hidden",
-                  ...videoTransformStyle(activeV2Clip),
-                  ...videoTransitionStyle(activeV2Clip, currentTime),
-                }}
-                onLoadedMetadata={() => handleVideoLoadedMetadata("video-2")}
-                onPointerDown={(event) =>
-                  handleProgramClipPointerDown(event, activeV2Clip)
-                }
-              />
-            )}
-
-            <video
-              key={`v1:${v1SourcePath ?? ""}`}
-              ref={v1VideoRef}
-              src={v1VideoUrl ?? undefined}
-              data-source-path={v1SourcePath ?? ""}
-              className="video-element video-track-layer video-track-layer-v1"
-              muted
-              style={{
-                visibility:
-                  videoVisibility["video-1"] &&
-                  !isTrackHidden(trackSettings, "video-1")
-                    ? "visible"
-                    : "hidden",
-                ...videoTransformStyle(activeV1Clip),
-                ...videoTransitionStyle(activeV1Clip, currentTime),
-              }}
-              onLoadedMetadata={() => handleVideoLoadedMetadata("video-1")}
-              onPointerDown={(event) =>
-                handleProgramClipPointerDown(event, activeV1Clip)
-              }
-            />
+              );
+            })}
 
             {programSnapGuides.length > 0 && (
               <div className="program-snap-guide-layer" aria-hidden="true">
@@ -1662,89 +1919,115 @@ function VideoPlayer({
                 style={transformOverlayStyle}
               >
                 <div
-                  className="program-transform-box"
+                  className={`program-transform-box ${isCropModeActive ? "crop-mode" : ""}`}
                   style={{
-                    left: fittedVideoRect.left,
-                    top: fittedVideoRect.top,
-                    width: fittedVideoRect.width,
-                    height: fittedVideoRect.height,
+                    left: transformBoxRect.left,
+                    top: transformBoxRect.top,
+                    width: transformBoxRect.width,
+                    height: transformBoxRect.height,
                   }}
-                  onPointerDown={beginMoveTransform}
+                  onPointerDown={isCropModeActive ? undefined : beginMoveTransform}
                 >
                   <span className="program-transform-track-badge">
-                    {selectedActiveClip.trackId === "video-2" ? "V2" : "V1"}
+                    {videoTrackLabel(selectedActiveClip.trackId)}
                   </span>
 
                   {!selectedTrackLocked && (
-                    <>
-                      <button
-                        type="button"
-                        className="program-transform-handle corner top-left"
-                        onPointerDown={beginScaleTransform}
-                        aria-label="Scale clip from top left"
-                      />
-                      <button
-                        type="button"
-                        className="program-transform-handle corner top-right"
-                        onPointerDown={beginScaleTransform}
-                        aria-label="Scale clip from top right"
-                      />
-                      <button
-                        type="button"
-                        className="program-transform-handle corner bottom-left"
-                        onPointerDown={beginScaleTransform}
-                        aria-label="Scale clip from bottom left"
-                      />
-                      <button
-                        type="button"
-                        className="program-transform-handle corner bottom-right"
-                        onPointerDown={beginScaleTransform}
-                        aria-label="Scale clip from bottom right"
-                      />
+                    isCropModeActive ? (
+                      <div className="program-crop-window" style={cropWindowStyle}>
+                        <button
+                          type="button"
+                          className="program-crop-handle top"
+                          onPointerDown={(event) => beginCropTransform(event, "top")}
+                          aria-label="Crop top edge"
+                        />
+                        <button
+                          type="button"
+                          className="program-crop-handle right"
+                          onPointerDown={(event) => beginCropTransform(event, "right")}
+                          aria-label="Crop right edge"
+                        />
+                        <button
+                          type="button"
+                          className="program-crop-handle bottom"
+                          onPointerDown={(event) => beginCropTransform(event, "bottom")}
+                          aria-label="Crop bottom edge"
+                        />
+                        <button
+                          type="button"
+                          className="program-crop-handle left"
+                          onPointerDown={(event) => beginCropTransform(event, "left")}
+                          aria-label="Crop left edge"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="program-transform-handle corner top-left"
+                          onPointerDown={beginScaleTransform}
+                          aria-label="Scale clip from top left"
+                        />
+                        <button
+                          type="button"
+                          className="program-transform-handle corner top-right"
+                          onPointerDown={beginScaleTransform}
+                          aria-label="Scale clip from top right"
+                        />
+                        <button
+                          type="button"
+                          className="program-transform-handle corner bottom-left"
+                          onPointerDown={beginScaleTransform}
+                          aria-label="Scale clip from bottom left"
+                        />
+                        <button
+                          type="button"
+                          className="program-transform-handle corner bottom-right"
+                          onPointerDown={beginScaleTransform}
+                          aria-label="Scale clip from bottom right"
+                        />
 
-                      <span className="program-transform-rotation-stem" />
-                      <button
-                        type="button"
-                        className="program-transform-handle rotation"
-                        onPointerDown={beginRotateTransform}
-                        aria-label={`Rotate clip, ${formatRotation(
-                          selectedActiveClip.rotation ?? 0,
-                        )}`}
-                        title="Drag to rotate · snaps every 45°"
-                      >
-                        ↻
-                      </button>
-                      <span
-                        className="program-transform-angle-readout"
-                        aria-hidden="true"
-                      >
-                        {formatRotation(selectedActiveClip.rotation ?? 0)}
-                      </span>
-                    </>
+                        <span className="program-transform-rotation-stem" />
+                        <button
+                          type="button"
+                          className="program-transform-handle rotation"
+                          onPointerDown={beginRotateTransform}
+                          aria-label={`Rotate clip, ${formatRotation(
+                            selectedActiveClip.rotation ?? 0,
+                          )}`}
+                          title="Drag to rotate · snaps every 45°"
+                        >
+                          ↻
+                        </button>
+                        <span
+                          className="program-transform-angle-readout"
+                          aria-hidden="true"
+                        >
+                          {formatRotation(selectedActiveClip.rotation ?? 0)}
+                        </span>
+                      </>
+                    )
                   )}
                 </div>
               </div>
             )}
 
-            <audio
-              key={`a1:${activeV1Clip?.sourcePath ?? "gap"}`}
-              ref={a1AudioRef}
-              src={a1AudioUrl ?? undefined}
-              data-source-path={activeV1Clip?.sourcePath ?? ""}
-              preload="auto"
-              hidden
-              onLoadedMetadata={() => handleAudioLoadedMetadata("video-1")}
-            />
+            {videoTrackIds.map((trackId) => {
+              const clip = activeClipsByTrack[trackId];
+              const audioTrackId = audioTrackForVideoTrack(trackId);
 
-            <audio
-              key={`a2:${activeV2Clip?.sourcePath ?? "gap"}`}
-              ref={a2AudioRef}
-              src={a2AudioUrl ?? undefined}
-              data-source-path={activeV2Clip?.sourcePath ?? ""}
-              preload="auto"
-              hidden
-              onLoadedMetadata={() => handleAudioLoadedMetadata("video-2")}
-            />
+              return (
+                <audio
+                  key={`${audioTrackId}:${clip?.id ?? "gap"}:${clip?.sourcePath ?? ""}`}
+                  ref={(element) => { audioRefs.current[audioTrackId] = element; }}
+                  src={clip?.sourcePath ? convertFileSrc(clip.sourcePath) : undefined}
+                  data-source-path={clip?.sourcePath ?? ""}
+                  preload="auto"
+                  hidden
+                  onLoadedMetadata={() => handleAudioLoadedMetadata(trackId)}
+                />
+              );
+            })}
 
             <audio
               key={`primary-metadata:${videoPath ?? ""}`}

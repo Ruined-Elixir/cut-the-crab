@@ -37,6 +37,11 @@ const OUTPUT_HEIGHT = 1080;
 const OUTPUT_FPS = 30;
 const EPSILON = 0.03;
 
+function videoTrackIndex(trackId: string) {
+  const match = /^video-(\d+)$/.exec(trackId);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -78,7 +83,11 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
     });
   }
 
-  const tracks = ["video-1", "video-2"];
+  const tracks = [...new Set(
+    videoClips
+      .map((clip) => clip.trackId)
+      .filter((trackId) => /^video-\d+$/.test(trackId)),
+  )].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
 
   for (const trackId of tracks) {
     const clips = videoClips
@@ -152,7 +161,8 @@ function audioTrackMuted(
   videoTrackId: string,
   trackSettings: TimelineTrackSettings,
 ) {
-  const audioTrackId = videoTrackId === "video-2" ? "audio-2" : "audio-1";
+  const index = videoTrackIndex(videoTrackId);
+  const audioTrackId = Number.isFinite(index) ? `audio-${index}` : "audio-1";
   return !!trackSettings[audioTrackId]?.muted;
 }
 
@@ -173,12 +183,11 @@ function buildTimelineFilterGraph(
   );
 
   const renderableClips = [...videoClips]
-    .filter((clip) => clip.trackId === "video-1" || clip.trackId === "video-2")
-    .sort((a, b) => {
-      const layerA = a.trackId === "video-2" ? 1 : 0;
-      const layerB = b.trackId === "video-2" ? 1 : 0;
-      return layerA - layerB || a.timelineStart - b.timelineStart;
-    });
+    .filter((clip) => /^video-\d+$/.test(clip.trackId))
+    .sort((a, b) =>
+      videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
+      a.timelineStart - b.timelineStart
+    );
 
   const inputPaths = renderableClips.map((clip) => clip.sourcePath);
   const clipInputIndex = new Map<string, number>();

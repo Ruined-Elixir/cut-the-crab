@@ -1179,3 +1179,81 @@
   object-position: center center;
   background: #0b0b0c;
 }
+
+/* Dynamic track creation --------------------------------------------------- */
+.timeline-title-with-add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.timeline-add-track-wrap {
+  position: relative;
+  z-index: 30;
+}
+
+.timeline-add-track-button {
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 6px;
+  background: rgba(255,255,255,.055);
+  color: var(--secondary-label);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.timeline-add-track-button:hover {
+  background: rgba(255,255,255,.10);
+  color: var(--label);
+}
+
+.timeline-add-track-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 190px;
+  padding: 5px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  background: rgba(35,35,38,.98);
+  box-shadow: 0 12px 34px rgba(0,0,0,.42);
+  backdrop-filter: blur(18px);
+}
+
+.timeline-add-track-menu > button {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--label);
+  font-size: 11px;
+  text-align: left;
+}
+
+.timeline-add-track-menu > button:hover {
+  background: rgba(255,255,255,.09);
+}
+
+.timeline-add-track-badge {
+  width: 22px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  color: var(--secondary-label);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+}

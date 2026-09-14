@@ -53,6 +53,7 @@ import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
   TimelineTrackId,
+  TimelineTrackKind,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "./types/timelineModel";
@@ -62,6 +63,8 @@ import type {
   ProjectMetadata,
   RecentProject,
 } from "./types/project";
+
+import { defaultTrackControlState, nextTimelineTrackId } from "./utils/timelineModel";
 
 import "./App.css";
 
@@ -281,6 +284,7 @@ function App() {
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipTransform,
+    applyVideoClipCropToTrack,
     updateVideoClipTransition,
     replaceVideoClips,
     initializeDefaultVideoClip,
@@ -461,6 +465,32 @@ function App() {
     }));
   };
 
+  const handleAddTimelineTrack = (kind: TimelineTrackKind) => {
+    const id = nextTimelineTrackId(kind, trackSettings, videoClips);
+
+    setTrackSettings((current) => {
+      const next = {
+        ...current,
+        [id]: defaultTrackControlState(kind),
+      };
+
+      // Video tracks are always created with their linked audio partner.
+      // V3 -> A3, V4 -> A4, etc. Standalone audio tracks can still be
+      // created explicitly from the + menu when needed for music/SFX.
+      if (kind === "video") {
+        const match = /^video-(\d+)$/.exec(id);
+        if (match) {
+          const audioId = `audio-${match[1]}`;
+          if (!next[audioId]) {
+            next[audioId] = defaultTrackControlState("audio");
+          }
+        }
+      }
+
+      return next;
+    });
+  };
+
   const handleMoveVideoClipToTrack = (
     id: string,
     targetTrackId: TimelineTrackId,
@@ -495,6 +525,17 @@ function App() {
     }
 
     updateVideoClipTransform(id, transform);
+  };
+
+  const handleApplyVideoCropToTrack = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    applyVideoClipCropToTrack(id);
   };
 
   const handleVideoTransitionChange = (
@@ -818,7 +859,7 @@ function App() {
               .map((clip, index) => ({
                 clipId: clip.id,
                 label: `Clip ${index + 1} — ${clip.sourceName} · ${
-                  clip.trackId === "video-2" ? "V2" : "V1"
+                  `V${clip.trackId.split("-")[1] ?? "1"}`
                 } ${formatClipMenuTime(clip.timelineStart)}`,
               }))
           : [];
@@ -2104,6 +2145,7 @@ function App() {
             selectedVideoClipId={selectedVideoClipId}
             onVideoClipSelect={handleVideoClipSelect}
             onVideoTransformChange={handleVideoTransformChange}
+            onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}
@@ -2145,6 +2187,7 @@ function App() {
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
+        onAddTrack={handleAddTimelineTrack}
         onClearSubtitleSelection={() => {
           clearSubtitleSelection();
           clearVideoClipSelection();

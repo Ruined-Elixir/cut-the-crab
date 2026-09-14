@@ -6,7 +6,7 @@
   position: absolute;
   inset: 0;
 
-  z-index: 3;
+  z-index: 100;
 
   overflow: hidden;
 
@@ -15,7 +15,7 @@
 
 .ass-subtitle-canvas {
   position: absolute;
-  z-index: 3;
+  z-index: 100;
 
   display: block;
 
@@ -38,7 +38,7 @@
  */
 .video-subtitle-interaction {
   position: absolute;
-  z-index: 4;
+  z-index: 101;
 
   transform: translate(-50%, -50%);
 
@@ -78,7 +78,7 @@
  */
 .video-subtitle-editing {
   position: absolute;
-  z-index: 5;
+  z-index: 102;
 
   transform: translate(-50%, -50%);
 
@@ -109,7 +109,7 @@
 .subtitle-snap-guide-layer {
   position:absolute;
   inset:0;
-  z-index:6;
+  z-index:103;
   pointer-events:none;
 }
 
