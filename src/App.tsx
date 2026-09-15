@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -7,7 +7,7 @@ import CtcLogo from "./components/brand/CtcLogo";
 
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
-import VideoPlayer from "./components/video/VideoPlayer";
+import VideoPlayer, { type VideoPlayerHandle } from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
   clampTimelineZoom,
@@ -215,6 +215,10 @@ function App() {
   const [isSavingProject, setIsSavingProject] = useState(false);
 
   const isLoadingVideoRef = useRef(false);
+  const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
+  const handleSkimPreviewChange = useCallback((time: number | null) => {
+    videoPlayerRef.current?.setSkimPreviewTime(time);
+  }, []);
   const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -2181,6 +2185,7 @@ function App() {
 
         <section className="preview-panel">
           <VideoPlayer
+            ref={videoPlayerRef}
             videoPath={videoPath}
             videoName={videoName}
             onChooseVideo={handleChooseVideo}
@@ -2262,6 +2267,7 @@ function App() {
         onToggleTrackLock={(trackId) => toggleTrackSetting(trackId, "locked")}
         onToggleTrackMute={(trackId) => toggleTrackSetting(trackId, "muted")}
         onToggleTrackHidden={(trackId) => toggleTrackSetting(trackId, "hidden")}
+        onSkimPreviewChange={handleSkimPreviewChange}
         onSeek={requestSeek}
       />
 

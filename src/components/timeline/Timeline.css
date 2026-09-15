@@ -1534,3 +1534,270 @@
 .audio-volume-envelope .clip-fade-handle.audio.out {
   transform: translate(50%, -50%);
 }
+
+/* ========================================================================== 
+   Mouse-following timeline skimmer
+   ========================================================================== */
+
+.timeline-content {
+  position: relative;
+}
+
+.timeline-skimmer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 26;
+  width: 1px;
+  background: rgba(238, 238, 242, 0.62);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+
+.timeline-skimmer[hidden] {
+  display: none;
+}
+
+.timeline-skimmer-cap {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: rgba(244, 244, 248, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.timeline-skimmer-time {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  min-width: 42px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(30, 30, 33, 0.92);
+  color: rgba(246, 246, 248, 0.94);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 2px 7px rgba(0, 0, 0, 0.34);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  transition: transform 0.04s linear;
+}
+
+/* Keep the red committed playhead visually dominant over the neutral skimmer. */
+.timeline-playhead {
+  z-index: 28;
+}
+
+/* ========================================================================== 
+   Timeline range selection + light video snapping
+   ========================================================================== */
+
+.timeline-range-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border: 1px solid rgba(10, 132, 255, 0.2);
+  border-radius: 7px;
+  background: rgba(10, 132, 255, 0.08);
+  color: rgba(230, 238, 248, 0.82);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-range-summary span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.timeline-range-summary strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.timeline-range-summary button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.timeline-range-summary button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.timeline-range-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 23;
+  min-width: 2px;
+  box-sizing: border-box;
+  border-left: 1px solid rgba(10, 132, 255, 0.78);
+  border-right: 1px solid rgba(10, 132, 255, 0.78);
+  background: rgba(10, 132, 255, 0.075);
+  box-shadow:
+    inset 1px 0 rgba(255, 255, 255, 0.04),
+    inset -1px 0 rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+.timeline-range-selection::before {
+  content: "";
+  position: absolute;
+  top: 29px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(10, 132, 255, 0.35);
+}
+
+.timeline-range-handle {
+  position: absolute;
+  top: 21px;
+  z-index: 2;
+  width: 13px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.timeline-range-handle.in {
+  left: -7px;
+}
+
+.timeline-range-handle.out {
+  right: -7px;
+}
+
+.timeline-range-handle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 5px;
+  height: 13px;
+  border-radius: 2px;
+  background: rgba(10, 132, 255, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.13),
+    0 1px 3px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+}
+
+.timeline-range-handle:hover::after {
+  background: rgba(64, 156, 255, 1);
+}
+
+.timeline-range-duration {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  min-width: 40px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(25, 30, 38, 0.9);
+  color: rgba(236, 243, 252, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(10, 132, 255, 0.16),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.timeline-video-snap-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 27;
+  width: 1px;
+  background: rgba(64, 156, 255, 0.86);
+  box-shadow:
+    0 0 0 0.5px rgba(64, 156, 255, 0.18),
+    0 0 7px rgba(64, 156, 255, 0.2);
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+
+.timeline-video-snap-guide[hidden] {
+  display: none;
+}
+
+.timeline-video-snap-guide > span {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: rgba(64, 156, 255, 0.95);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+
+/* ==========================================================================
+   Dynamic-track vertical scrolling restoration
+   ========================================================================== */
+
+/*
+ * The fixed-label / horizontally scrolling timeline split must still share a
+ * vertical scroll surface.  Keeping overflow-y hidden on the right-hand
+ * timeline clipped V2/V3/A2/etc. once the dynamic stack exceeded the panel.
+ */
+.timeline-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-items: start;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+
+.timeline-fixed-column {
+  align-self: start;
+  height: max-content;
+}
+
+.timeline-body > .timeline-scroll {
+  align-self: start;
+  height: max-content;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline-body .timeline-content {
+  height: auto;
+  min-height: 0;
+}

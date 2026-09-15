@@ -77,6 +77,71 @@ function findNextAvailableTimelineStart(
   return start;
 }
 
+/*
+ * Moving a clip is different from inserting a new one.  The old move path
+ * reused findNextAvailableTimelineStart(), which always searches forward.
+ * That meant nudging a clip slightly left into an occupied region could send
+ * it all the way to the far side of a long neighbouring clip.  During a drag
+ * this looked exactly like the clip had disappeared.
+ *
+ * For moves, choose the closest legal position instead.  A clip therefore
+ * stops against the nearest neighbour edge rather than teleporting across it.
+ */
+function findNearestAvailableTimelineStart(
+  clips: VideoTimelineClip[],
+  trackId: TimelineTrackId,
+  requestedStart: number,
+  clipDuration: number,
+  excludedClipId?: string,
+) {
+  const requested = Math.max(0, requestedStart);
+  const duration = Math.max(MIN_VIDEO_CLIP_DURATION, clipDuration);
+  const sorted = sortVideoClips(
+    clipsOnTrack(clips, trackId, excludedClipId),
+  );
+
+  if (sorted.length === 0) {
+    return requested;
+  }
+
+  const candidates: number[] = [];
+  let gapStart = 0;
+
+  for (const clip of sorted) {
+    const gapEnd = Math.max(gapStart, clip.timelineStart);
+    const latestStartInGap = gapEnd - duration;
+
+    if (latestStartInGap >= gapStart - 0.000001) {
+      candidates.push(
+        Math.max(gapStart, Math.min(requested, latestStartInGap)),
+      );
+    }
+
+    gapStart = Math.max(gapStart, clip.timelineEnd);
+  }
+
+  // The final gap is unbounded, so the closest legal point is either the
+  // requested location itself or the end of the last occupied region.
+  candidates.push(Math.max(gapStart, requested));
+
+  let best = candidates[0] ?? requested;
+  let bestDistance = Math.abs(best - requested);
+
+  for (const candidate of candidates.slice(1)) {
+    const distance = Math.abs(candidate - requested);
+
+    if (
+      distance < bestDistance - 0.000001 ||
+      (Math.abs(distance - bestDistance) <= 0.000001 && candidate < best)
+    ) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return Math.max(0, best);
+}
+
 function createFullSourceClip(
   sourcePath: string,
   sourceName: string,
@@ -230,7 +295,7 @@ export function useVideoTimeline({
 
       const clipDuration = target.timelineEnd - target.timelineStart;
       const trackId = normalizeVideoTrackId(target.trackId);
-      const newStart = findNextAvailableTimelineStart(
+      const newStart = findNearestAvailableTimelineStart(
         current,
         trackId,
         requestedTimelineStart,
@@ -269,7 +334,7 @@ export function useVideoTimeline({
 
       const clipDuration = target.timelineEnd - target.timelineStart;
       const requestedStart = requestedTimelineStart ?? target.timelineStart;
-      const timelineStart = findNextAvailableTimelineStart(
+      const timelineStart = findNearestAvailableTimelineStart(
         current,
         normalizedTrackId,
         requestedStart,

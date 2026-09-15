@@ -1,5 +1,7 @@
 import {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -31,6 +33,10 @@ import "./VideoPlayer.css";
 type SeekRequest = {
   time: number;
   id: number;
+};
+
+export type VideoPlayerHandle = {
+  setSkimPreviewTime: (time: number | null) => void;
 };
 
 type VideoPlayerProps = {
@@ -502,7 +508,7 @@ function programBoundsForClip(
   };
 }
 
-function VideoPlayer({
+const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer({
   videoPath,
   videoName,
   onChooseVideo,
@@ -524,9 +530,10 @@ function VideoPlayer({
   onSubtitleTextChange,
   onSubtitleStyleChange,
   onAllSubtitleStylesChange,
-}: VideoPlayerProps) {
+}, ref) {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [skimPreviewTime, setSkimPreviewTime] = useState<number | null>(null);
   const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
   const [videoDimensions, setVideoDimensions] = useState<
     Record<VideoTrackId, VideoDimensions>
@@ -560,6 +567,23 @@ function VideoPlayer({
   const trackSettingsRef = useRef(trackSettings);
   const isPlayingRef = useRef(false);
   const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
+  const displayTimeRef = useRef(currentTime);
+
+  useImperativeHandle(ref, () => ({
+    setSkimPreviewTime: (time: number | null) => {
+      if (isPlayingRef.current || time === null || !Number.isFinite(time)) {
+        setSkimPreviewTime(null);
+        return;
+      }
+
+      const maxDuration = Math.max(0, timelineDurationRef.current || 0);
+      setSkimPreviewTime(Math.max(0, Math.min(maxDuration, time)));
+    },
+  }), []);
+
+  const isSkimPreviewActive = !isPlaying && skimPreviewTime !== null;
+  const displayTime = isSkimPreviewActive ? skimPreviewTime : currentTime;
+  displayTimeRef.current = displayTime;
 
   const onTimeChangeRef = useRef(onTimeChange);
   const onDurationChangeRef = useRef(onDurationChange);
@@ -589,18 +613,18 @@ function VideoPlayer({
   const activeClipsByTrack = useMemo(() => {
     const result: Record<string, VideoTimelineClip | null> = {};
     for (const trackId of videoTrackIds) {
-      result[trackId] = findActiveVideoClip(videoClips, currentTime, trackId);
+      result[trackId] = findActiveVideoClip(videoClips, displayTime, trackId);
     }
     return result;
-  }, [currentTime, videoClips, videoTrackIds]);
+  }, [displayTime, videoClips, videoTrackIds]);
 
   const dissolvesByTrack = useMemo(() => {
     const result: Record<string, SameTrackDissolve | null> = {};
     for (const trackId of videoTrackIds) {
-      result[trackId] = findSameTrackDissolve(videoClips, currentTime, trackId);
+      result[trackId] = findSameTrackDissolve(videoClips, displayTime, trackId);
     }
     return result;
-  }, [currentTime, videoClips, videoTrackIds]);
+  }, [displayTime, videoClips, videoTrackIds]);
 
   const sourceUrlsByTrack = useMemo(() => {
     const result: Record<string, string | null> = {};
@@ -986,6 +1010,7 @@ function VideoPlayer({
     setCropModeClipId(null);
     cropStartRef.current = null;
     setProgramSnapGuides([]);
+    setSkimPreviewTime(null);
     isPlayingRef.current = true;
     setIsPlaying(true);
     syncAllMediaToTimeline(playbackStart, true, true);
@@ -994,6 +1019,7 @@ function VideoPlayer({
   useEffect(() => {
     setDuration(0);
     setIsPlaying(false);
+    setSkimPreviewTime(null);
     setVideoVisibility({});
 
     (Object.values(videoRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
@@ -1015,8 +1041,8 @@ function VideoPlayer({
       return;
     }
 
-    syncAllMediaToTimeline(currentTime, false, true);
-  }, [currentTime, isPlaying, videoClips, videoPath, duration, trackSettings]);
+    syncAllMediaToTimeline(displayTime, false, true);
+  }, [displayTime, isPlaying, videoClips, videoPath, duration, trackSettings]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -1086,7 +1112,7 @@ function VideoPlayer({
     activeVideoClipIdRefs.current[trackId] = null;
     syncVideoTrackToTimeline(
       trackId,
-      currentTimeRef.current,
+      isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
       isPlayingRef.current,
       true,
     );
@@ -1097,7 +1123,7 @@ function VideoPlayer({
     activeAudioClipIdRefs.current[audioTrackId] = null;
     syncAudioTrackToTimeline(
       videoTrackId,
-      currentTimeRef.current,
+      isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
       isPlayingRef.current,
       true,
     );
@@ -1779,7 +1805,7 @@ function VideoPlayer({
   return (
     <div className="video-player">
       <div className="video-player-toolbar">
-        {selectedActiveClip && selectedTrackVisible && (
+        {!isSkimPreviewActive && selectedActiveClip && selectedTrackVisible && (
           <div className="program-crop-toolbar" aria-label="Video crop controls">
             {!isCropModeActive ? (
               <button
@@ -1865,10 +1891,15 @@ function VideoPlayer({
                       ),
                       opacity:
                         (1 - dissolve.progress) *
-                        videoOpacityFadeFactor(dissolve.outgoing, currentTime),
+                        videoOpacityFadeFactor(dissolve.outgoing, displayTime),
                     }}
                     onLoadedMetadata={() =>
-                      syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)
+                      syncSameTrackDissolve(
+                        trackId,
+                        isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
+                        isPlayingRef.current,
+                        true,
+                      )
                     }
                   />
                   <video
@@ -1887,10 +1918,15 @@ function VideoPlayer({
                       ),
                       opacity:
                         dissolve.progress *
-                        videoOpacityFadeFactor(dissolve.incoming, currentTime),
+                        videoOpacityFadeFactor(dissolve.incoming, displayTime),
                     }}
                     onLoadedMetadata={() =>
-                      syncSameTrackDissolve(trackId, currentTimeRef.current, isPlayingRef.current, true)
+                      syncSameTrackDissolve(
+                        trackId,
+                        isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
+                        isPlayingRef.current,
+                        true,
+                      )
                     }
                   />
                 </div>
@@ -1921,7 +1957,7 @@ function VideoPlayer({
                       videoDimensions[trackId] ?? { width: 16, height: 9 },
                       shellDimensions,
                     ),
-                    ...videoTransitionStyle(clip, currentTime),
+                    ...videoTransitionStyle(clip, displayTime),
                   }}
                   onLoadedMetadata={() => handleVideoLoadedMetadata(trackId)}
                   onPointerDown={(event) =>
@@ -1947,7 +1983,7 @@ function VideoPlayer({
               </div>
             )}
 
-            {isProgramTransformActive && selectedActiveClip && selectedTrackVisible && (
+            {!isSkimPreviewActive && isProgramTransformActive && selectedActiveClip && selectedTrackVisible && (
               <div
                 className={[
                   "program-transform-layer",
@@ -2079,7 +2115,7 @@ function VideoPlayer({
 
             <VideoSubtitleOverlay
               subtitles={visibleSubtitles}
-              currentTime={currentTime}
+              currentTime={displayTime}
               videoTimeOffset={subtitleVideoTimeOffset}
               videoSourceKey={subtitleVideoSourceKey}
               selectedSubtitleId={selectedSubtitleId}
@@ -2113,6 +2149,6 @@ function VideoPlayer({
       )}
     </div>
   );
-}
+});
 
 export default VideoPlayer;

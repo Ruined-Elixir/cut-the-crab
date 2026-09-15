@@ -23,7 +23,7 @@ import { buildTimelineModel } from "../../utils/timelineModel";
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
 import TimelineTrackLabel from "./TimelineTrackLabel";
-import VideoTrack from "./VideoTrack";
+import VideoTrack, { type VideoMoveSnapTarget } from "./VideoTrack";
 import WaveformTrack from "./WaveformTrack";
 
 import "./Timeline.css";
@@ -44,6 +44,7 @@ type TimelineProps = {
   selectedVideoClipId: string | null;
 
   onSeek?: (time: number) => void;
+  onSkimPreviewChange?: (time: number | null) => void;
   onAddTrack?: (kind: TimelineTrackKind) => void;
   onClearSubtitleSelection?: () => void;
 
@@ -144,6 +145,7 @@ function Timeline({
   selectedSubtitleIds,
   selectedVideoClipId,
   onSeek,
+  onSkimPreviewChange,
   onAddTrack,
   onClearSubtitleSelection,
   onVideoClipSelect,
@@ -170,11 +172,25 @@ function Timeline({
   onAudioVolumeChange,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const skimmerRef = useRef<HTMLDivElement | null>(null);
+  const skimmerTimeRef = useRef<HTMLSpanElement | null>(null);
+  const skimmerFrameRef = useRef<number | null>(null);
+  const snapGuideRef = useRef<HTMLDivElement | null>(null);
+  const rangeDragRef = useRef<{
+    anchorTime: number;
+    startClientX: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressRangeClickRef = useRef(false);
   const previousZoomRef = useRef(zoom);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
   const [workspaceDuration, setWorkspaceDuration] = useState(30);
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
+  const [timelineRange, setTimelineRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
 
 
   /*
@@ -237,6 +253,25 @@ function Timeline({
     () => markers.map((marker) => marker.time).sort((a, b) => a - b),
     [markers],
   );
+
+  const videoMoveSnapTargets = useMemo<VideoMoveSnapTarget[]>(() => {
+    const clipTargets = videoClips.flatMap((clip) => [
+      { time: clip.timelineStart, kind: "clip" as const, clipId: clip.id },
+      { time: clip.timelineEnd, kind: "clip" as const, clipId: clip.id },
+    ]);
+
+    const markerTargets = markers.map((marker) => ({
+      time: marker.time,
+      kind: "marker" as const,
+    }));
+
+    return [
+      { time: 0, kind: "timeline" as const },
+      ...clipTargets,
+      ...markerTargets,
+      { time: currentTime, kind: "playhead" as const },
+    ];
+  }, [currentTime, markers, videoClips]);
 
   const timelineTracks = useMemo(
     () =>
@@ -416,6 +451,12 @@ function Timeline({
         return;
       }
 
+      if (event.key === "Escape" && timelineRange) {
+        event.preventDefault();
+        setTimelineRange(null);
+        return;
+      }
+
       if (event.key.toLowerCase() === "m") {
         event.preventDefault();
 
@@ -432,7 +473,7 @@ function Timeline({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [currentTime, workspaceDuration, markers]);
+  }, [currentTime, workspaceDuration, markers, timelineRange]);
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!event.metaKey && !event.ctrlKey) {
@@ -442,6 +483,251 @@ function Timeline({
     event.preventDefault();
     setTimelineZoom(zoom + (event.deltaY < 0 ? TIMELINE_ZOOM_STEP : -TIMELINE_ZOOM_STEP));
   };
+
+  const formatSkimmerTime = (time: number) => {
+    const safeTime = Math.max(0, Number.isFinite(time) ? time : 0);
+    const minutes = Math.floor(safeTime / 60);
+    const seconds = safeTime - minutes * 60;
+
+    return `${String(minutes).padStart(2, "0")}:${seconds
+      .toFixed(1)
+      .padStart(4, "0")}`;
+  };
+
+  const timelineTimeFromClientX = (clientX: number, element: HTMLElement) => {
+    if (workspaceDuration <= 0) {
+      return 0;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const ratio = Math.max(
+      0,
+      Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),
+    );
+
+    return ratio * workspaceDuration;
+  };
+
+  const setSnapGuideTime = (time: number | null) => {
+    const guide = snapGuideRef.current;
+
+    if (!guide) {
+      return;
+    }
+
+    if (time === null || workspaceDuration <= 0) {
+      guide.hidden = true;
+      return;
+    }
+
+    const safeTime = Math.max(0, Math.min(workspaceDuration, time));
+    guide.hidden = false;
+    guide.style.left = `${(safeTime / workspaceDuration) * 100}%`;
+  };
+
+  const startRangeHandleDrag = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    edge: "in" | "out",
+  ) => {
+    if (!timelineRange || workspaceDuration <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    hideSkimmer();
+
+    const content = event.currentTarget.closest(
+      ".timeline-content",
+    ) as HTMLElement | null;
+
+    if (!content) {
+      return;
+    }
+
+    const fixedStart = timelineRange.start;
+    const fixedEnd = timelineRange.end;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const time = timelineTimeFromClientX(moveEvent.clientX, content);
+
+      setTimelineRange(
+        edge === "in"
+          ? { start: Math.min(time, fixedEnd), end: fixedEnd }
+          : { start: fixedStart, end: Math.max(time, fixedStart) },
+      );
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleRangeMouseDownCapture = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0 || workspaceDuration <= 0) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    const editableSurface = target.closest(
+      ".timeline-ruler-scale, .video-track, .subtitle-track, .waveform-track",
+    );
+
+    if (!editableSurface) {
+      return;
+    }
+
+    if (
+      target.closest(
+        ".timeline-video-clip, .subtitle-clip, .audio-clip-label, .timeline-user-marker, .timeline-range-handle, button, input",
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const content = event.currentTarget;
+    const anchorTime = timelineTimeFromClientX(event.clientX, content);
+    rangeDragRef.current = {
+      anchorTime,
+      startClientX: event.clientX,
+      moved: false,
+    };
+    suppressRangeClickRef.current = true;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const drag = rangeDragRef.current;
+
+      if (!drag) {
+        return;
+      }
+
+      if (!drag.moved && Math.abs(moveEvent.clientX - drag.startClientX) < 4) {
+        return;
+      }
+
+      drag.moved = true;
+      hideSkimmer();
+      moveEvent.preventDefault();
+
+      const current = timelineTimeFromClientX(moveEvent.clientX, content);
+      setTimelineRange({
+        start: Math.min(drag.anchorTime, current),
+        end: Math.max(drag.anchorTime, current),
+      });
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      const drag = rangeDragRef.current;
+
+      if (drag) {
+        if (drag.moved) {
+          const current = timelineTimeFromClientX(upEvent.clientX, content);
+          setTimelineRange({
+            start: Math.min(drag.anchorTime, current),
+            end: Math.max(drag.anchorTime, current),
+          });
+        } else {
+          onSeek?.(drag.anchorTime);
+        }
+      }
+
+      rangeDragRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+
+      window.setTimeout(() => {
+        suppressRangeClickRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleRangeClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressRangeClickRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const hideSkimmer = () => {
+    if (skimmerFrameRef.current !== null) {
+      window.cancelAnimationFrame(skimmerFrameRef.current);
+      skimmerFrameRef.current = null;
+    }
+
+    if (skimmerRef.current) {
+      skimmerRef.current.hidden = true;
+    }
+
+    onSkimPreviewChange?.(null);
+  };
+
+  const handleSkimmerMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (workspaceDuration <= 0 || event.buttons !== 0) {
+      hideSkimmer();
+      return;
+    }
+
+    const content = event.currentTarget;
+    const rect = content.getBoundingClientRect();
+    const ratio = Math.max(
+      0,
+      Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)),
+    );
+    const time = ratio * workspaceDuration;
+
+    if (skimmerFrameRef.current !== null) {
+      window.cancelAnimationFrame(skimmerFrameRef.current);
+    }
+
+    skimmerFrameRef.current = window.requestAnimationFrame(() => {
+      skimmerFrameRef.current = null;
+
+      const skimmer = skimmerRef.current;
+      const label = skimmerTimeRef.current;
+
+      if (!skimmer || !label) {
+        return;
+      }
+
+      skimmer.hidden = false;
+      skimmer.style.left = `${ratio * 100}%`;
+      label.textContent = formatSkimmerTime(time);
+
+      // Keep the time badge inside the visible timeline at the extreme edges.
+      if (ratio < 0.045) {
+        label.style.transform = "translateX(6px)";
+      } else if (ratio > 0.955) {
+        label.style.transform = "translateX(calc(-100% - 6px))";
+      } else {
+        label.style.transform = "translateX(-50%)";
+      }
+
+      onSkimPreviewChange?.(time);
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (skimmerFrameRef.current !== null) {
+        window.cancelAnimationFrame(skimmerFrameRef.current);
+      }
+      onSkimPreviewChange?.(null);
+    };
+  }, [onSkimPreviewChange]);
 
   const renderTimelineTrack = (
     track: TimelineTrackModel,
@@ -467,6 +753,8 @@ function Timeline({
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
             onFadeChange={onVideoFadeChange}
+            snapTargets={videoMoveSnapTargets}
+            onSnapGuideChange={setSnapGuideTime}
           />
         );
 
@@ -620,6 +908,23 @@ function Timeline({
         </div>
 
         <div className="timeline-controls">
+          {timelineRange && (
+            <div className="timeline-range-summary" title="Selected timeline range">
+              <span>
+                {formatSkimmerTime(timelineRange.start)}–{formatSkimmerTime(timelineRange.end)}
+                <strong>{(timelineRange.end - timelineRange.start).toFixed(2)}s</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setTimelineRange(null)}
+                aria-label="Clear timeline range"
+                title="Clear range (Esc)"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           <div className="timeline-edit-actions" aria-label="Video clip actions">
             <button
               type="button"
@@ -701,6 +1006,10 @@ function Timeline({
             style={{
               width: `${timelineTrackWidthPx}px`,
             }}
+            onMouseMove={handleSkimmerMouseMove}
+            onMouseLeave={hideSkimmer}
+            onMouseDownCapture={handleRangeMouseDownCapture}
+            onClickCapture={handleRangeClickCapture}
           >
             <TimelineRuler
               duration={workspaceDuration}
@@ -709,6 +1018,45 @@ function Timeline({
               onSeek={onSeek}
               showLabelSpacer={false}
             />
+
+            <div
+              ref={skimmerRef}
+              className="timeline-skimmer"
+              hidden
+              aria-hidden="true"
+            >
+              <span className="timeline-skimmer-cap" />
+              <span ref={skimmerTimeRef} className="timeline-skimmer-time" />
+            </div>
+
+            {timelineRange && workspaceDuration > 0 && (
+              <div
+                className="timeline-range-selection"
+                style={{
+                  left: `${(timelineRange.start / workspaceDuration) * 100}%`,
+                  width: `${
+                    ((timelineRange.end - timelineRange.start) / workspaceDuration) * 100
+                  }%`,
+                }}
+                aria-label={`Selected range ${timelineRange.start.toFixed(2)} to ${timelineRange.end.toFixed(2)} seconds`}
+              >
+                <button
+                  type="button"
+                  className="timeline-range-handle in"
+                  onMouseDown={(event) => startRangeHandleDrag(event, "in")}
+                  aria-label="Adjust range in point"
+                />
+                <span className="timeline-range-duration">
+                  {(timelineRange.end - timelineRange.start).toFixed(2)}s
+                </span>
+                <button
+                  type="button"
+                  className="timeline-range-handle out"
+                  onMouseDown={(event) => startRangeHandleDrag(event, "out")}
+                  aria-label="Adjust range out point"
+                />
+              </div>
+            )}
 
             <div
               className="timeline-track-stack"
@@ -752,6 +1100,15 @@ function Timeline({
                     <span className="timeline-user-marker-cap" />
                   </button>
                 ))}
+              </div>
+
+              <div
+                ref={snapGuideRef}
+                className="timeline-video-snap-guide"
+                hidden
+                aria-hidden="true"
+              >
+                <span />
               </div>
 
               <div

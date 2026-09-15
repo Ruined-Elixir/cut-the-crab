@@ -15,6 +15,12 @@ import { getActiveMediaDrag } from "../../utils/mediaDrag";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
+export type VideoMoveSnapTarget = {
+  time: number;
+  kind: "clip" | "playhead" | "marker" | "timeline";
+  clipId?: string;
+};
+
 type VideoTrackProps = {
   duration: number;
   currentTime: number;
@@ -52,9 +58,12 @@ type VideoTrackProps = {
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
   onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  snapTargets?: VideoMoveSnapTarget[];
+  onSnapGuideChange?: (time: number | null) => void;
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
+const VIDEO_MOVE_SNAP_THRESHOLD_PX = 6;
 
 function clearExternalTrackPreview() {
   document
@@ -100,6 +109,8 @@ function VideoTrack({
   onToggleHidden,
   onTransitionChange,
   onFadeChange,
+  snapTargets = [],
+  onSnapGuideChange,
   showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
@@ -173,13 +184,57 @@ function VideoTrack({
     const originalStart = clip.timelineStart;
     const clipDuration = clip.timelineEnd - clip.timelineStart;
     const width = trackElement.getBoundingClientRect().width;
+    const snapThresholdSeconds =
+      (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
     let latestTimelineStart = originalStart;
+
+    const resolveSnappedStart = (rawStart: number) => {
+      const rawEnd = rawStart + clipDuration;
+      let bestDistance = snapThresholdSeconds + Number.EPSILON;
+      let bestStart = rawStart;
+      let bestTargetTime: number | null = null;
+
+      for (const target of snapTargets) {
+        if (target.clipId === clip.id) {
+          continue;
+        }
+
+        const startDistance = Math.abs(rawStart - target.time);
+        if (startDistance < bestDistance) {
+          const candidateStart = rawStart + (target.time - rawStart);
+          if (candidateStart >= 0) {
+            bestDistance = startDistance;
+            bestStart = candidateStart;
+            bestTargetTime = target.time;
+          }
+        }
+
+        const endDistance = Math.abs(rawEnd - target.time);
+        if (endDistance < bestDistance) {
+          const candidateStart = rawStart + (target.time - rawEnd);
+          if (candidateStart >= 0) {
+            bestDistance = endDistance;
+            bestStart = candidateStart;
+            bestTargetTime = target.time;
+          }
+        }
+      }
+
+      if (bestDistance <= snapThresholdSeconds) {
+        return { start: bestStart, targetTime: bestTargetTime };
+      }
+
+      return { start: rawStart, targetTime: null };
+    };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaTime =
         ((moveEvent.clientX - startX) / width) * duration;
 
-      latestTimelineStart = Math.max(0, originalStart + deltaTime);
+      const rawStart = Math.max(0, originalStart + deltaTime);
+      const snapped = resolveSnappedStart(rawStart);
+      latestTimelineStart = snapped.start;
+      onSnapGuideChange?.(snapped.targetTime);
       onMove?.(clip.id, latestTimelineStart);
 
       const elements = document.elementsFromPoint(
@@ -241,6 +296,7 @@ function VideoTrack({
         }
       }
 
+      onSnapGuideChange?.(null);
       clearExternalTrackPreview();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
@@ -603,7 +659,13 @@ function VideoTrack({
               onClick={(event) => {
                 event.stopPropagation();
                 onSelect?.(clip.id);
-                onSeek?.(clip.timelineStart);
+
+                const trackElement = event.currentTarget.parentElement;
+                onSeek?.(
+                  trackElement
+                    ? timeFromClientX(event.clientX, trackElement)
+                    : clip.timelineStart,
+                );
               }}
             >
               <div
