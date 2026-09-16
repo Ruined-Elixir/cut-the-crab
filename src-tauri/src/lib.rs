@@ -266,6 +266,8 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let export_srt = MenuItemBuilder::with_id("file.export-srt", "Export SRT…").build(app)?;
     let export_video =
         MenuItemBuilder::with_id("file.export-video", "Export Styled Video…").build(app)?;
+    let export_range =
+        MenuItemBuilder::with_id("file.export-range", "Export Selected Range…").build(app)?;
 
     let undo_editor = MenuItemBuilder::with_id("edit.undo", "Undo")
         .accelerator("CmdOrCtrl+Z")
@@ -298,6 +300,12 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let select_all_editor = MenuItemBuilder::with_id("edit.select-all", "Select All")
         .accelerator("CmdOrCtrl+A")
         .build(app)?;
+
+    let delete_range =
+        MenuItemBuilder::with_id("edit.delete-range", "Delete Range").build(app)?;
+    let lift_range = MenuItemBuilder::with_id("edit.lift-range", "Lift Range").build(app)?;
+    let extract_range =
+        MenuItemBuilder::with_id("edit.extract-range", "Extract Range").build(app)?;
 
     let split_subtitle =
         MenuItemBuilder::with_id("edit.split-subtitle", "Split Subtitle at Playhead")
@@ -401,6 +409,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&export_srt)
         .separator()
         .item(&export_video)
+        .item(&export_range)
         .separator()
         .close_window_with_text("Close Window")
         .build()?;
@@ -414,6 +423,10 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&paste_editor)
         .item(&duplicate_editor)
         .item(&select_all_editor)
+        .separator()
+        .item(&delete_range)
+        .item(&lift_range)
+        .item(&extract_range)
         .separator()
         .item(&select_all_subtitles)
         .item(&deselect_all_subtitles)
@@ -492,6 +505,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "file.import-srt"
             | "file.export-srt"
             | "file.export-video"
+            | "file.export-range"
             | "edit.undo"
             | "edit.redo"
             | "edit.cut"
@@ -499,6 +513,9 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "edit.paste"
             | "edit.duplicate"
             | "edit.select-all"
+            | "edit.delete-range"
+            | "edit.lift-range"
+            | "edit.extract-range"
             | "edit.split-subtitle"
             | "edit.select-all-subtitles"
             | "edit.deselect-all-subtitles"

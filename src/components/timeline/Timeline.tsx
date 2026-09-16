@@ -19,6 +19,7 @@ import type {
 
 import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
 import { buildTimelineModel } from "../../utils/timelineModel";
+import type { TimelineRange } from "../../utils/timelineRangeEdits";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
@@ -38,6 +39,7 @@ type TimelineProps = {
   markers: TimelineMarker[];
   zoom: number;
   trackSettings: TimelineTrackSettings;
+  timelineRange: TimelineRange | null;
 
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
@@ -49,6 +51,11 @@ type TimelineProps = {
   onDeleteTrack?: (trackId: TimelineTrackId) => void;
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   onClearSubtitleSelection?: () => void;
+  onTimelineRangeChange?: (range: TimelineRange | null) => void;
+  onDeleteRange?: () => void;
+  onLiftRange?: () => void;
+  onExtractRange?: () => void;
+  onExportRange?: () => void;
 
   onVideoClipSelect?: (id: string) => void;
   onVideoClipMove?: (
@@ -140,6 +147,7 @@ function Timeline({
   markers,
   zoom,
   trackSettings,
+  timelineRange,
   selectedSubtitleId,
   selectedSubtitleIds,
   selectedVideoClipId,
@@ -149,6 +157,11 @@ function Timeline({
   onDeleteTrack,
   onPasteTargetChange,
   onClearSubtitleSelection,
+  onTimelineRangeChange,
+  onDeleteRange,
+  onLiftRange,
+  onExtractRange,
+  onExportRange,
   onVideoClipSelect,
   onVideoClipMove,
   onVideoClipResize,
@@ -185,11 +198,10 @@ function Timeline({
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
   const [workspaceDuration, setWorkspaceDuration] = useState(30);
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
-  const [timelineRange, setTimelineRange] = useState<{
-    start: number;
-    end: number;
-  } | null>(null);
 
+  const setTimelineRange = (range: TimelineRange | null) => {
+    onTimelineRangeChange?.(range);
+  };
 
   /*
    * Timeline scale is expressed as pixels per second. `scaleDuration` is the
@@ -977,14 +989,50 @@ function Timeline({
                 {formatSkimmerTime(timelineRange.start)}–{formatSkimmerTime(timelineRange.end)}
                 <strong>{(timelineRange.end - timelineRange.start).toFixed(2)}s</strong>
               </span>
-              <button
-                type="button"
-                onClick={() => setTimelineRange(null)}
-                aria-label="Clear timeline range"
-                title="Clear range (Esc)"
-              >
-                ×
-              </button>
+
+              <div className="timeline-range-actions" aria-label="Range edit actions">
+                <button
+                  type="button"
+                  className="timeline-range-command"
+                  onClick={onDeleteRange}
+                  title="Delete range and leave a gap (Delete / Backspace)"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="timeline-range-command"
+                  onClick={onLiftRange}
+                  title="Lift range and leave a gap"
+                >
+                  Lift
+                </button>
+                <button
+                  type="button"
+                  className="timeline-range-command"
+                  onClick={onExtractRange}
+                  title="Extract range and ripple later content left"
+                >
+                  Extract
+                </button>
+                <button
+                  type="button"
+                  className="timeline-range-command timeline-range-export"
+                  onClick={onExportRange}
+                  title="Export only the selected range"
+                >
+                  Export
+                </button>
+                <button
+                  type="button"
+                  className="timeline-range-clear"
+                  onClick={() => setTimelineRange(null)}
+                  aria-label="Clear timeline range"
+                  title="Clear range (Esc)"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           )}
 

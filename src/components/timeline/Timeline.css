@@ -1631,21 +1631,39 @@
   font-weight: 650;
 }
 
+.timeline-range-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .timeline-range-summary button {
-  width: 18px;
   height: 18px;
   padding: 0;
   border: 0;
   border-radius: 5px;
   background: transparent;
   color: rgba(255, 255, 255, 0.55);
-  font-size: 13px;
   line-height: 1;
 }
 
 .timeline-range-summary button:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.94);
+}
+
+.timeline-range-summary .timeline-range-command {
+  width: auto;
+  padding: 0 5px;
+  color: rgba(224, 234, 246, 0.72);
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.timeline-range-summary .timeline-range-clear {
+  width: 18px;
+  font-size: 13px;
 }
 
 .timeline-range-selection {

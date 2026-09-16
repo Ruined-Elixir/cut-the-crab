@@ -71,6 +71,11 @@ import {
   timelineTrackKindFromId,
   timelineTrackId,
 } from "./utils/timelineModel";
+import {
+  applyTimelineRangeEdit,
+  type TimelineRange,
+  type TimelineRangeEditMode,
+} from "./utils/timelineRangeEdits";
 
 import "./App.css";
 
@@ -437,6 +442,7 @@ function App() {
 
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineRange, setTimelineRange] = useState<TimelineRange | null>(null);
   const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(() => ({
     ...DEFAULT_TIMELINE_TRACK_SETTINGS,
   }));
@@ -756,6 +762,50 @@ function App() {
     duplicateVideoClip(selectedVideoClipId);
     return true;
   };
+
+  const applySelectedTimelineRangeEdit = (mode: TimelineRangeEditMode) => {
+    if (!timelineRange) {
+      return false;
+    }
+
+    const result = applyTimelineRangeEdit({
+      range: timelineRange,
+      mode,
+      videoClips,
+      subtitles,
+      markers,
+      trackSettings,
+    });
+
+    if (!result.changed) {
+      return false;
+    }
+
+    const editStart = timelineRange.start;
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    clearVideoClipSelection();
+    replaceVideoClips(result.videoClips);
+    replaceSubtitles(result.subtitles);
+    setMarkers(result.markers);
+    setTimelineRange(null);
+    timelinePasteTargetRef.current = null;
+    requestSeek(editStart);
+
+    return true;
+  };
+
+  // Delete Range and Lift intentionally share the same gap-preserving edit.
+  // Extract uses the same cut boundaries, then ripples later unlocked content.
+  const deleteTimelineRangeWithHistory = () =>
+    applySelectedTimelineRangeEdit("lift");
+
+  const liftTimelineRangeWithHistory = () =>
+    applySelectedTimelineRangeEdit("lift");
+
+  const extractTimelineRangeWithHistory = () =>
+    applySelectedTimelineRangeEdit("extract");
 
   const handleVideoClipSelect = (id: string) => {
     selectVideoClip(id);
@@ -1391,6 +1441,7 @@ function App() {
     setVideoName(name);
     setVideoPath(path);
     setMediaAssets([]);
+    setTimelineRange(null);
 
     replaceSubtitles([]);
     replaceVideoClips([]);
@@ -1992,20 +2043,29 @@ function App() {
   // Exporting
   // ==========================================================================
 
-  const handleExportStyledVideo = async () => {
+  const handleExportStyledVideo = async (
+    range: TimelineRange | null = null,
+  ) => {
     if (!videoPath || isExporting) {
       return;
     }
+
+    const isRangeExport = range !== null;
 
     try {
       const outputPath = await exportStyledVideo(videoPath, subtitles, {
         timelineDuration,
         videoClips,
         trackSettings,
+        range,
 
         onStart: () => {
           setExportProgress(0);
-          setExportStatus("Preparing edited timeline export...");
+          setExportStatus(
+            isRangeExport
+              ? "Preparing selected range export..."
+              : "Preparing edited timeline export...",
+          );
           setIsExporting(true);
         },
 
@@ -2019,13 +2079,31 @@ function App() {
         setExportProgress(100);
         setExportStatus("Export complete.");
 
-        console.log("Edited timeline exported:", outputPath);
+        console.log(
+          isRangeExport
+            ? "Selected timeline range exported:"
+            : "Edited timeline exported:",
+          outputPath,
+        );
       }
     } catch (error) {
-      console.error("Edited timeline export failed:", error);
+      console.error(
+        isRangeExport
+          ? "Selected timeline range export failed:"
+          : "Edited timeline export failed:",
+        error,
+      );
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleExportSelectedRange = async () => {
+    if (!timelineRange) {
+      return;
+    }
+
+    await handleExportStyledVideo(timelineRange);
   };
 
   const executeEditorEditCommand = async (
@@ -2135,6 +2213,10 @@ function App() {
         await handleExportStyledVideo();
         return;
 
+      case "file.export-range":
+        await handleExportSelectedRange();
+        return;
+
       case "edit.undo":
         await executeEditorEditCommand("undo");
         return;
@@ -2161,6 +2243,24 @@ function App() {
 
       case "edit.select-all":
         await executeEditorEditCommand("select-all");
+        return;
+
+      case "edit.delete-range":
+        if (screen === "editor") {
+          deleteTimelineRangeWithHistory();
+        }
+        return;
+
+      case "edit.lift-range":
+        if (screen === "editor") {
+          liftTimelineRangeWithHistory();
+        }
+        return;
+
+      case "edit.extract-range":
+        if (screen === "editor") {
+          extractTimelineRangeWithHistory();
+        }
         return;
 
       case "edit.split-subtitle":
@@ -2308,6 +2408,12 @@ function App() {
       const isEditingText = getEditableElement(event.target) !== null;
 
       if (!isEditingText && event.key === "Escape") {
+        if (timelineRange) {
+          event.preventDefault();
+          setTimelineRange(null);
+          return;
+        }
+
         if (selectedSubtitleIds.length > 0) {
           event.preventDefault();
           clearSubtitleSelection();
@@ -2412,6 +2518,12 @@ function App() {
         (event.key === "Delete" ||
           event.key === "Backspace")
       ) {
+        if (timelineRange) {
+          event.preventDefault();
+          deleteTimelineRangeWithHistory();
+          return;
+        }
+
         if (selectedVideoClipId) {
           event.preventDefault();
           deleteSelectedVideoClipWithHistory();
@@ -2549,6 +2661,7 @@ function App() {
     resizeSubtitle,
     markNextChangeImmediate,
     currentTime,
+    timelineRange,
     selectedVideoClipId,
     selectedVideoClip,
     selectedSubtitleId,
@@ -2700,12 +2813,20 @@ function App() {
         markers={markers}
         zoom={timelineZoom}
         trackSettings={trackSettings}
+        timelineRange={timelineRange}
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
         onAddTrack={handleAddTimelineTrack}
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
+        onTimelineRangeChange={setTimelineRange}
+        onDeleteRange={deleteTimelineRangeWithHistory}
+        onLiftRange={liftTimelineRangeWithHistory}
+        onExtractRange={extractTimelineRangeWithHistory}
+        onExportRange={() => {
+          void handleExportSelectedRange();
+        }}
         onClearSubtitleSelection={() => {
           clearSubtitleSelection();
           clearVideoClipSelection();

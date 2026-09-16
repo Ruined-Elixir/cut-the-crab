@@ -15,10 +15,16 @@ export type VideoExportProgress = {
   status: string;
 };
 
+export type ExportTimelineRange = {
+  start: number;
+  end: number;
+};
+
 type ExportTimelineVideoOptions = {
   timelineDuration: number;
   videoClips: VideoTimelineClip[];
   trackSettings: TimelineTrackSettings;
+  range?: ExportTimelineRange | null;
   onStart?: () => void;
   onProgress?: (progress: VideoExportProgress) => void;
 };
@@ -166,12 +172,60 @@ function audioTrackMuted(
   return !!trackSettings[audioTrackId]?.muted;
 }
 
+function normalizeExportRange(
+  range: ExportTimelineRange | null | undefined,
+  timelineDuration: number,
+) {
+  if (!range) {
+    return null;
+  }
+
+  const maxDuration = Math.max(0, timelineDuration);
+  const start = clamp(Math.min(range.start, range.end), 0, maxDuration);
+  const end = clamp(Math.max(range.start, range.end), 0, maxDuration);
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.001) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+function subtitlesForExportRange(
+  subtitles: Subtitle[],
+  range: ExportTimelineRange | null,
+) {
+  if (!range) {
+    return subtitles;
+  }
+
+  return subtitles.flatMap((subtitle) => {
+    const start = Math.max(subtitle.startTime, range.start);
+    const end = Math.min(subtitle.endTime, range.end);
+
+    if (end - start < 0.001) {
+      return [];
+    }
+
+    return [{
+      ...subtitle,
+      startTime: start - range.start,
+      endTime: end - range.start,
+    }];
+  });
+}
+
 function buildTimelineFilterGraph(
   videoClips: VideoTimelineClip[],
   trackSettings: TimelineTrackSettings,
   timelineDuration: number,
+  range?: ExportTimelineRange | null,
 ) {
   const safeDuration = Math.max(0.1, timelineDuration);
+  const exportRange = normalizeExportRange(range, safeDuration);
+  const outputDuration = exportRange
+    ? Math.max(0.001, exportRange.end - exportRange.start)
+    : safeDuration;
   const windows = buildRenderWindows(videoClips);
   const filterParts: string[] = [];
 
@@ -331,9 +385,20 @@ function buildTimelineFilterGraph(
     currentVideoLabel = nextLabel;
   }
 
-  filterParts.push(
-    `[${currentVideoLabel}]trim=duration=${n(safeDuration, 3)},fps=${OUTPUT_FPS}[vcomp]`,
-  );
+  if (exportRange) {
+    filterParts.push(
+      `[${currentVideoLabel}]trim=start=${n(exportRange.start)}:end=${n(
+        exportRange.end,
+      )},setpts=PTS-STARTPTS,fps=${OUTPUT_FPS}[vcomp]`,
+    );
+  } else {
+    filterParts.push(
+      `[${currentVideoLabel}]trim=duration=${n(
+        safeDuration,
+        3,
+      )},setpts=PTS-STARTPTS,fps=${OUTPUT_FPS}[vcomp]`,
+    );
+  }
 
   const audioLabels: string[] = [];
 
@@ -375,23 +440,40 @@ function buildTimelineFilterGraph(
     `anullsrc=r=48000:cl=stereo,atrim=duration=${n(safeDuration, 3)}[asilent]`,
   );
 
+  let mixedAudioLabel = "asilent";
+
   if (audioLabels.length > 0) {
     const mixInputs = ["asilent", ...audioLabels]
       .map((label) => `[${label}]`)
       .join("");
     filterParts.push(
-      `${mixInputs}amix=inputs=${audioLabels.length + 1}:duration=longest:normalize=0,atrim=duration=${n(
-        safeDuration,
-        3,
-      )}[aout]`,
+      `${mixInputs}amix=inputs=${
+        audioLabels.length + 1
+      }:duration=longest:normalize=0[amixed]`,
+    );
+    mixedAudioLabel = "amixed";
+  }
+
+  if (exportRange) {
+    filterParts.push(
+      `[${mixedAudioLabel}]atrim=start=${n(exportRange.start)}:end=${n(
+        exportRange.end,
+      )},asetpts=PTS-STARTPTS[aout]`,
     );
   } else {
-    filterParts.push(`[asilent]anull[aout]`);
+    filterParts.push(
+      `[${mixedAudioLabel}]atrim=duration=${n(
+        safeDuration,
+        3,
+      )},asetpts=PTS-STARTPTS[aout]`,
+    );
   }
 
   return {
     inputPaths,
     filterComplex: filterParts.join(";"),
+    outputDuration,
+    exportRange,
   };
 }
 
@@ -400,36 +482,57 @@ export async function exportStyledVideo(
   subtitles: Subtitle[],
   options: ExportTimelineVideoOptions,
 ): Promise<string | null> {
+  const normalizedRange = normalizeExportRange(
+    options.range,
+    options.timelineDuration,
+  );
+
   const outputPath = await save({
-    title: "Export Edited Timeline",
+    title: normalizedRange
+      ? "Export Selected Range"
+      : "Export Edited Timeline",
     filters: [
       {
         name: "MP4 Video",
         extensions: ["mp4"],
       },
     ],
-    defaultPath: "cut-the-crab-export.mp4",
+    defaultPath: normalizedRange
+      ? "cut-the-crab-range-export.mp4"
+      : "cut-the-crab-export.mp4",
   });
 
   if (!outputPath) {
     return null;
   }
 
+  const visibleSubtitles = options.trackSettings["subtitle-1"]?.hidden
+    ? []
+    : subtitles;
   const assContent = buildAssTrack(
-    options.trackSettings["subtitle-1"]?.hidden ? [] : subtitles,
+    subtitlesForExportRange(visibleSubtitles, normalizedRange),
   );
-  const { inputPaths, filterComplex } = buildTimelineFilterGraph(
-    options.videoClips,
-    options.trackSettings,
-    options.timelineDuration,
-  );
+  const { inputPaths, filterComplex, outputDuration } =
+    buildTimelineFilterGraph(
+      options.videoClips,
+      options.trackSettings,
+      options.timelineDuration,
+      normalizedRange,
+    );
 
   const resolvedInputs = inputPaths.length > 0 ? inputPaths : [videoPath];
 
   const unlisten = await listen<VideoExportProgress>(
     "video-export-progress",
     (event) => {
-      options.onProgress?.(event.payload);
+      const payload = normalizedRange && event.payload.status === "Rendering edited timeline..."
+        ? {
+            ...event.payload,
+            status: "Rendering selected range...",
+          }
+        : event.payload;
+
+      options.onProgress?.(payload);
     },
   );
 
@@ -444,7 +547,7 @@ export async function exportStyledVideo(
       videoPath,
       outputPath,
       assContent,
-      videoDuration: options.timelineDuration,
+      videoDuration: outputDuration,
       inputPaths: resolvedInputs,
       filterComplex,
     });
