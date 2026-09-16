@@ -5,6 +5,10 @@ import {
 
 import type { Subtitle } from "../../types/subtitle";
 import type { TimelineTrack, TimelineTrackId } from "../../types/timelineModel";
+import {
+  canShowNativeContextMenu,
+  showNativeContextMenu,
+} from "../../services/nativeContextMenu";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -31,6 +35,11 @@ type SubtitleTrackProps = {
     id: string,
     newStartTime: number,
   ) => void;
+  onSubtitleMoveToTrack?: (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newStartTime: number,
+  ) => void;
   onSubtitleGroupMove?: (
     ids: string[],
     anchorId: string,
@@ -43,6 +52,8 @@ type SubtitleTrackProps = {
   ) => void;
   onToggleLock?: (trackId: TimelineTrackId) => void;
   onToggleHidden?: (trackId: TimelineTrackId) => void;
+  onTrackActivate?: (trackId: TimelineTrackId) => void;
+  onRevealSubtitle?: (subtitle: Subtitle) => void;
   showLabel?: boolean;
 };
 
@@ -278,10 +289,13 @@ function SubtitleTrack({
   onSeek,
   onSubtitleSelect,
   onSubtitleMove,
+  onSubtitleMoveToTrack,
   onSubtitleGroupMove,
   onSubtitleResize,
   onToggleLock,
   onToggleHidden,
+  onTrackActivate,
+  onRevealSubtitle,
   showLabel = true,
 }: SubtitleTrackProps) {
   const [draggingSubtitleIds, setDraggingSubtitleIds] =
@@ -293,6 +307,8 @@ function SubtitleTrack({
     event: ReactMouseEvent<HTMLDivElement>,
     subtitle: Subtitle,
   ) => {
+    if (event.button !== 0) return;
+
     if (
       track.locked ||
       (event.target as HTMLElement).closest(
@@ -315,6 +331,7 @@ function SubtitleTrack({
       return;
     }
 
+    onTrackActivate?.(track.id);
     event.preventDefault();
     event.stopPropagation();
 
@@ -327,9 +344,13 @@ function SubtitleTrack({
     const isAlreadySelected =
       selectedSubtitleIds.includes(subtitle.id);
 
+    const trackSubtitleIds = new Set(subtitles.map((item) => item.id));
+    const selectedIdsOnTrack = selectedSubtitleIds.filter((id) =>
+      trackSubtitleIds.has(id),
+    );
     const groupIds =
-      isAlreadySelected && selectedSubtitleIds.length > 1
-        ? selectedSubtitleIds
+      isAlreadySelected && selectedIdsOnTrack.length > 1
+        ? selectedIdsOnTrack
         : [subtitle.id];
 
     if (!isAlreadySelected) {
@@ -355,6 +376,7 @@ function SubtitleTrack({
       trackWidth,
       duration,
     );
+    let latestStart = originalStart;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaTime =
@@ -409,6 +431,7 @@ function SubtitleTrack({
           duration,
         );
 
+        latestStart = safeAnchorStart;
         onSubtitleGroupMove?.(
           groupIds,
           subtitle.id,
@@ -426,15 +449,46 @@ function SubtitleTrack({
         duration,
       );
 
+      latestStart = newStart;
       onSubtitleMove?.(
         subtitle.id,
         newStart,
       );
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (upEvent: MouseEvent) => {
       setDraggingSubtitleIds([]);
       setSnapIndicator(null);
+
+      if (groupIds.length === 1) {
+        const target = document
+          .elementsFromPoint(upEvent.clientX, upEvent.clientY)
+          .find(
+            (element) =>
+              element instanceof HTMLElement &&
+              element.matches(
+                ".subtitle-track[data-subtitle-track-id]",
+              ),
+          );
+
+        if (target instanceof HTMLElement) {
+          const targetTrackId = target.dataset.subtitleTrackId;
+          const targetLocked = target.dataset.trackLocked === "true";
+
+          if (
+            targetTrackId &&
+            targetTrackId !== track.id &&
+            !targetLocked
+          ) {
+            onSubtitleMoveToTrack?.(
+              subtitle.id,
+              targetTrackId,
+              latestStart,
+            );
+            onTrackActivate?.(targetTrackId);
+          }
+        }
+      }
 
       window.removeEventListener(
         "mousemove",
@@ -625,6 +679,8 @@ function SubtitleTrack({
   const handleTrackClick = (
     event: ReactMouseEvent<HTMLDivElement>,
   ) => {
+    onTrackActivate?.(track.id);
+
     if (
       duration <= 0 ||
       event.detail > 1
@@ -663,6 +719,8 @@ function SubtitleTrack({
 
       <div
         className={["subtitle-track", track.locked ? "locked" : "", track.hidden ? "track-hidden" : ""].filter(Boolean).join(" ")}
+        data-subtitle-track-id={track.id}
+        data-track-locked={track.locked ? "true" : "false"}
         onClick={handleTrackClick}
       >
         {snapIndicator !== null && duration > 0 && (
@@ -721,8 +779,25 @@ function SubtitleTrack({
                 width: `${width}%`,
               }}
               title={subtitle.text}
+              onContextMenu={(event) => {
+                if (!onRevealSubtitle || !canShowNativeContextMenu()) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onTrackActivate?.(track.id);
+                onSubtitleSelect?.(subtitle.id, "single");
+                void showNativeContextMenu([
+                  {
+                    id: `subtitle.${subtitle.id}.reveal`,
+                    text: "Reveal in Timeline",
+                    action: () => onRevealSubtitle(subtitle),
+                  },
+                ]).catch((error) => {
+                  console.error("Failed to show native subtitle context menu:", error);
+                });
+              }}
               onClick={(event) => {
                 event.stopPropagation();
+                onTrackActivate?.(track.id);
 
                 onSubtitleSelect?.(
                   subtitle.id,

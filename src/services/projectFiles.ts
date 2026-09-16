@@ -1,16 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
+import {
+  DEFAULT_SUBTITLE_TRACK_ID,
+  getSubtitleTrackId,
+  type Subtitle,
+  type SubtitleTextAlign,
+} from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
-import type { AudioTimelineClip, TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
+import type {
+  AudioTimelineClip,
+  TimelineTrackSettings,
+  VideoTimelineClip,
+  VideoTransformKeyframeProperty,
+  VideoTransformKeyframes,
+} from "../types/timelineModel";
+import { normalizeVideoTransformKeyframes } from "../utils/videoTransformKeyframes";
+import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 15;
+export const CURRENT_PROJECT_VERSION = 18;
 
 export type SubtitleProject = {
   version: number;
@@ -57,6 +70,37 @@ function asOptionalString(value: unknown): string | undefined {
 
 function asOptionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+const VIDEO_KEYFRAME_PROPERTIES: VideoTransformKeyframeProperty[] = [
+  "positionX",
+  "positionY",
+  "scale",
+  "rotation",
+  "opacity",
+];
+
+function parseVideoTransformKeyframes(
+  value: unknown,
+  clipDuration: number,
+): VideoTransformKeyframes | undefined {
+  if (!isRecord(value)) return undefined;
+  const parsed: VideoTransformKeyframes = {};
+
+  for (const property of VIDEO_KEYFRAME_PROPERTIES) {
+    const rawChannel = value[property];
+    if (!Array.isArray(rawChannel)) continue;
+    const channel = rawChannel
+      .filter(isRecord)
+      .map((item) => ({
+        time: asNumber(item.time, Number.NaN),
+        value: asNumber(item.value, Number.NaN),
+      }))
+      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
+    if (channel.length > 0) parsed[property] = channel;
+  }
+
+  return normalizeVideoTransformKeyframes(parsed, clipDuration);
 }
 
 function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
@@ -151,6 +195,10 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
       typeof value.id === "string" && value.id.length > 0
         ? value.id
         : `recovered-${index}-${crypto.randomUUID()}`,
+    trackId:
+      typeof value.trackId === "string" && /^subtitle-\d+$/.test(value.trackId)
+        ? value.trackId
+        : DEFAULT_SUBTITLE_TRACK_ID,
     startTime,
     endTime,
     text,
@@ -250,10 +298,16 @@ function normalizeVideoClip(
     sourceIn,
     sourceOut,
     sourceDuration: asOptionalNumber(value.sourceDuration),
+    playbackRate: normalizeVideoPlaybackRate(asOptionalNumber(value.playbackRate)),
     positionX: asOptionalNumber(value.positionX) ?? 0,
     positionY: asOptionalNumber(value.positionY) ?? 0,
     scale: Math.max(10, Math.min(400, asNumber(value.scale, 100))),
     rotation: Math.max(-180, Math.min(180, asNumber(value.rotation, 0))),
+    opacity: Math.max(0, Math.min(100, asNumber(value.opacity, 100))),
+    transformKeyframes: parseVideoTransformKeyframes(
+      value.transformKeyframes,
+      timelineEnd - timelineStart,
+    ),
     cropTop: Math.max(0, Math.min(49, asNumber(value.cropTop, 0))),
     cropRight: Math.max(0, Math.min(49, asNumber(value.cropRight, 0))),
     cropBottom: Math.max(0, Math.min(49, asNumber(value.cropBottom, 0))),
@@ -386,6 +440,7 @@ function normalizeProject(
   const subtitles = value.subtitles
     .map((subtitle, index) => normalizeSubtitle(subtitle, index))
     .filter((subtitle): subtitle is Subtitle => subtitle !== null)
+    .map((subtitle) => ({ ...subtitle, trackId: getSubtitleTrackId(subtitle) }))
     .sort((a, b) => a.startTime - b.startTime);
 
   const markers = Array.isArray(value.markers)
@@ -431,6 +486,16 @@ function normalizeProject(
     : [];
 
   const normalizedTrackSettings = normalizeTrackSettings(value.trackSettings);
+
+  // v16 persists subtitle ownership on each subtitle. Ensure every subtitle
+  // track referenced by project data has a corresponding control state even
+  // if the saved settings object was incomplete.
+  for (const subtitle of subtitles) {
+    const trackId = getSubtitleTrackId(subtitle);
+    if (!normalizedTrackSettings[trackId]) {
+      normalizedTrackSettings[trackId] = { locked: false, hidden: false };
+    }
+  }
 
   // v14 and older implicitly paired Vn with An. Preserve that behavior by
   // turning it into explicit links during migration. v15+ stores the links.

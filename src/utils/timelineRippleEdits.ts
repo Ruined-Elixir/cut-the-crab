@@ -1,4 +1,9 @@
 import type { TimelineTrackId, VideoTimelineClip } from "../types/timelineModel";
+import {
+  mergeVideoTransformKeyframes,
+  sliceVideoTransformKeyframes,
+} from "./videoTransformKeyframes";
+import { timelineDeltaToSourceDelta } from "./videoRetime";
 
 const EPSILON = 0.000001;
 
@@ -37,10 +42,12 @@ function sameContinuousClipProperties(
     left.sourcePath === right.sourcePath &&
     left.sourceName === right.sourceName &&
     optionalNumberEqual(left.sourceDuration, right.sourceDuration, -1) &&
+    optionalNumberEqual(left.playbackRate, right.playbackRate, 1) &&
     optionalNumberEqual(left.positionX, right.positionX, 0) &&
     optionalNumberEqual(left.positionY, right.positionY, 0) &&
     optionalNumberEqual(left.scale, right.scale, 100) &&
     optionalNumberEqual(left.rotation, right.rotation, 0) &&
+    optionalNumberEqual(left.opacity, right.opacity, 100) &&
     optionalNumberEqual(left.cropTop, right.cropTop, 0) &&
     optionalNumberEqual(left.cropRight, right.cropRight, 0) &&
     optionalNumberEqual(left.cropBottom, right.cropBottom, 0) &&
@@ -88,6 +95,7 @@ function mergeAutoHealPair(
     ...left,
     timelineEnd: right.timelineEnd,
     sourceOut: right.sourceOut,
+    transformKeyframes: mergeVideoTransformKeyframes(left, right),
     // The internal Ripple boundary disappears. Keep the real outer-right edge
     // settings from the right fragment and the real outer-left edge settings
     // already carried by the left fragment.
@@ -176,7 +184,8 @@ function splitClipForRippleInsert(
     return [];
   }
 
-  const sourceSplit = clip.sourceIn + (insertTime - clip.timelineStart);
+  const sourceSplit =
+    clip.sourceIn + timelineDeltaToSourceDelta(clip, insertTime - clip.timelineStart);
   const rightId = createSplitId(clip);
   const boundaryId = `ripple-heal:${rightId}`;
 
@@ -184,6 +193,11 @@ function splitClipForRippleInsert(
     ...clip,
     timelineEnd: insertTime,
     sourceOut: sourceSplit,
+    transformKeyframes: sliceVideoTransformKeyframes(
+      clip,
+      clip.timelineStart,
+      insertTime,
+    ),
     transitionOutType: "none",
     videoFadeOutDuration: 0,
     audioFadeOutDuration: 0,
@@ -196,6 +210,11 @@ function splitClipForRippleInsert(
     timelineStart: insertTime + openedDuration,
     timelineEnd: clip.timelineEnd + openedDuration,
     sourceIn: sourceSplit,
+    transformKeyframes: sliceVideoTransformKeyframes(
+      clip,
+      insertTime,
+      clip.timelineEnd,
+    ),
     transitionInType: "none",
     videoFadeInDuration: 0,
     audioFadeInDuration: 0,

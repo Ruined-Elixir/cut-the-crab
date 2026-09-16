@@ -2,14 +2,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 
-import type { Subtitle } from "../types/subtitle";
+import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type {
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
+  VideoTransformKeyframeProperty,
 } from "../types/timelineModel";
 
 import { buildAssTrack } from "../utils/assSubtitles";
+import { videoPlaybackRate } from "../utils/videoRetime";
+import {
+  baseVideoTransformValue,
+  hasVideoTransformKeyframes,
+  videoTransformChannel,
+} from "../utils/videoTransformKeyframes";
 
 export type VideoExportProgress = {
   progress: number;
@@ -56,6 +63,60 @@ function clamp(value: number, min: number, max: number) {
 
 function n(value: number, digits = 4) {
   return Number.isFinite(value) ? value.toFixed(digits) : "0";
+}
+
+function atempoFilters(rate: number) {
+  const filters: string[] = [];
+  let remaining = Math.max(0.01, rate);
+
+  while (remaining < 0.5 - 0.000001) {
+    filters.push("atempo=0.5");
+    remaining /= 0.5;
+  }
+
+  while (remaining > 2 + 0.000001) {
+    filters.push("atempo=2");
+    remaining /= 2;
+  }
+
+  if (Math.abs(remaining - 1) > 0.000001) {
+    filters.push(`atempo=${n(remaining, 6)}`);
+  }
+
+  return filters;
+}
+
+function ffmpegKeyframeExpression(
+  clip: VideoTimelineClip,
+  property: VideoTransformKeyframeProperty,
+  timeExpression: string,
+  valueMultiplier = 1,
+) {
+  const channel = [...videoTransformChannel(clip, property)].sort(
+    (a, b) => a.time - b.time,
+  );
+  const scaled = (value: number) => n(value * valueMultiplier, 6);
+
+  if (channel.length === 0) {
+    return scaled(baseVideoTransformValue(clip, property));
+  }
+  if (channel.length === 1) {
+    return scaled(channel[0].value);
+  }
+
+  let expression = scaled(channel[channel.length - 1].value);
+  for (let index = channel.length - 2; index >= 0; index -= 1) {
+    const left = channel[index];
+    const right = channel[index + 1];
+    const span = Math.max(0.000001, right.time - left.time);
+    const leftValue = left.value * valueMultiplier;
+    const rightValue = right.value * valueMultiplier;
+    const interpolated = `${n(leftValue, 6)}+(${n(rightValue - leftValue, 6)})*(${timeExpression}-${n(left.time, 6)})/${n(span, 6)}`;
+    expression = `if(lt(${timeExpression},${n(right.time, 6)}),${interpolated},${expression})`;
+  }
+
+  const first = channel[0];
+  return `if(lt(${timeExpression},${n(first.time, 6)}),${scaled(first.value)},${expression})`;
 }
 
 function clipDuration(clip: VideoTimelineClip) {
@@ -126,11 +187,16 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
         : requestedDuration;
 
       const half = duration / 2;
+      const outgoingRate = videoPlaybackRate(outgoing);
+      const incomingRate = videoPlaybackRate(incoming);
+      const outgoingSourceHalf = half * outgoingRate;
+      const incomingSourceHalf = half * incomingRate;
       const outgoingSourceDuration = outgoing.sourceDuration ?? outgoing.sourceOut;
       const incomingSourceDuration = incoming.sourceDuration ?? incoming.sourceOut;
 
-      const hasOutgoingHandle = outgoing.sourceOut + half <= outgoingSourceDuration + EPSILON;
-      const hasIncomingHandle = incoming.sourceIn - half >= -EPSILON;
+      const hasOutgoingHandle =
+        outgoing.sourceOut + outgoingSourceHalf <= outgoingSourceDuration + EPSILON;
+      const hasIncomingHandle = incoming.sourceIn - incomingSourceHalf >= -EPSILON;
 
       if (!hasOutgoingHandle || !hasIncomingHandle || incomingSourceDuration <= 0) {
         continue;
@@ -139,14 +205,17 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
       const outgoingWindow = windows.get(outgoing.id)!;
       const incomingWindow = windows.get(incoming.id)!;
 
-      outgoingWindow.sourceOut = Math.min(outgoingSourceDuration, outgoing.sourceOut + half);
+      outgoingWindow.sourceOut = Math.min(
+        outgoingSourceDuration,
+        outgoing.sourceOut + outgoingSourceHalf,
+      );
       outgoingWindow.timelineEnd = outgoing.timelineEnd + half;
       outgoingWindow.transitionOutCross = {
         start: Math.max(0, clipDuration(outgoing) - half),
         duration,
       };
 
-      incomingWindow.sourceIn = Math.max(0, incoming.sourceIn - half);
+      incomingWindow.sourceIn = Math.max(0, incoming.sourceIn - incomingSourceHalf);
       incomingWindow.timelineStart = Math.max(0, incoming.timelineStart - half);
       incomingWindow.transitionInCross = {
         start: 0,
@@ -291,7 +360,11 @@ function buildTimelineFilterGraph(
     const window = windows.get(clip.id)!;
     const inputIndex = clipInputIndex.get(clip.id)!;
     const label = `vclip${index}`;
-    const localDuration = Math.max(0.001, window.sourceOut - window.sourceIn);
+    const playbackRate = videoPlaybackRate(clip);
+    const localDuration = Math.max(
+      0.001,
+      (window.sourceOut - window.sourceIn) / playbackRate,
+    );
 
     const cropTop = clamp(clip.cropTop ?? 0, 0, 49) / 100;
     const cropRight = clamp(clip.cropRight ?? 0, 0, 49) / 100;
@@ -302,10 +375,15 @@ function buildTimelineFilterGraph(
 
     const scale = clamp(clip.scale ?? 100, 10, 400) / 100;
     const rotation = clamp(clip.rotation ?? 0, -180, 180);
+    const opacity = clamp(clip.opacity ?? 100, 0, 100) / 100;
+    const localTimeExpression = `(t+${n(window.timelineStart - clip.timelineStart, 6)})`;
+    const scaleAnimated = hasVideoTransformKeyframes(clip, "scale");
+    const rotationAnimated = hasVideoTransformKeyframes(clip, "rotation");
+    const opacityAnimated = hasVideoTransformKeyframes(clip, "opacity");
 
     const videoFilters: string[] = [
       `trim=start=${n(window.sourceIn)}:end=${n(window.sourceOut)}`,
-      "setpts=PTS-STARTPTS",
+      `setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`,
       `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease`,
       "format=rgba",
     ];
@@ -323,14 +401,51 @@ function buildTimelineFilterGraph(
       );
     }
 
-    if (Math.abs(scale - 1) > 0.0001) {
-      videoFilters.push(`scale=iw*${n(scale)}:ih*${n(scale)}`);
+    if (opacityAnimated) {
+      const opacityTimeExpression = `(T+${n(window.timelineStart - clip.timelineStart, 6)})`;
+      const opacityExpression = ffmpegKeyframeExpression(
+        clip,
+        "opacity",
+        opacityTimeExpression,
+        0.01,
+      );
+      videoFilters.push(
+        `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*(${opacityExpression})'`,
+      );
+    } else if (opacity < 0.9999) {
+      videoFilters.push(`colorchannelmixer=aa=${n(opacity, 6)}`);
     }
 
-    if (Math.abs(rotation) > 0.001) {
+    if (rotationAnimated) {
+      const rotationExpression = ffmpegKeyframeExpression(
+        clip,
+        "rotation",
+        localTimeExpression,
+      );
+      videoFilters.push(
+        `rotate='(${rotationExpression})*PI/180':ow=hypot(iw\\,ih):oh=ow:c=black@0`,
+      );
+    } else if (Math.abs(rotation) > 0.001) {
       videoFilters.push(
         `rotate=${n(rotation)}*PI/180:ow=rotw(iw):oh=roth(ih):c=black@0`,
       );
+    }
+
+    // Uniform scale and rotation commute. Scaling after rotation keeps the
+    // rotate canvas based on a stable input size, which avoids clipping when
+    // an animated Scale channel grows later in the clip.
+    if (scaleAnimated) {
+      const scaleExpression = ffmpegKeyframeExpression(
+        clip,
+        "scale",
+        localTimeExpression,
+        0.01,
+      );
+      videoFilters.push(
+        `scale=w='iw*(${scaleExpression})':h='ih*(${scaleExpression})':eval=frame`,
+      );
+    } else if (Math.abs(scale - 1) > 0.0001) {
+      videoFilters.push(`scale=iw*${n(scale)}:ih*${n(scale)}`);
     }
 
     const transitionInType = clip.transitionInType ?? "none";
@@ -409,8 +524,19 @@ function buildTimelineFilterGraph(
   for (let index = 0; index < orderedVideoClips.length; index += 1) {
     const clip = orderedVideoClips[index];
     const nextLabel = `vstack${index}`;
-    const x = `(main_w-overlay_w)/2+(${n(clip.positionX ?? 0)}/100)*main_w`;
-    const y = `(main_h-overlay_h)/2+(${n(clip.positionY ?? 0)}/100)*main_h`;
+    const overlayLocalTime = `(t-${n(clip.timelineStart, 6)})`;
+    const positionXExpression = ffmpegKeyframeExpression(
+      clip,
+      "positionX",
+      overlayLocalTime,
+    );
+    const positionYExpression = ffmpegKeyframeExpression(
+      clip,
+      "positionY",
+      overlayLocalTime,
+    );
+    const x = `(main_w-overlay_w)/2+((${positionXExpression})/100)*main_w`;
+    const y = `(main_h-overlay_h)/2+((${positionYExpression})/100)*main_h`;
 
     filterParts.push(
       `[${currentVideoLabel}][${overlayLabels[index]}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
@@ -450,6 +576,7 @@ function buildTimelineFilterGraph(
     const filters = [
       `atrim=start=${n(clip.sourceIn)}:end=${n(clip.sourceOut)}`,
       "asetpts=PTS-STARTPTS",
+      ...atempoFilters(videoPlaybackRate(clip)),
       `volume=${n(volume)}`,
     ];
 
@@ -571,9 +698,9 @@ export async function exportStyledVideo(
     return null;
   }
 
-  const visibleSubtitles = options.trackSettings["subtitle-1"]?.hidden
-    ? []
-    : subtitles;
+  const visibleSubtitles = subtitles.filter(
+    (subtitle) => !options.trackSettings[getSubtitleTrackId(subtitle)]?.hidden,
+  );
   const assContent = buildAssTrack(
     subtitlesForExportRange(visibleSubtitles, normalizedRange),
   );

@@ -26,6 +26,23 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+export type VideoTransformKeyframeProperty =
+  | "positionX"
+  | "positionY"
+  | "scale"
+  | "rotation"
+  | "opacity";
+
+export type VideoTransformKeyframe = {
+  /** Time in seconds relative to the clip's timelineStart. */
+  time: number;
+  value: number;
+};
+
+export type VideoTransformKeyframes = Partial<
+  Record<VideoTransformKeyframeProperty, VideoTransformKeyframe[]>
+>;
+
 export type VideoTimelineClip = TimelineClipBase & {
   kind: "video";
   sourceId: string;
@@ -34,10 +51,14 @@ export type VideoTimelineClip = TimelineClipBase & {
   sourceIn: number;
   sourceOut: number;
   sourceDuration?: number;
+  /** Source seconds consumed per one timeline second. 1 = normal speed. */
+  playbackRate?: number;
   positionX?: number;
   positionY?: number;
   scale?: number;
   rotation?: number;
+  opacity?: number;
+  transformKeyframes?: VideoTransformKeyframes;
   cropTop?: number;
   cropRight?: number;
   cropBottom?: number;
@@ -75,6 +96,8 @@ export type AudioTimelineClip = TimelineClipBase & {
   sourceIn: number;
   sourceOut: number;
   sourceDuration?: number;
+  /** Used by linked video audio; standalone audio currently remains at 1x. */
+  playbackRate?: number;
   linkedVideoClipId?: string;
   volume?: number;
   muted?: boolean;

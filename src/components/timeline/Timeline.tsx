@@ -1,12 +1,14 @@
 import {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import type { Subtitle } from "../../types/subtitle";
+import { getSubtitleTrackId, type Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
 import type {
   AudioTimelineClip,
@@ -21,6 +23,7 @@ import type {
 import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
 import { buildTimelineModel } from "../../utils/timelineModel";
 import type { TimelineRange } from "../../utils/timelineRangeEdits";
+import { videoPlaybackRate } from "../../utils/videoRetime";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
@@ -29,6 +32,20 @@ import VideoTrack, { type VideoMoveSnapTarget } from "./VideoTrack";
 import WaveformTrack from "./WaveformTrack";
 
 import "./Timeline.css";
+
+export type TimelineHandle = {
+  revealSelection: () => boolean;
+  frameSelection: () => boolean;
+  revealVideoClip: (id: string) => boolean;
+  revealAudioClip: (id: string) => boolean;
+  revealSubtitle: (id: string) => boolean;
+};
+
+type TimelineRevealTarget = {
+  start: number;
+  end: number;
+  trackId: TimelineTrackId;
+};
 
 type TimelineProps = {
   duration: number;
@@ -50,6 +67,7 @@ type TimelineProps = {
   selectedVideoClipIds: string[];
   selectedAudioClipId: string | null;
   selectedAudioClipIds: string[];
+  activeSubtitleTrackId: TimelineTrackId;
 
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
@@ -77,6 +95,7 @@ type TimelineProps = {
     newTimelineStart: number,
     newTimelineEnd: number,
   ) => void;
+  onVideoPlaybackRateChange?: (id: string, playbackRate: number) => void;
   onVideoClipMoveToTrack?: (
     id: string,
     targetTrackId: TimelineTrackId,
@@ -103,6 +122,12 @@ type TimelineProps = {
     mode?: "single" | "toggle" | "range",
   ) => void;
   onSubtitleMove?: (id: string, newStartTime: number) => void;
+  onSubtitleMoveToTrack?: (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newStartTime: number,
+  ) => void;
+  onSubtitleTrackActivate?: (trackId: TimelineTrackId) => void;
   onSubtitleGroupMove?: (
     ids: string[],
     anchorId: string,
@@ -158,7 +183,7 @@ export function clampTimelineZoom(value: number) {
   return Math.max(MIN_TIMELINE_ZOOM, Math.min(MAX_TIMELINE_ZOOM, value));
 }
 
-function Timeline({
+const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   duration,
   scaleDuration,
   currentTime,
@@ -177,6 +202,7 @@ function Timeline({
   selectedVideoClipIds,
   selectedAudioClipId,
   selectedAudioClipIds,
+  activeSubtitleTrackId,
   onSeek,
   onSkimPreviewChange,
   onAddTrack,
@@ -195,6 +221,7 @@ function Timeline({
   onVideoClipMoveEnd,
   onVideoClipMove,
   onVideoClipResize,
+  onVideoPlaybackRateChange,
   onVideoClipMoveToTrack,
   onCopyVideoClip,
   onAudioClipSelect,
@@ -208,6 +235,8 @@ function Timeline({
   onStandaloneAudioMuteChange,
   onSubtitleSelect,
   onSubtitleMove,
+  onSubtitleMoveToTrack,
+  onSubtitleTrackActivate,
   onSubtitleGroupMove,
   onSubtitleResize,
   onMarkersChange,
@@ -221,7 +250,8 @@ function Timeline({
   onAudioFadeChange,
   onAudioVolumeChange,
   onAudioMuteChange,
-}: TimelineProps) {
+}: TimelineProps, ref) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const skimmerRef = useRef<HTMLDivElement | null>(null);
   const skimmerTimeRef = useRef<HTMLSpanElement | null>(null);
@@ -242,6 +272,7 @@ function Timeline({
   } | null>(null);
   const suppressRangeClickRef = useRef(false);
   const previousZoomRef = useRef(zoom);
+  const pendingFrameTargetRef = useRef<TimelineRevealTarget | null>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
   const [workspaceDuration, setWorkspaceDuration] = useState(30);
@@ -379,6 +410,59 @@ function Timeline({
     ],
   );
 
+  const selectionRevealTarget = useMemo<TimelineRevealTarget | null>(() => {
+    if (selectedAudioClipIds.length > 0) {
+      const selected = audioClips.filter((clip) => selectedAudioClipIds.includes(clip.id));
+      if (selected.length > 0) {
+        const primary =
+          selected.find((clip) => clip.id === selectedAudioClipId) ?? selected[0];
+        return {
+          start: Math.min(...selected.map((clip) => clip.timelineStart)),
+          end: Math.max(...selected.map((clip) => clip.timelineEnd)),
+          trackId: primary.trackId,
+        };
+      }
+    }
+
+    if (selectedVideoClipIds.length > 0) {
+      const selected = videoClips.filter((clip) => selectedVideoClipIds.includes(clip.id));
+      if (selected.length > 0) {
+        const primary =
+          selected.find((clip) => clip.id === selectedVideoClipId) ?? selected[0];
+        return {
+          start: Math.min(...selected.map((clip) => clip.timelineStart)),
+          end: Math.max(...selected.map((clip) => clip.timelineEnd)),
+          trackId: primary.trackId,
+        };
+      }
+    }
+
+    if (selectedSubtitleIds.length > 0) {
+      const selected = subtitles.filter((subtitle) => selectedSubtitleIds.includes(subtitle.id));
+      if (selected.length > 0) {
+        const primary =
+          selected.find((subtitle) => subtitle.id === selectedSubtitleId) ?? selected[0];
+        return {
+          start: Math.min(...selected.map((subtitle) => subtitle.startTime)),
+          end: Math.max(...selected.map((subtitle) => subtitle.endTime)),
+          trackId: getSubtitleTrackId(primary),
+        };
+      }
+    }
+
+    return null;
+  }, [
+    audioClips,
+    selectedAudioClipId,
+    selectedAudioClipIds,
+    selectedSubtitleId,
+    selectedSubtitleIds,
+    selectedVideoClipId,
+    selectedVideoClipIds,
+    subtitles,
+    videoClips,
+  ]);
+
   const setTimelineZoom = (nextZoom: number) => {
     const clamped = Math.max(
       effectiveMinZoom,
@@ -486,6 +570,162 @@ function Timeline({
       }
     });
   };
+
+  const trackSelector = (trackId: TimelineTrackId) => {
+    if (trackId.startsWith("video-")) {
+      return `.video-track[data-video-track-id="${trackId}"]`;
+    }
+    if (trackId.startsWith("audio-")) {
+      return `.waveform-track[data-audio-track-id="${trackId}"]`;
+    }
+    return `.subtitle-track[data-subtitle-track-id="${trackId}"]`;
+  };
+
+  const revealTarget = (
+    target: TimelineRevealTarget,
+    options: { center?: boolean; behavior?: ScrollBehavior } = {},
+  ) => {
+    const scroll = scrollRef.current;
+    const body = bodyRef.current;
+    if (!scroll || !body || pixelsPerSecond <= 0) return false;
+
+    const safeStart = Math.max(0, Math.min(workspaceDuration, target.start));
+    const safeEnd = Math.max(safeStart, Math.min(workspaceDuration, target.end));
+    const startPx = safeStart * pixelsPerSecond;
+    const endPx = safeEnd * pixelsPerSecond;
+    const behavior = options.behavior ?? "smooth";
+    const horizontalMargin = Math.min(80, Math.max(24, scroll.clientWidth * 0.08));
+
+    let nextLeft = scroll.scrollLeft;
+    if (options.center) {
+      const centerPx = (startPx + endPx) / 2;
+      nextLeft = centerPx - scroll.clientWidth / 2;
+    } else if (startPx < scroll.scrollLeft + horizontalMargin) {
+      nextLeft = startPx - horizontalMargin;
+    } else if (endPx > scroll.scrollLeft + scroll.clientWidth - horizontalMargin) {
+      nextLeft = endPx - scroll.clientWidth + horizontalMargin;
+    }
+
+    const maxLeft = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+    nextLeft = Math.max(0, Math.min(maxLeft, nextLeft));
+    if (Math.abs(nextLeft - scroll.scrollLeft) > 1) {
+      scroll.scrollTo({ left: nextLeft, behavior });
+    }
+
+    const rowTrack = scroll.querySelector(trackSelector(target.trackId));
+    const row = rowTrack?.closest(".timeline-row");
+    if (row instanceof HTMLElement) {
+      const bodyRect = body.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const verticalMargin = 8;
+      let nextTop = body.scrollTop;
+
+      if (options.center) {
+        nextTop +=
+          rowRect.top + rowRect.height / 2 -
+          (bodyRect.top + bodyRect.height / 2);
+      } else if (rowRect.top < bodyRect.top + verticalMargin) {
+        nextTop += rowRect.top - bodyRect.top - verticalMargin;
+      } else if (rowRect.bottom > bodyRect.bottom - verticalMargin) {
+        nextTop += rowRect.bottom - bodyRect.bottom + verticalMargin;
+      }
+
+      const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+      nextTop = Math.max(0, Math.min(maxTop, nextTop));
+      if (Math.abs(nextTop - body.scrollTop) > 1) {
+        body.scrollTo({ top: nextTop, behavior });
+      }
+    }
+
+    return true;
+  };
+
+  const revealVideoClip = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+    return clip
+      ? revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+      : false;
+  };
+
+  const revealAudioClip = (id: string) => {
+    const clip = audioClips.find((item) => item.id === id);
+    return clip
+      ? revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+      : false;
+  };
+
+  const revealSubtitle = (id: string) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    return subtitle
+      ? revealTarget({
+          start: subtitle.startTime,
+          end: subtitle.endTime,
+          trackId: getSubtitleTrackId(subtitle),
+        })
+      : false;
+  };
+
+  const revealSelection = () =>
+    selectionRevealTarget ? revealTarget(selectionRevealTarget) : false;
+
+  const frameSelection = () => {
+    if (!selectionRevealTarget) return false;
+
+    const span = Math.max(0.05, selectionRevealTarget.end - selectionRevealTarget.start);
+    const paddedDuration = Math.max(0.5, span * 1.4);
+    const targetZoom = Math.max(
+      effectiveMinZoom,
+      Math.min(effectiveMaxZoom, scaleReferenceDuration / paddedDuration),
+    );
+
+    pendingFrameTargetRef.current = selectionRevealTarget;
+    if (Math.abs(targetZoom - zoom) > 0.0001) {
+      setTimelineZoom(targetZoom);
+    } else {
+      window.requestAnimationFrame(() => {
+        const pending = pendingFrameTargetRef.current;
+        pendingFrameTargetRef.current = null;
+        if (pending) revealTarget(pending, { center: true });
+      });
+    }
+
+    return true;
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      revealSelection,
+      frameSelection,
+      revealVideoClip,
+      revealAudioClip,
+      revealSubtitle,
+    }),
+  );
+
+  useEffect(() => {
+    if (!selectionRevealTarget) return;
+    revealTarget(selectionRevealTarget);
+  }, [
+    selectedAudioClipId,
+    selectedAudioClipIds,
+    selectedSubtitleId,
+    selectedSubtitleIds,
+    selectedVideoClipId,
+    selectedVideoClipIds,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingFrameTargetRef.current;
+    if (!pending) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      pendingFrameTargetRef.current = null;
+      revealTarget(pending, { center: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [zoom, pixelsPerSecond, timelineViewportWidth]);
 
   const addMarker = (time: number) => {
     if (workspaceDuration <= 0) {
@@ -968,6 +1208,9 @@ function Timeline({
             onPasteTargetChange={onPasteTargetChange}
             snapTargets={videoMoveSnapTargets}
             onSnapGuideChange={setSnapGuideTime}
+            onRevealClip={(clip) =>
+              revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+            }
           />
         );
 
@@ -977,7 +1220,9 @@ function Timeline({
             key={track.id}
             duration={workspaceDuration}
             track={track}
-            subtitles={subtitles}
+            subtitles={subtitles.filter(
+              (subtitle) => getSubtitleTrackId(subtitle) === track.id,
+            )}
             selectedSubtitleId={selectedSubtitleId}
             selectedSubtitleIds={selectedSubtitleIds}
             markerTimes={markerTimes}
@@ -985,11 +1230,20 @@ function Timeline({
             showLabel={false}
             onSubtitleSelect={onSubtitleSelect}
             onSubtitleMove={onSubtitleMove}
+            onSubtitleMoveToTrack={onSubtitleMoveToTrack}
+            onTrackActivate={onSubtitleTrackActivate}
             onSubtitleGroupMove={onSubtitleGroupMove}
             onSubtitleResize={onSubtitleResize}
             onSeek={onSeek}
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
+            onRevealSubtitle={(subtitle) =>
+              revealTarget({
+                start: subtitle.startTime,
+                end: subtitle.endTime,
+                trackId: getSubtitleTrackId(subtitle),
+              })
+            }
           />
         );
 
@@ -1020,6 +1274,9 @@ function Timeline({
             onStandaloneFadeChange={onStandaloneAudioFadeChange}
             onStandaloneVolumeChange={onStandaloneAudioVolumeChange}
             onStandaloneMuteChange={onStandaloneAudioMuteChange}
+            onRevealClip={(clip) =>
+              revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: track.id })
+            }
           />
         );
 
@@ -1027,6 +1284,34 @@ function Timeline({
         return null;
     }
   };
+
+  useEffect(() => {
+    const handleFrameShortcut = (event: KeyboardEvent) => {
+      const target = event.target;
+      const element = target instanceof HTMLElement ? target : null;
+      const editingText =
+        !!element?.closest("input, textarea, select, [contenteditable='true']") ||
+        element?.isContentEditable === true;
+
+      if (
+        editingText ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== "f"
+      ) {
+        return;
+      }
+
+      if (frameSelection()) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", handleFrameShortcut);
+    return () => window.removeEventListener("keydown", handleFrameShortcut);
+  });
 
   useEffect(() => {
     if (!addTrackMenuOpen) return;
@@ -1058,8 +1343,25 @@ function Timeline({
       (track.kind === "subtitle" && track.index > 1) ||
       (track.kind === "audio" && !isLinkedAudioTrack);
 
+    const isActiveSubtitleTrack =
+      track.kind === "subtitle" && track.id === activeSubtitleTrackId;
+
     return (
-      <div key={`label-${track.id}`} className={`timeline-fixed-label-row ${rowClass}`}>
+      <div
+        key={`label-${track.id}`}
+        className={[
+          "timeline-fixed-label-row",
+          rowClass,
+          isActiveSubtitleTrack ? "active-subtitle-track" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (track.kind === "subtitle") {
+            onSubtitleTrackActivate?.(track.id);
+          }
+        }}
+      >
         <TimelineTrackLabel
           shortLabel={track.shortLabel}
           name={track.name}
@@ -1101,6 +1403,10 @@ function Timeline({
   };
 
 
+  const singleSelectedVideoClip =
+    selectedVideoClipIds.length === 1
+      ? videoClips.find((clip) => clip.id === selectedVideoClipIds[0]) ?? null
+      : null;
 
   return (
     <section className="timeline-panel">
@@ -1230,6 +1536,36 @@ function Timeline({
             Ripple
           </button>
 
+          {singleSelectedVideoClip && (
+            <label
+              className="timeline-speed-control"
+              title={
+                rippleMode
+                  ? "Change clip speed; Ripple mode shifts later clips to match the new duration"
+                  : "Change clip speed; slower speeds require free space after the clip"
+              }
+            >
+              <span>Speed</span>
+              <select
+                value={videoPlaybackRate(singleSelectedVideoClip)}
+                disabled={trackSettings[singleSelectedVideoClip.trackId]?.locked}
+                onChange={(event) =>
+                  onVideoPlaybackRateChange?.(
+                    singleSelectedVideoClip.id,
+                    Number(event.target.value),
+                  )
+                }
+                aria-label="Selected video clip speed"
+              >
+                {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map((rate) => (
+                  <option key={rate} value={rate}>
+                    {rate}×
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <div className="timeline-edit-actions" aria-label="Video clip actions">
             <button
               type="button"
@@ -1262,6 +1598,17 @@ function Timeline({
             aria-label="Fit timeline content"
           >
             Fit
+          </button>
+
+          <button
+            type="button"
+            className="timeline-fit-button"
+            onClick={frameSelection}
+            disabled={!selectionRevealTarget}
+            title="Frame selected clip(s) in the timeline (F)"
+            aria-label="Frame timeline selection"
+          >
+            Frame
           </button>
 
           <input
@@ -1297,7 +1644,7 @@ function Timeline({
         </div>
       </div>
 
-      <div className="timeline-body">
+      <div ref={bodyRef} className="timeline-body">
         <div className="timeline-fixed-column" aria-label="Timeline tracks">
           <div className="timeline-fixed-ruler-spacer" />
           <div className="timeline-fixed-track-stack">
@@ -1445,5 +1792,6 @@ function Timeline({
     </section>
   );
 }
+);
 
 export default Timeline;

@@ -1,10 +1,12 @@
-import type { Subtitle } from "../types/subtitle";
+import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
 import type {
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "../types/timelineModel";
+import { sliceVideoTransformKeyframes } from "./videoTransformKeyframes";
+import { timelineDeltaToSourceDelta } from "./videoRetime";
 
 export type TimelineRange = {
   start: number;
@@ -118,12 +120,17 @@ function leftVideoFragment(
   timelineEnd: number,
 ) {
   const sourceOut =
-    clip.sourceIn + (timelineEnd - clip.timelineStart);
+    clip.sourceIn + timelineDeltaToSourceDelta(clip, timelineEnd - clip.timelineStart);
 
   return clampVideoDurations({
     ...clip,
     timelineEnd,
     sourceOut,
+    transformKeyframes: sliceVideoTransformKeyframes(
+      clip,
+      clip.timelineStart,
+      timelineEnd,
+    ),
     transitionOutType: "none",
     transitionOutDuration: 0,
     videoFadeOutDuration: 0,
@@ -139,13 +146,18 @@ function rightVideoFragment(
   id: string,
 ) {
   const sourceIn =
-    clip.sourceIn + (timelineStart - clip.timelineStart);
+    clip.sourceIn + timelineDeltaToSourceDelta(clip, timelineStart - clip.timelineStart);
 
   return clampVideoDurations({
     ...clip,
     id,
     timelineStart,
     sourceIn,
+    transformKeyframes: sliceVideoTransformKeyframes(
+      clip,
+      timelineStart,
+      clip.timelineEnd,
+    ),
     transitionInType: "none",
     transitionInDuration: 0,
     videoFadeInDuration: 0,
@@ -313,18 +325,18 @@ function editSubtitles(
   mode: TimelineRangeEditMode,
   trackSettings: TimelineTrackSettings,
 ) {
-  if (isTrackLocked("subtitle-1", trackSettings)) {
-    return {
-      subtitles,
-      changed: false,
-    };
-  }
-
   const duration = range.end - range.start;
   const next: Subtitle[] = [];
   let changed = false;
 
   for (const subtitle of subtitles) {
+    const trackId = getSubtitleTrackId(subtitle);
+
+    if (isTrackLocked(trackId, trackSettings)) {
+      next.push(subtitle);
+      continue;
+    }
+
     if (subtitle.endTime <= range.start + EPSILON) {
       next.push(subtitle);
       continue;
@@ -350,9 +362,6 @@ function editSubtitles(
     const hasRight = subtitle.endTime > range.end + EPSILON;
 
     if (mode === "extract" && hasLeft && hasRight) {
-      // Unlike video, subtitle text has no source-time discontinuity to preserve.
-      // If an extraction removes time from the middle of one subtitle, keep it
-      // as one shortened subtitle instead of creating two adjacent duplicates.
       const shortened = {
         ...subtitle,
         endTime: subtitle.endTime - duration,

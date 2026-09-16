@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { VideoTimelineClip } from "../types/timelineModel";
+import { timelineTimeToSourceTime, videoPlaybackRate } from "../utils/videoRetime";
 
 export type VideoClipFrame = {
   sourceTime: number;
@@ -211,7 +212,7 @@ function sourcePlansFor(
   const visibleSpan = Math.max(1, visibleEnd - visibleStart);
   const prefetchStart = Math.max(0, visibleStart - visibleSpan);
   const prefetchEnd = visibleEnd + visibleSpan;
-  const sourceInterval = FRAME_TILE_WIDTH_PX / Math.max(0.01, pixelsPerSecond);
+  const timelineSampleInterval = FRAME_TILE_WIDTH_PX / Math.max(0.01, pixelsPerSecond);
 
   for (const clip of videoClips) {
     if (!clip.sourcePath) continue;
@@ -221,10 +222,11 @@ function sourcePlansFor(
     const overlapStart = Math.max(clip.timelineStart, prefetchStart);
     const overlapEnd = Math.min(clip.timelineEnd, prefetchEnd);
     if (overlapEnd > overlapStart) {
-      const sourceStart = clip.sourceIn + (overlapStart - clip.timelineStart);
-      const sourceEnd = clip.sourceIn + (overlapEnd - clip.timelineStart);
+      const sourceStart = timelineTimeToSourceTime(clip, overlapStart);
+      const sourceEnd = timelineTimeToSourceTime(clip, overlapEnd);
+      const sourceSampleInterval = timelineSampleInterval * videoPlaybackRate(clip);
       entry.priority.push(
-        ...uniformRangeTimes(sourceStart, sourceEnd, sourceInterval),
+        ...uniformRangeTimes(sourceStart, sourceEnd, sourceSampleInterval),
       );
     }
     bySource.set(clip.sourcePath, entry);

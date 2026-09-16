@@ -2,6 +2,10 @@ import { useEffect, useRef } from "react";
 
 import type { Subtitle } from "../../types/subtitle";
 import { formatSubtitleTime } from "../../utils/time";
+import {
+  canShowNativeContextMenu,
+  showNativeContextMenu,
+} from "../../services/nativeContextMenu";
 import "./SubtitleList.css";
 
 type SubtitleListProps = {
@@ -22,6 +26,7 @@ type SubtitleListProps = {
   onTextChange: (id: string, text: string) => void;
 
   onDelete: (id: string) => void;
+  onReveal?: (id: string) => void;
 };
 
 function SubtitleList({
@@ -33,6 +38,7 @@ function SubtitleList({
   onSelect,
   onTextChange,
   onDelete,
+  onReveal,
 }: SubtitleListProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,6 +86,22 @@ function SubtitleList({
               ]
                 .filter(Boolean)
                 .join(" ")}
+              onContextMenu={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest("input, textarea, [contenteditable='true']")) return;
+                if (!onReveal || !canShowNativeContextMenu()) return;
+                event.preventDefault();
+                event.stopPropagation();
+                void showNativeContextMenu([
+                  {
+                    id: `subtitle-browser.${subtitle.id}.reveal`,
+                    text: "Reveal in Timeline",
+                    action: () => onReveal(subtitle.id),
+                  },
+                ]).catch((error) => {
+                  console.error("Failed to show native subtitle browser context menu:", error);
+                });
+              }}
               onClick={(event) => {
                 const mode =
                   event.shiftKey

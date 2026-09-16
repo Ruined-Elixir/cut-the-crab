@@ -15,6 +15,7 @@ import {
   canShowNativeContextMenu,
   showNativeContextMenu,
 } from "../../services/nativeContextMenu";
+import { videoPlaybackRate } from "../../utils/videoRetime";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -45,6 +46,7 @@ type WaveformTrackProps = {
   onStandaloneFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
   onStandaloneVolumeChange?: (id: string, volume: number) => void;
   onStandaloneMuteChange?: (id: string, muted: boolean) => void;
+  onRevealClip?: (clip: AudioTimelineClip) => void;
   showLabel?: boolean;
 };
 
@@ -194,6 +196,7 @@ function WaveformTrack({
   onStandaloneFadeChange,
   onStandaloneVolumeChange,
   onStandaloneMuteChange,
+  onRevealClip,
   showLabel = true,
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -518,7 +521,7 @@ function WaveformTrack({
               }}
               data-audio-clip-id={!clip.linkedVideoClipId ? clip.id : undefined}
               title={clip.linkedVideoClipId
-                ? `${clip.sourceName} · linked audio · ${clip.muted ? "Muted" : `${Math.round(volume)}%`}`
+                ? `${clip.sourceName} · linked audio · ${videoPlaybackRate(clip)}× · ${clip.muted ? "Muted" : `${Math.round(volume)}%`}`
                 : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${track.shortLabel}`}
               onContextMenu={(event) => {
                 const linkedVideoClipId = clip.linkedVideoClipId;
@@ -544,6 +547,15 @@ function WaveformTrack({
                       muteChange(linkedVideoClipId ?? clip.id, !(clip.muted ?? false));
                     },
                   },
+                  ...(onRevealClip
+                    ? [
+                        {
+                          id: `audio-clip.${linkedVideoClipId ?? clip.id}.reveal`,
+                          text: "Reveal in Timeline",
+                          action: () => onRevealClip(clip),
+                        },
+                      ]
+                    : []),
                 ]).catch((error) => {
                   console.error("Failed to show native audio clip context menu:", error);
                 });

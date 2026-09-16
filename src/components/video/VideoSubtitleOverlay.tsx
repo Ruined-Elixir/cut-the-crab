@@ -10,7 +10,7 @@ import {
 
 import SubtitlesOctopus from "@biliblitz/libass-wasm";
 
-import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
+import { getSubtitleTrackId, type Subtitle, type SubtitleStyle } from "../../types/subtitle";
 
 import SubtitleStyleContextMenu, {
   type SubtitleStyleScope,
@@ -174,14 +174,26 @@ function VideoSubtitleOverlay({
     setRendererCurrentTime(renderer1Ref.current, currentTime);
   }, [currentTime, videoTimeOffset]);
 
-  const activeSubtitle = useMemo(
-    () =>
-      subtitles.find(
-        (subtitle) =>
-          currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
-      ),
-    [subtitles, currentTime],
-  );
+  const activeSubtitle = useMemo(() => {
+    const active = subtitles.filter(
+      (subtitle) =>
+        currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
+    );
+
+    const selectedActive = selectedSubtitleId
+      ? active.find((subtitle) => subtitle.id === selectedSubtitleId)
+      : undefined;
+
+    if (selectedActive) {
+      return selectedActive;
+    }
+
+    return active.sort((a, b) => {
+      const aIndex = Number(getSubtitleTrackId(a).split("-")[1] ?? 1);
+      const bIndex = Number(getSubtitleTrackId(b).split("-")[1] ?? 1);
+      return bIndex - aIndex;
+    })[0];
+  }, [subtitles, currentTime, selectedSubtitleId]);
 
   const isEditing = !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
 

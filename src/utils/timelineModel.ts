@@ -1,4 +1,4 @@
-import type { Subtitle } from "../types/subtitle";
+import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type {
   AudioTimelineClip,
   SubtitleTimelineClip,
@@ -104,6 +104,7 @@ function linkedAudioClip(
     sourceIn: clip.sourceIn,
     sourceOut: clip.sourceOut,
     sourceDuration: clip.sourceDuration,
+    playbackRate: clip.playbackRate ?? 1,
     linkedVideoClipId: clip.id,
     volume: clip.audioVolume ?? 100,
     muted: clip.audioMuted ?? false,
@@ -118,6 +119,7 @@ function collectTrackIds(
   trackSettings: TimelineTrackSettings | undefined,
   videoClips: VideoTimelineClip[],
   audioClips: AudioTimelineClip[],
+  subtitles: Subtitle[],
 ) {
   const ids = new Set<string>();
 
@@ -138,6 +140,13 @@ function collectTrackIds(
   for (const clip of audioClips) {
     if (timelineTrackKindFromId(clip.trackId) === "audio" && trackSettings?.[clip.trackId]?.deleted !== true) {
       ids.add(clip.trackId);
+    }
+  }
+
+  for (const subtitle of subtitles) {
+    const trackId = getSubtitleTrackId(subtitle);
+    if (trackSettings?.[trackId]?.deleted !== true) {
+      ids.add(trackId);
     }
   }
 
@@ -166,7 +175,7 @@ export function buildTimelineModel({
   subtitles,
   trackSettings,
 }: BuildTimelineModelOptions): TimelineTrack[] {
-  const ids = collectTrackIds(trackSettings, videoClips, audioClips);
+  const ids = collectTrackIds(trackSettings, videoClips, audioClips, subtitles);
   const videoTrackIds = sortedTrackIds(ids, "video");
   const subtitleTrackIds = sortedTrackIds(ids, "subtitle");
   const audioTrackIds = sortedTrackIds(ids, "audio");
@@ -174,7 +183,7 @@ export function buildTimelineModel({
   const subtitleClips: SubtitleTimelineClip[] = subtitles.map((subtitle) => ({
     id: `subtitle-clip:${subtitle.id}`,
     kind: "subtitle",
-    trackId: "subtitle-1",
+    trackId: getSubtitleTrackId(subtitle),
     subtitleId: subtitle.id,
     timelineStart: subtitle.startTime,
     timelineEnd: subtitle.endTime,
@@ -208,7 +217,7 @@ export function buildTimelineModel({
       shortLabel: `S${index}`,
       locked: settings.locked,
       hidden: settings.hidden,
-      clips: id === "subtitle-1" ? subtitleClips : [],
+      clips: subtitleClips.filter((clip) => clip.trackId === id),
     };
   });
 

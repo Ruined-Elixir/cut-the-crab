@@ -10,11 +10,17 @@ import type {
   TimelineTrackId,
   VideoTimelineClip,
   VideoTransitionType,
+  VideoTransformKeyframeProperty,
 } from "../types/timelineModel";
 import {
   clampVideoClipGroupMoveDelta,
   findNextAvailableVideoClipGroupShift,
 } from "../utils/timelineMultiClip";
+import {
+  normalizeVideoPlaybackRate,
+  sourceDeltaToTimelineDelta,
+  timelineDeltaToSourceDelta,
+} from "../utils/videoRetime";
 import {
   autoHealRippleSplits,
   rippleDeleteVideoClips,
@@ -22,6 +28,12 @@ import {
   rippleMoveVideoClipGroup,
   stripRippleAutoHealMetadata,
 } from "../utils/timelineRippleEdits";
+import {
+  retimeVideoTransformKeyframes,
+  setVideoTransformPropertyAtTime,
+  sliceVideoTransformKeyframes,
+  toggleVideoTransformKeyframeAtTime,
+} from "../utils/videoTransformKeyframes";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
 const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
@@ -169,10 +181,12 @@ function createFullSourceClip(
     sourceIn: 0,
     sourceOut: sourceDuration,
     sourceDuration,
+    playbackRate: 1,
     positionX: 0,
     positionY: 0,
     scale: 100,
     rotation: 0,
+    opacity: 100,
     cropTop: 0,
     cropRight: 0,
     cropBottom: 0,
@@ -584,7 +598,7 @@ export function useVideoTimeline({
 
       const earliestTimelineStart = Math.max(
         0,
-        target.timelineStart - target.sourceIn,
+        target.timelineStart - sourceDeltaToTimelineDelta(target, target.sourceIn),
       );
 
       const clipSourceDuration =
@@ -592,7 +606,10 @@ export function useVideoTimeline({
 
       const latestTimelineEnd =
         target.timelineEnd +
-        Math.max(0, clipSourceDuration - target.sourceOut);
+        sourceDeltaToTimelineDelta(
+          target,
+          Math.max(0, clipSourceDuration - target.sourceOut),
+        );
 
       const nextStart = Math.max(
         earliestTimelineStart,
@@ -619,11 +636,14 @@ export function useVideoTimeline({
       const sourceStartDelta = nextStart - target.timelineStart;
       const sourceEndDelta = nextEnd - target.timelineEnd;
 
-      const nextSourceIn = target.sourceIn + sourceStartDelta;
-      const nextSourceOut = target.sourceOut + sourceEndDelta;
+      const nextSourceIn =
+        target.sourceIn + timelineDeltaToSourceDelta(target, sourceStartDelta);
+      const nextSourceOut =
+        target.sourceOut + timelineDeltaToSourceDelta(target, sourceEndDelta);
 
       if (
-        nextSourceOut - nextSourceIn < MIN_VIDEO_CLIP_DURATION
+        sourceDeltaToTimelineDelta(target, nextSourceOut - nextSourceIn) <
+        MIN_VIDEO_CLIP_DURATION
       ) {
         return current;
       }
@@ -653,6 +673,11 @@ export function useVideoTimeline({
                 timelineEnd: nextEnd,
                 sourceIn: nextSourceIn,
                 sourceOut: nextSourceOut,
+                transformKeyframes: sliceVideoTransformKeyframes(
+                  target,
+                  nextStart,
+                  nextEnd,
+                ),
                 rippleAutoHealInBoundaryId:
                   Math.abs(nextStart - target.timelineStart) > 0.000001
                     ? undefined
@@ -687,12 +712,18 @@ export function useVideoTimeline({
       }
 
       const sourceSplit =
-        target.sourceIn + (splitTime - target.timelineStart);
+        target.sourceIn +
+        timelineDeltaToSourceDelta(target, splitTime - target.timelineStart);
 
       const left: VideoTimelineClip = {
         ...target,
         timelineEnd: splitTime,
         sourceOut: sourceSplit,
+        transformKeyframes: sliceVideoTransformKeyframes(
+          target,
+          target.timelineStart,
+          splitTime,
+        ),
         transitionOutType: "none",
         videoFadeOutDuration: 0,
         audioFadeOutDuration: 0,
@@ -705,6 +736,11 @@ export function useVideoTimeline({
         id: crypto.randomUUID(),
         timelineStart: splitTime,
         sourceIn: sourceSplit,
+        transformKeyframes: sliceVideoTransformKeyframes(
+          target,
+          splitTime,
+          target.timelineEnd,
+        ),
         transitionInType: "none",
         videoFadeInDuration: 0,
         audioFadeInDuration: 0,
@@ -878,10 +914,12 @@ export function useVideoTimeline({
         sourceIn: 0,
         sourceOut: asset.duration,
         sourceDuration: asset.duration,
+        playbackRate: 1,
         positionX: 0,
         positionY: 0,
         scale: 100,
         rotation: 0,
+        opacity: 100,
         cropTop: 0,
         cropRight: 0,
         cropBottom: 0,
@@ -988,6 +1026,98 @@ export function useVideoTimeline({
     return newIds;
   };
 
+  const updateVideoClipPlaybackRate = (
+    id: string,
+    requestedRate: number,
+  ) => {
+    const normalizedRate = normalizeVideoPlaybackRate(requestedRate);
+
+    setVideoClips((current) => {
+      const target = current.find((clip) => clip.id === id);
+
+      if (!target) {
+        return current;
+      }
+
+      const sourceSpan = Math.max(0, target.sourceOut - target.sourceIn);
+      if (sourceSpan <= 0) {
+        return current;
+      }
+
+      const nextRate = normalizedRate;
+      const oldDuration = target.timelineEnd - target.timelineStart;
+      const nextDuration = sourceSpan / nextRate;
+
+      if (nextDuration < MIN_VIDEO_CLIP_DURATION) {
+        return current;
+      }
+
+      const nextTimelineEnd = target.timelineStart + nextDuration;
+      const durationDelta = nextDuration - oldDuration;
+
+      if (!rippleMode) {
+        const overlaps = clipsOnTrack(current, target.trackId, id).some(
+          (clip) =>
+            nextTimelineEnd > clip.timelineStart + 0.000001 &&
+            target.timelineStart < clip.timelineEnd - 0.000001,
+        );
+
+        if (overlaps) {
+          return current;
+        }
+      }
+
+      const maxTransitionDuration = Math.max(
+        0.1,
+        Math.min(5, nextDuration / 2),
+      );
+      const updatedTarget: VideoTimelineClip = {
+        ...target,
+        playbackRate: nextRate,
+        timelineEnd: nextTimelineEnd,
+        transformKeyframes: retimeVideoTransformKeyframes(
+          target.transformKeyframes,
+          oldDuration,
+          nextDuration,
+        ),
+        transitionInDuration: Math.min(
+          target.transitionInDuration ?? 0.5,
+          maxTransitionDuration,
+        ),
+        transitionOutDuration: Math.min(
+          target.transitionOutDuration ?? 0.5,
+          maxTransitionDuration,
+        ),
+        videoFadeInDuration: Math.min(target.videoFadeInDuration ?? 0, nextDuration),
+        videoFadeOutDuration: Math.min(target.videoFadeOutDuration ?? 0, nextDuration),
+        audioFadeInDuration: Math.min(target.audioFadeInDuration ?? 0, nextDuration),
+        audioFadeOutDuration: Math.min(target.audioFadeOutDuration ?? 0, nextDuration),
+      };
+
+      return sortVideoClips(
+        current.map((clip) => {
+          if (clip.id === id) {
+            return updatedTarget;
+          }
+
+          if (
+            rippleMode &&
+            clip.trackId === target.trackId &&
+            clip.timelineStart >= target.timelineEnd - 0.000001
+          ) {
+            return {
+              ...clip,
+              timelineStart: Math.max(0, clip.timelineStart + durationDelta),
+              timelineEnd: Math.max(0, clip.timelineEnd + durationDelta),
+            };
+          }
+
+          return clip;
+        }),
+      );
+    });
+  };
+
   const updateVideoClipTransform = (
     id: string,
     transform: {
@@ -995,56 +1125,75 @@ export function useVideoTimeline({
       positionY?: number;
       scale?: number;
       rotation?: number;
+      opacity?: number;
       cropTop?: number;
       cropRight?: number;
       cropBottom?: number;
       cropLeft?: number;
     },
+    timelineTime?: number,
   ) => {
     setVideoClips((current) =>
       current.map((clip) => {
-        if (clip.id !== id) {
-          return clip;
+        if (clip.id !== id) return clip;
+
+        let next = clip;
+        const animatedTime = timelineTime ?? clip.timelineStart;
+        const animatedProperties: VideoTransformKeyframeProperty[] = [
+          "positionX",
+          "positionY",
+          "scale",
+          "rotation",
+          "opacity",
+        ];
+
+        for (const property of animatedProperties) {
+          const value = transform[property];
+          if (value !== undefined) {
+            next = setVideoTransformPropertyAtTime(
+              next,
+              property,
+              animatedTime,
+              value,
+            );
+          }
         }
 
-        const nextPositionX =
-          transform.positionX === undefined
-            ? clip.positionX ?? 0
-            : Math.max(-100, Math.min(100, transform.positionX));
-        const nextPositionY =
-          transform.positionY === undefined
-            ? clip.positionY ?? 0
-            : Math.max(-100, Math.min(100, transform.positionY));
-        const nextScale =
-          transform.scale === undefined
-            ? clip.scale ?? 100
-            : Math.max(10, Math.min(400, transform.scale));
-        const nextRotation =
-          transform.rotation === undefined
-            ? clip.rotation ?? 0
-            : Math.max(-180, Math.min(180, transform.rotation));
         const clampCrop = (value: number) => Math.max(0, Math.min(49, value));
-        const nextCropTop =
-          transform.cropTop === undefined ? clip.cropTop ?? 0 : clampCrop(transform.cropTop);
-        const nextCropRight =
-          transform.cropRight === undefined ? clip.cropRight ?? 0 : clampCrop(transform.cropRight);
-        const nextCropBottom =
-          transform.cropBottom === undefined ? clip.cropBottom ?? 0 : clampCrop(transform.cropBottom);
-        const nextCropLeft =
-          transform.cropLeft === undefined ? clip.cropLeft ?? 0 : clampCrop(transform.cropLeft);
-
         return {
-          ...clip,
-          positionX: nextPositionX,
-          positionY: nextPositionY,
-          scale: nextScale,
-          rotation: nextRotation,
-          cropTop: nextCropTop,
-          cropRight: nextCropRight,
-          cropBottom: nextCropBottom,
-          cropLeft: nextCropLeft,
+          ...next,
+          cropTop:
+            transform.cropTop === undefined
+              ? next.cropTop ?? 0
+              : clampCrop(transform.cropTop),
+          cropRight:
+            transform.cropRight === undefined
+              ? next.cropRight ?? 0
+              : clampCrop(transform.cropRight),
+          cropBottom:
+            transform.cropBottom === undefined
+              ? next.cropBottom ?? 0
+              : clampCrop(transform.cropBottom),
+          cropLeft:
+            transform.cropLeft === undefined
+              ? next.cropLeft ?? 0
+              : clampCrop(transform.cropLeft),
         };
       }),
+    );
+  };
+
+  const toggleVideoClipTransformKeyframe = (
+    id: string,
+    property: VideoTransformKeyframeProperty,
+    timelineTime: number,
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) =>
+        clip.id === id
+          ? toggleVideoTransformKeyframeAtTime(clip, property, timelineTime)
+          : clip,
+      ),
     );
   };
 
@@ -1075,16 +1224,25 @@ export function useVideoTimeline({
   };
 
   const resetVideoClipTransform = (id: string) => {
-    updateVideoClipTransform(id, {
-      positionX: 0,
-      positionY: 0,
-      scale: 100,
-      rotation: 0,
-      cropTop: 0,
-      cropRight: 0,
-      cropBottom: 0,
-      cropLeft: 0,
-    });
+    setVideoClips((current) =>
+      current.map((clip) =>
+        clip.id === id
+          ? {
+              ...clip,
+              positionX: 0,
+              positionY: 0,
+              scale: 100,
+              rotation: 0,
+              opacity: 100,
+              transformKeyframes: undefined,
+              cropTop: 0,
+              cropRight: 0,
+              cropBottom: 0,
+              cropLeft: 0,
+            }
+          : clip,
+      ),
+    );
   };
 
   const updateVideoClipTransition = (
@@ -1274,7 +1432,9 @@ export function useVideoTimeline({
     insertVideoClipCopies,
     duplicateVideoClip,
     insertVideoClipFromMedia,
+    updateVideoClipPlaybackRate,
     updateVideoClipTransform,
+    toggleVideoClipTransformKeyframe,
     applyVideoClipCropToTrack,
     resetVideoClipTransform,
     updateVideoClipTransition,

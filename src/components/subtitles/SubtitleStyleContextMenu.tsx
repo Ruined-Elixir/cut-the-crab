@@ -312,7 +312,7 @@ function SubtitleStyleContextMenu({
             onChange={() => onScopeChange("all")}
           />
 
-          <span>All subtitles</span>
+          <span>All subtitles on track</span>
         </label>
       </fieldset>
     </div>,

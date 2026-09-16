@@ -12,6 +12,7 @@ import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
   clampTimelineZoom,
   TIMELINE_ZOOM_STEP,
+  type TimelineHandle,
 } from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
@@ -50,6 +51,7 @@ import {
   type TranscriptionPreset,
 } from "./services/appMenu";
 
+import { DEFAULT_SUBTITLE_TRACK_ID, getSubtitleTrackId } from "./types/subtitle";
 import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
@@ -72,6 +74,10 @@ import {
   timelineTrackIndexFromId,
   timelineTrackKindFromId,
 } from "./utils/timelineModel";
+import {
+  normalizeVideoPlaybackRate,
+  sourceTimeToTimelineTime,
+} from "./utils/videoRetime";
 import {
   applyTimelineRangeEdit,
   type TimelineRange,
@@ -467,6 +473,8 @@ function App() {
   const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(() => ({
     ...DEFAULT_TIMELINE_TRACK_SETTINGS,
   }));
+  const [activeSubtitleTrackId, setActiveSubtitleTrackId] =
+    useState<TimelineTrackId>(DEFAULT_SUBTITLE_TRACK_ID);
 
   // ==========================================================================
   // Video export UI
@@ -485,6 +493,7 @@ function App() {
 
   const isLoadingVideoRef = useRef(false);
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
+  const timelineRef = useRef<TimelineHandle | null>(null);
   const handleSkimPreviewChange = useCallback((time: number | null) => {
     videoPlayerRef.current?.setSkimPreviewTime(time);
   }, []);
@@ -523,7 +532,6 @@ function App() {
     selectedSubtitleId,
     selectedSubtitleIds,
     subtitleSearch,
-    activeSubtitleId,
 
     setSubtitleSearch,
     selectSubtitle,
@@ -535,9 +543,9 @@ function App() {
     updateSubtitlePosition,
     updateSubtitleStyle,
     updateSubtitleStyles,
-    updateAllSubtitleStyles,
 
     moveSubtitle,
+    moveSubtitleToTrack,
     moveSubtitleGroup,
     nudgeSelectedSubtitles,
     resizeSubtitle,
@@ -547,6 +555,21 @@ function App() {
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
   } = useSubtitleEditor(currentTime, videoDuration);
+
+  useEffect(() => {
+    if (activeSubtitleTrackId === DEFAULT_SUBTITLE_TRACK_ID) {
+      return;
+    }
+
+    const settings = trackSettings[activeSubtitleTrackId];
+    const existsInSubtitles = subtitles.some(
+      (subtitle) => getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+    );
+
+    if (settings?.deleted === true || (!settings && !existsInSubtitles)) {
+      setActiveSubtitleTrackId(DEFAULT_SUBTITLE_TRACK_ID);
+    }
+  }, [activeSubtitleTrackId, subtitles, trackSettings]);
 
   const {
     videoClips,
@@ -566,6 +589,7 @@ function App() {
     deleteVideoTrack,
     insertVideoClipCopies,
     insertVideoClipFromMedia,
+    updateVideoClipPlaybackRate,
     updateVideoClipTransform,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
@@ -695,9 +719,35 @@ function App() {
         !trackSettings[clip.trackId]?.linkedTrackId,
     );
 
-  const addSubtitleWithHistory = (time: number) => {
+  const selectedSubtitlesAreEditable =
+    selectedSubtitleIds.length > 0 &&
+    selectedSubtitleIds.every((id) => {
+      const subtitle = subtitles.find((item) => item.id === id);
+      return !!subtitle && !trackSettings[getSubtitleTrackId(subtitle)]?.locked;
+    });
+
+  const addSubtitleWithHistory = (
+    time: number,
+    trackId: TimelineTrackId = activeSubtitleTrackId,
+  ) => {
+    const settings = trackSettings[trackId];
+    const trackExists =
+      trackId === DEFAULT_SUBTITLE_TRACK_ID ||
+      (!!settings && settings.deleted !== true) ||
+      subtitles.some((subtitle) => getSubtitleTrackId(subtitle) === trackId);
+
+    if (
+      timelineTrackKindFromId(trackId) !== "subtitle" ||
+      !trackExists ||
+      settings?.deleted === true ||
+      settings?.locked
+    ) {
+      return;
+    }
+
     markNextChangeImmediate();
-    addSubtitle(time);
+    addSubtitle(time, trackId);
+    setActiveSubtitleTrackId(trackId);
   };
 
   const splitSelectedVideoClipAtPlayhead = () => {
@@ -1088,6 +1138,10 @@ function App() {
         deleted: false,
       },
     }));
+
+    if (kind === "subtitle") {
+      setActiveSubtitleTrackId(id);
+    }
   };
 
   const handleDeleteTimelineTrack = (trackId: TimelineTrackId) => {
@@ -1162,6 +1216,43 @@ function App() {
       return;
     }
 
+    if (kind === "subtitle") {
+      const subtitleIds = subtitles
+        .filter((subtitle) => getSubtitleTrackId(subtitle) === trackId)
+        .map((subtitle) => subtitle.id);
+      const label = `S${timelineTrackIndexFromId(trackId)}`;
+      const count = subtitleIds.length;
+
+      if (
+        !window.confirm(
+          `Delete ${label}?${
+            count
+              ? ` This will remove ${count} subtitle${count === 1 ? "" : "s"}.`
+              : ""
+          }`,
+        )
+      ) {
+        return;
+      }
+
+      markNextChangeImmediate();
+      if (subtitleIds.length > 0) {
+        deleteSubtitles(subtitleIds);
+      }
+      setTrackSettings((current) => ({
+        ...current,
+        [trackId]: {
+          ...(current[trackId] ?? defaultTrackControlState(kind)),
+          deleted: true,
+        },
+      }));
+
+      if (activeSubtitleTrackId === trackId) {
+        setActiveSubtitleTrackId(DEFAULT_SUBTITLE_TRACK_ID);
+      }
+      return;
+    }
+
     if (!window.confirm(`Delete ${trackId.replace("-", " ")}?`)) return;
     markNextChangeImmediate();
     setTrackSettings((current) => ({
@@ -1171,6 +1262,23 @@ function App() {
         deleted: true,
       },
     }));
+  };
+
+  const handleMoveSubtitleToTrack = (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newStartTime: number,
+  ) => {
+    if (
+      timelineTrackKindFromId(targetTrackId) !== "subtitle" ||
+      trackSettings[targetTrackId]?.deleted ||
+      trackSettings[targetTrackId]?.locked
+    ) {
+      return;
+    }
+
+    moveSubtitleToTrack(id, targetTrackId, newStartTime);
+    setActiveSubtitleTrackId(targetTrackId);
   };
 
   const handleMoveVideoClipToTrack = (
@@ -1187,6 +1295,49 @@ function App() {
   };
 
 
+  const handleVideoPlaybackRateChange = (id: string, requestedRate: number) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    const sourceSpan = Math.max(0, clip.sourceOut - clip.sourceIn);
+    if (sourceSpan <= 0) {
+      return;
+    }
+
+    const effectiveRate = normalizeVideoPlaybackRate(requestedRate);
+    const nextDuration = sourceSpan / effectiveRate;
+
+    if (nextDuration < 0.1) {
+      window.alert("This source fragment is too short for that playback speed.");
+      return;
+    }
+
+    const nextEnd = clip.timelineStart + nextDuration;
+
+    if (!rippleMode) {
+      const collides = videoClips.some(
+        (other) =>
+          other.id !== id &&
+          other.trackId === clip.trackId &&
+          nextEnd > other.timelineStart + 0.000001 &&
+          clip.timelineStart < other.timelineEnd - 0.000001,
+      );
+
+      if (collides) {
+        window.alert(
+          "There is not enough room to slow this clip without overlapping another clip. Move the neighbouring clip or enable Ripple mode first.",
+        );
+        return;
+      }
+    }
+
+    markNextChangeImmediate();
+    updateVideoClipPlaybackRate(id, effectiveRate);
+  };
+
   const handleVideoTransformChange = (
     id: string,
     transform: {
@@ -1194,6 +1345,7 @@ function App() {
       positionY?: number;
       scale?: number;
       rotation?: number;
+      opacity?: number;
       cropTop?: number;
       cropRight?: number;
       cropBottom?: number;
@@ -1206,7 +1358,7 @@ function App() {
       return;
     }
 
-    updateVideoClipTransform(id, transform);
+    updateVideoClipTransform(id, transform, currentTime);
   };
 
   const handleApplyVideoCropToTrack = (id: string) => {
@@ -1341,6 +1493,10 @@ function App() {
   ) => {
     clearVideoClipSelection();
     clearAudioClipSelection();
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (subtitle) {
+      setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
+    }
     selectSubtitle(id, mode);
   };
 
@@ -1353,7 +1509,10 @@ function App() {
       (subtitle) => subtitle.id === selectedSubtitleId,
     );
 
-    if (!selectedSubtitle) {
+    if (
+      !selectedSubtitle ||
+      trackSettings[getSubtitleTrackId(selectedSubtitle)]?.locked
+    ) {
       return;
     }
 
@@ -1376,42 +1535,97 @@ function App() {
     );
   };
 
+  const editableSubtitleIds = (ids: string[]) =>
+    ids.filter((id) => {
+      const subtitle = subtitles.find((item) => item.id === id);
+      return !!subtitle && !trackSettings[getSubtitleTrackId(subtitle)]?.locked;
+    });
+
   const deleteSubtitleWithHistory = (id: string) => {
-    const idsToDelete =
+    const requestedIds =
       selectedSubtitleIds.includes(id) &&
       selectedSubtitleIds.length > 1
         ? selectedSubtitleIds
         : [id];
+    const idsToDelete = editableSubtitleIds(requestedIds);
+
+    if (idsToDelete.length === 0) {
+      return;
+    }
 
     markNextChangeImmediate();
     deleteSubtitles(idsToDelete);
   };
 
   const deleteSelectionWithHistory = () => {
-    if (selectedSubtitleIds.length === 0) {
+    const idsToDelete = editableSubtitleIds(selectedSubtitleIds);
+
+    if (idsToDelete.length === 0) {
       return;
     }
 
     markNextChangeImmediate();
-    deleteSubtitles(selectedSubtitleIds);
+    deleteSubtitles(idsToDelete);
+  };
+
+  const updateSubtitleTextIfEditable = (id: string, text: string) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+      return;
+    }
+    updateSubtitleText(id, text);
+  };
+
+  const updateSubtitlePositionIfEditable = (
+    id: string,
+    positionX: number,
+    positionY: number,
+  ) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+      return;
+    }
+    updateSubtitlePosition(id, positionX, positionY);
   };
 
   const updateSubtitleStyleWithSelection = (
     id: string,
     style: Parameters<typeof updateSubtitleStyle>[1],
   ) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+      return;
+    }
+
     if (
       selectedSubtitleIds.includes(id) &&
       selectedSubtitleIds.length > 1
     ) {
       updateSubtitleStyles(
-        selectedSubtitleIds,
+        editableSubtitleIds(selectedSubtitleIds),
         style,
       );
       return;
     }
 
     updateSubtitleStyle(id, style);
+  };
+
+  const updateAllSubtitleStylesForActiveTrack = (
+    style: Parameters<typeof updateSubtitleStyle>[1],
+  ) => {
+    if (trackSettings[activeSubtitleTrackId]?.locked) {
+      return;
+    }
+
+    const ids = subtitles
+      .filter(
+        (subtitle) =>
+          getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+      )
+      .map((subtitle) => subtitle.id);
+
+    updateSubtitleStyles(ids, style);
   };
 
   const setMarkersWithHistory = (
@@ -1428,6 +1642,27 @@ function App() {
     replaceSubtitles(nextSubtitles);
   };
 
+  const replaceSubtitleTrackWithHistory = (
+    trackId: TimelineTrackId,
+    nextSubtitles: typeof subtitles,
+  ) => {
+    if (trackSettings[trackId]?.locked) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    replaceSubtitles([
+      ...subtitles.filter(
+        (subtitle) => getSubtitleTrackId(subtitle) !== trackId,
+      ),
+      ...nextSubtitles.map((subtitle) => ({
+        ...subtitle,
+        trackId,
+      })),
+    ]);
+    setActiveSubtitleTrackId(trackId);
+  };
+
   const replaceGeneratedSubtitlesWithHistory = (
     segments: {
       startTime: number;
@@ -1435,8 +1670,12 @@ function App() {
       text: string;
     }[],
   ) => {
+    if (trackSettings[activeSubtitleTrackId]?.locked) {
+      return;
+    }
+
     markNextChangeImmediate();
-    replaceWithGeneratedSubtitles(segments);
+    replaceWithGeneratedSubtitles(segments, activeSubtitleTrackId);
   };
 
   // ==========================================================================
@@ -1662,6 +1901,10 @@ function App() {
     clip: VideoTimelineClip,
     preset: TranscriptionPreset,
   ) => {
+    if (trackSettings[activeSubtitleTrackId]?.locked) {
+      return;
+    }
+
     const generatedSegments = await generateSubtitles(
       clip.sourcePath,
       {
@@ -1685,10 +1928,9 @@ function App() {
       return [
         {
           id: crypto.randomUUID(),
-          startTime:
-            clip.timelineStart + (sourceStart - clip.sourceIn),
-          endTime:
-            clip.timelineStart + (sourceEnd - clip.sourceIn),
+          trackId: activeSubtitleTrackId,
+          startTime: sourceTimeToTimelineTime(clip, sourceStart),
+          endTime: sourceTimeToTimelineTime(clip, sourceEnd),
           text: segment.text,
         },
       ];
@@ -1752,6 +1994,7 @@ function App() {
     setSubtitleSearch("");
     setTimelineZoom(1);
     setTrackSettings({ ...DEFAULT_TIMELINE_TRACK_SETTINGS });
+    setActiveSubtitleTrackId(DEFAULT_SUBTITLE_TRACK_ID);
     setProjectMetadata(fallbackMetadata);
 
     void generateWaveform(path);
@@ -2379,6 +2622,10 @@ function App() {
   ) => {
     clearVideoClipSelection();
     clearAudioClipSelection();
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (subtitle) {
+      setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
+    }
     selectSubtitle(id, mode);
 
     if (mode === "single") {
@@ -2394,12 +2641,21 @@ function App() {
     const importedSubtitles = await importSrtFile();
 
     if (importedSubtitles) {
-      replaceSubtitlesWithHistory(importedSubtitles);
+      replaceSubtitleTrackWithHistory(
+        activeSubtitleTrackId,
+        importedSubtitles,
+      );
     }
   };
 
   const handleExportSrt = async () => {
-    await exportSrtFile(subtitles, videoPath);
+    await exportSrtFile(
+      subtitles.filter(
+        (subtitle) =>
+          getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+      ),
+      videoPath,
+    );
   };
 
   // ==========================================================================
@@ -2517,7 +2773,7 @@ function App() {
           clearAudioClipSelection();
           clearSubtitleSelection();
         } else {
-          selectAllSubtitles();
+          selectAllSubtitles(activeSubtitleTrackId);
         }
         return true;
     }
@@ -2653,7 +2909,7 @@ function App() {
 
       case "edit.select-all-subtitles":
         if (screen === "editor") {
-          selectAllSubtitles();
+          selectAllSubtitles(activeSubtitleTrackId);
         }
         return;
 
@@ -2726,7 +2982,7 @@ function App() {
       (item) => item.id === selectedSubtitleId,
     );
 
-    if (!subtitle) {
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
       return;
     }
 
@@ -2827,7 +3083,7 @@ function App() {
         (event.key === "ArrowLeft" ||
           event.key === "ArrowRight")
       ) {
-        if (selectedSubtitleIds.length === 0) {
+        if (!selectedSubtitlesAreEditable) {
           return;
         }
 
@@ -3083,6 +3339,35 @@ function App() {
       (subtitle) => subtitle.id === selectedSubtitleId,
     ) ?? null;
 
+  const selectedSubtitleForActiveTrack =
+    selectedSubtitle &&
+    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+      ? selectedSubtitle
+      : null;
+
+  const filteredSubtitlesForActiveTrack = filteredSubtitles.filter(
+    (subtitle) => getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+  );
+
+  const selectedSubtitleIdsForActiveTrack = selectedSubtitleIds.filter((id) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    return !!subtitle && getSubtitleTrackId(subtitle) === activeSubtitleTrackId;
+  });
+
+  const selectedSubtitleIdForActiveTrack =
+    selectedSubtitle &&
+    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+      ? selectedSubtitle.id
+      : null;
+
+  const activeSubtitleIdForTrack =
+    subtitles.find(
+      (subtitle) =>
+        getSubtitleTrackId(subtitle) === activeSubtitleTrackId &&
+        currentTime >= subtitle.startTime &&
+        currentTime <= subtitle.endTime,
+    )?.id ?? null;
+
   // ==========================================================================
   // Home UI
   // ==========================================================================
@@ -3186,32 +3471,51 @@ function App() {
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}
-            onSubtitleSelect={selectSubtitle}
-            onSubtitlePositionChange={updateSubtitlePosition}
-            onSubtitleTextChange={updateSubtitleText}
+            onSubtitleSelect={(id) => {
+              const subtitle = subtitles.find((item) => item.id === id);
+              if (subtitle) {
+                setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
+              }
+              selectSubtitle(id);
+            }}
+            onSubtitlePositionChange={updateSubtitlePositionIfEditable}
+            onSubtitleTextChange={updateSubtitleTextIfEditable}
             onSubtitleStyleChange={updateSubtitleStyleWithSelection}
-            onAllSubtitleStylesChange={updateAllSubtitleStyles}
+            onAllSubtitleStylesChange={updateAllSubtitleStylesForActiveTrack}
           />
         </section>
 
         <SubtitlePanel
-          subtitles={filteredSubtitles}
-          selectedSubtitle={selectedSubtitle}
-          selectedSubtitleId={selectedSubtitleId}
-          selectedSubtitleIds={selectedSubtitleIds}
-          selectedSubtitleCount={selectedSubtitleIds.length}
-          activeSubtitleId={activeSubtitleId}
+          subtitles={filteredSubtitlesForActiveTrack}
+          activeTrackId={activeSubtitleTrackId}
+          selectedSubtitle={selectedSubtitleForActiveTrack}
+          selectedSubtitleId={selectedSubtitleIdForActiveTrack}
+          selectedSubtitleIds={selectedSubtitleIdsForActiveTrack}
+          selectedSubtitleCount={selectedSubtitleIdsForActiveTrack.length}
+          activeSubtitleId={activeSubtitleIdForTrack}
           search={subtitleSearch}
           onSearchChange={setSubtitleSearch}
           onSelect={handleSubtitleSelect}
-          onTextChange={updateSubtitleText}
+          onTextChange={updateSubtitleTextIfEditable}
           onStyleChange={updateSubtitleStyleWithSelection}
           onAdd={() => addSubtitleWithHistory(currentTime)}
           onDelete={deleteSubtitleWithHistory}
+          onReveal={(id) => {
+            const subtitle = subtitles.find((item) => item.id === id);
+            if (subtitle) {
+              setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
+              selectSubtitle(id, "single");
+              requestSeek(subtitle.startTime);
+            }
+            window.requestAnimationFrame(() => {
+              timelineRef.current?.revealSubtitle(id);
+            });
+          }}
         />
       </div>
 
       <Timeline
+        ref={timelineRef}
         duration={timelineDuration}
         scaleDuration={videoDuration}
         currentTime={currentTime}
@@ -3230,6 +3534,7 @@ function App() {
         selectedVideoClipIds={selectedVideoClipIds}
         selectedAudioClipId={selectedAudioClipId}
         selectedAudioClipIds={selectedAudioClipIds}
+        activeSubtitleTrackId={activeSubtitleTrackId}
         onAddTrack={handleAddTimelineTrack}
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
@@ -3257,6 +3562,7 @@ function App() {
         onVideoClipMove={moveVideoClip}
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
         onVideoClipResize={resizeVideoClip}
+        onVideoPlaybackRateChange={handleVideoPlaybackRateChange}
         onVideoTransitionChange={handleVideoTransitionChange}
         onVideoFadeChange={handleVideoFadeChange}
         onAudioFadeChange={handleAudioFadeChange}
@@ -3274,6 +3580,8 @@ function App() {
         onStandaloneAudioMuteChange={handleStandaloneAudioMuteChange}
         onSubtitleSelect={handleSubtitleTrackSelect}
         onSubtitleMove={moveSubtitle}
+        onSubtitleMoveToTrack={handleMoveSubtitleToTrack}
+        onSubtitleTrackActivate={setActiveSubtitleTrackId}
         onSubtitleGroupMove={moveSubtitleGroup}
         onSubtitleResize={resizeSubtitle}
         onMarkersChange={setMarkersWithHistory}

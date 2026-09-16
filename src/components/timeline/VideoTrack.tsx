@@ -10,6 +10,12 @@ import type {
   VideoTransitionType,
 } from "../../types/timelineModel";
 import type { VideoClipFrames } from "../../hooks/useVideoClipFrames";
+import {
+  canShowNativeContextMenu,
+  showNativeContextMenu,
+} from "../../services/nativeContextMenu";
+import { videoPlaybackRate } from "../../utils/videoRetime";
+import { allVideoTransformKeyframeTimes } from "../../utils/videoTransformKeyframes";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -57,6 +63,7 @@ type VideoTrackProps = {
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   snapTargets?: VideoMoveSnapTarget[];
   onSnapGuideChange?: (time: number | null) => void;
+  onRevealClip?: (clip: VideoTimelineClip) => void;
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -111,6 +118,7 @@ function VideoTrack({
   onPasteTargetChange,
   snapTargets = [],
   onSnapGuideChange,
+  onRevealClip,
   showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
@@ -158,6 +166,8 @@ function VideoTrack({
     event: ReactMouseEvent<HTMLDivElement>,
     clip: VideoTimelineClip,
   ) => {
+    if (event.button !== 0) return;
+
     if (
       (event.target as HTMLElement).closest(".video-resize-handle") ||
       (event.target as HTMLElement).closest(".clip-fade-handle")
@@ -585,6 +595,9 @@ function VideoTrack({
           );
           const videoFadeInWidth = (videoFadeInDuration / clipDuration) * 100;
           const videoFadeOutWidth = (videoFadeOutDuration / clipDuration) * 100;
+          const transformKeyframeTimes = isSelected
+            ? allVideoTransformKeyframeTimes(clip)
+            : [];
 
           return (
             <div
@@ -603,9 +616,24 @@ function VideoTrack({
                 width: `${width}%`,
               }}
               data-video-clip-id={clip.id}
+              onContextMenu={(event) => {
+                if (!onRevealClip || !canShowNativeContextMenu()) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onSelect?.(clip.id, "focus");
+                void showNativeContextMenu([
+                  {
+                    id: `video-clip.${clip.id}.reveal`,
+                    text: "Reveal in Timeline",
+                    action: () => onRevealClip(clip),
+                  },
+                ]).catch((error) => {
+                  console.error("Failed to show native video clip context menu:", error);
+                });
+              }}
               title={`${clip.sourceName} · ${clip.sourceIn.toFixed(
                 2,
-              )}–${clip.sourceOut.toFixed(2)} s · ${track.shortLabel}`}
+              )}–${clip.sourceOut.toFixed(2)} s · ${videoPlaybackRate(clip)}× · ${track.shortLabel}`}
               onMouseDown={(event) => startMove(event, clip)}
               onClick={(event) => {
                 event.stopPropagation();
@@ -623,6 +651,18 @@ function VideoTrack({
                 onSeek?.(time);
               }}
             >
+              {transformKeyframeTimes.length > 0 && (
+                <div className="timeline-video-keyframes" aria-hidden="true">
+                  {transformKeyframeTimes.map((time) => (
+                    <span
+                      key={`${clip.id}-keyframe-${time.toFixed(4)}`}
+                      className="timeline-video-keyframe-marker"
+                      style={{ left: `${Math.max(0, Math.min(100, (time / clipDuration) * 100))}%` }}
+                    />
+                  ))}
+                </div>
+              )}
+
               <div
                 className="video-resize-handle left"
                 onMouseDown={(event) => startResize(event, clip, "left")}
@@ -632,6 +672,12 @@ function VideoTrack({
                 <span className="timeline-video-clip-name">
                   {clip.sourceName}
                 </span>
+
+                {Math.abs(videoPlaybackRate(clip) - 1) > 0.0001 && (
+                  <span className="timeline-video-speed-badge">
+                    {videoPlaybackRate(clip)}×
+                  </span>
+                )}
 
                 {currentTime >= clip.timelineStart &&
                   currentTime <= clip.timelineEnd && (

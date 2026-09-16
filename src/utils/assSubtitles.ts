@@ -1,4 +1,4 @@
-import type { Subtitle } from "../types/subtitle";
+import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 
 export const ASS_WIDTH = 1920;
 export const ASS_HEIGHT = 1080;
@@ -145,6 +145,11 @@ function createStyle(index: number, subtitle: Subtitle): string {
   ].join(",");
 }
 
+function subtitleLayer(subtitle: Subtitle) {
+  const match = /^subtitle-(\d+)$/.exec(getSubtitleTrackId(subtitle));
+  return match ? Math.max(0, Number(match[1]) - 1) : 0;
+}
+
 function createDialogue(index: number, subtitle: Subtitle): string {
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
@@ -158,11 +163,13 @@ function createDialogue(index: number, subtitle: Subtitle): string {
 
   const override = `{\\an${alignment}\\pos(${x.toFixed(2)},${y.toFixed(2)})}`;
 
-  return `Dialogue: 0,${start},${end},Subtitle${index},,0,0,0,,${override}${text}`;
+  return `Dialogue: ${subtitleLayer(subtitle)},${start},${end},Subtitle${index},,0,0,0,,${override}${text}`;
 }
 
 export function buildAssTrack(subtitles: Subtitle[]): string {
-  const sorted = [...subtitles].sort((a, b) => a.startTime - b.startTime);
+  const sorted = [...subtitles].sort((a, b) =>
+    a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
+  );
 
   const styles = sorted
     .map((subtitle, index) => createStyle(index, subtitle))

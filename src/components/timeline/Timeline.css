@@ -75,6 +75,37 @@
   line-height:1
 }
 
+.timeline-speed-control {
+  height:26px;
+  padding:0 7px;
+  border-radius:8px;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  background:var(--control-fill);
+  color:var(--tertiary-label);
+  font-size:9px;
+  font-weight:600;
+  white-space:nowrap
+}
+
+.timeline-speed-control select {
+  min-width:55px;
+  border:none;
+  outline:none;
+  background:transparent;
+  color:var(--secondary-label);
+  font:inherit;
+  font-size:10px;
+  font-weight:600;
+  cursor:pointer
+}
+
+.timeline-speed-control select:disabled {
+  opacity:.4;
+  cursor:default
+}
+
 .timeline-edit-actions {
   display:flex;
   align-items:center;
@@ -2027,3 +2058,27 @@
 
 
 
+
+/* The active subtitle track is the destination for Add Subtitle, SRT import,
+   and transcription. Keep the cue subtle so the timeline remains uncluttered. */
+.timeline-fixed-label-row.active-subtitle-track > .timeline-row-label {
+  box-shadow: inset 2px 0 var(--system-blue);
+  background: rgba(10, 132, 255, 0.08);
+}
+
+/* Transform keyframes */
+.timeline-video-keyframes{position:absolute;left:0;right:0;bottom:5px;height:10px;pointer-events:none;z-index:9}
+.timeline-video-keyframe-marker{position:absolute;top:50%;width:7px;height:7px;border-radius:1px;background:var(--system-blue);box-shadow:0 0 0 1px rgba(0,0,0,.38);transform:translate(-50%,-50%) rotate(45deg)}
+.timeline-video-clip:not(.selected) .timeline-video-keyframes{display:none}
+
+.timeline-video-speed-badge {
+  flex:0 0 auto;
+  margin-left:6px;
+  padding:2px 5px;
+  border-radius:5px;
+  background:rgba(255,255,255,.11);
+  color:rgba(255,255,255,.76);
+  font-size:8px;
+  font-weight:650;
+  line-height:1
+}

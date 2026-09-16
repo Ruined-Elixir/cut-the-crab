@@ -1,36 +1,101 @@
 import { useMemo, useRef, useState } from "react";
 
-import type { Subtitle, SubtitleStyle } from "../types/subtitle";
+import {
+  DEFAULT_SUBTITLE_TRACK_ID,
+  getSubtitleTrackId,
+  type Subtitle,
+  type SubtitleStyle,
+} from "../types/subtitle";
 
 const INITIAL_SUBTITLES: Subtitle[] = [
   {
     id: "1",
+    trackId: DEFAULT_SUBTITLE_TRACK_ID,
     startTime: 1.2,
     endTime: 3.8,
     text: "Hello everyone",
   },
   {
     id: "2",
+    trackId: DEFAULT_SUBTITLE_TRACK_ID,
     startTime: 4.5,
     endTime: 7.1,
     text: "This is a subtitle test",
   },
 ];
 
+function subtitleTrackIndex(trackId: string) {
+  const match = /^subtitle-(\d+)$/.exec(trackId);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
 function sortSubtitles(subtitles: Subtitle[]) {
-  return [...subtitles].sort((a, b) => a.startTime - b.startTime);
+  return [...subtitles].sort(
+    (a, b) =>
+      a.startTime - b.startTime ||
+      subtitleTrackIndex(getSubtitleTrackId(a)) -
+        subtitleTrackIndex(getSubtitleTrackId(b)) ||
+      a.endTime - b.endTime,
+  );
+}
+
+function clampStartAgainstTrackCollisions(
+  subtitles: Subtitle[],
+  movingId: string,
+  targetTrackId: string,
+  requestedStart: number,
+  subtitleDuration: number,
+  timelineDuration: number,
+) {
+  let start = Math.max(
+    0,
+    Math.min(
+      Math.max(0, timelineDuration - subtitleDuration),
+      requestedStart,
+    ),
+  );
+
+  const obstacles = subtitles
+    .filter(
+      (subtitle) =>
+        subtitle.id !== movingId &&
+        getSubtitleTrackId(subtitle) === targetTrackId,
+    )
+    .sort((a, b) => a.startTime - b.startTime);
+
+  for (const obstacle of obstacles) {
+    const end = start + subtitleDuration;
+
+    if (end <= obstacle.startTime || start >= obstacle.endTime) {
+      continue;
+    }
+
+    const left = obstacle.startTime - subtitleDuration;
+    const right = obstacle.endTime;
+    const candidate =
+      Math.abs(requestedStart - left) <= Math.abs(requestedStart - right)
+        ? left
+        : right;
+
+    start = Math.max(
+      0,
+      Math.min(
+        Math.max(0, timelineDuration - subtitleDuration),
+        candidate,
+      ),
+    );
+  }
+
+  return start;
 }
 
 export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   const [subtitles, setSubtitles] = useState<Subtitle[]>(INITIAL_SUBTITLES);
-
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(
     null,
   );
-
   const [selectedSubtitleIds, setSelectedSubtitleIds] = useState<string[]>([]);
   const selectionAnchorIdRef = useRef<string | null>(null);
-
   const [subtitleSearch, setSubtitleSearch] = useState("");
 
   const filteredSubtitles = useMemo(() => {
@@ -53,10 +118,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
   type SelectionMode = "single" | "toggle" | "range";
 
-  const selectSubtitle = (
-    id: string,
-    mode: SelectionMode = "single",
-  ) => {
+  const selectSubtitle = (id: string, mode: SelectionMode = "single") => {
     if (mode === "toggle") {
       setSelectedSubtitleIds((current) => {
         const isSelected = current.includes(id);
@@ -65,9 +127,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
           : [...current, id];
 
         setSelectedSubtitleId(
-          next.includes(id)
-            ? id
-            : next[next.length - 1] ?? null,
+          next.includes(id) ? id : next[next.length - 1] ?? null,
         );
 
         return next;
@@ -78,12 +138,25 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     }
 
     if (mode === "range") {
-      const orderedIds = sortSubtitles(subtitles).map(
-        (subtitle) => subtitle.id,
-      );
+      const target = subtitles.find((subtitle) => subtitle.id === id);
+      const targetTrackId = target
+        ? getSubtitleTrackId(target)
+        : DEFAULT_SUBTITLE_TRACK_ID;
+      const orderedIds = sortSubtitles(
+        subtitles.filter(
+          (subtitle) => getSubtitleTrackId(subtitle) === targetTrackId,
+        ),
+      ).map((subtitle) => subtitle.id);
 
-      const anchorId =
+      const anchorCandidate =
         selectionAnchorIdRef.current ?? selectedSubtitleId ?? id;
+      const anchor = subtitles.find(
+        (subtitle) => subtitle.id === anchorCandidate,
+      );
+      const anchorId =
+        anchor && getSubtitleTrackId(anchor) === targetTrackId
+          ? anchorCandidate
+          : id;
 
       const anchorIndex = orderedIds.indexOf(anchorId);
       const targetIndex = orderedIds.indexOf(id);
@@ -95,6 +168,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
         setSelectedSubtitleIds(rangeIds);
         setSelectedSubtitleId(id);
+        selectionAnchorIdRef.current = anchorId;
         return;
       }
     }
@@ -104,10 +178,14 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     selectionAnchorIdRef.current = id;
   };
 
-  const selectAllSubtitles = () => {
-    const orderedIds = sortSubtitles(subtitles).map(
-      (subtitle) => subtitle.id,
-    );
+  const selectAllSubtitles = (trackId?: string) => {
+    const orderedIds = sortSubtitles(
+      trackId
+        ? subtitles.filter(
+            (subtitle) => getSubtitleTrackId(subtitle) === trackId,
+          )
+        : subtitles,
+    ).map((subtitle) => subtitle.id);
 
     setSelectedSubtitleIds(orderedIds);
     setSelectedSubtitleId(orderedIds[0] ?? null);
@@ -123,10 +201,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   };
 
   const nudgeSelectedSubtitles = (requestedDelta: number) => {
-    if (
-      selectedSubtitleIds.length === 0 ||
-      requestedDelta === 0
-    ) {
+    if (selectedSubtitleIds.length === 0 || requestedDelta === 0) {
       return;
     }
 
@@ -144,14 +219,8 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
       const unselected = current.filter(
         (subtitle) => !selectedIds.has(subtitle.id),
       );
-
-      const minStart = Math.min(
-        ...selected.map((subtitle) => subtitle.startTime),
-      );
-
-      const maxEnd = Math.max(
-        ...selected.map((subtitle) => subtitle.endTime),
-      );
+      const minStart = Math.min(...selected.map((subtitle) => subtitle.startTime));
+      const maxEnd = Math.max(...selected.map((subtitle) => subtitle.endTime));
 
       let minimumDelta = -minStart;
       let maximumDelta =
@@ -161,8 +230,12 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
       if (requestedDelta > 0) {
         for (const moving of selected) {
+          const trackId = getSubtitleTrackId(moving);
           for (const obstacle of unselected) {
-            if (obstacle.startTime >= moving.endTime) {
+            if (
+              getSubtitleTrackId(obstacle) === trackId &&
+              obstacle.startTime >= moving.endTime
+            ) {
               maximumDelta = Math.min(
                 maximumDelta,
                 obstacle.startTime - moving.endTime,
@@ -172,8 +245,12 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
         }
       } else {
         for (const moving of selected) {
+          const trackId = getSubtitleTrackId(moving);
           for (const obstacle of unselected) {
-            if (obstacle.endTime <= moving.startTime) {
+            if (
+              getSubtitleTrackId(obstacle) === trackId &&
+              obstacle.endTime <= moving.startTime
+            ) {
               minimumDelta = Math.max(
                 minimumDelta,
                 obstacle.endTime - moving.startTime,
@@ -228,11 +305,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     setSubtitles((current) =>
       current.map((subtitle) =>
         subtitle.id === id
-          ? {
-              ...subtitle,
-              positionX,
-              positionY,
-            }
+          ? { ...subtitle, positionX, positionY }
           : subtitle,
       ),
     );
@@ -240,20 +313,60 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
   const moveSubtitle = (id: string, newStartTime: number) => {
     setSubtitles((current) =>
-      current.map((subtitle) => {
-        if (subtitle.id !== id) {
-          return subtitle;
-        }
+      sortSubtitles(
+        current.map((subtitle) => {
+          if (subtitle.id !== id) {
+            return subtitle;
+          }
 
-        const duration = subtitle.endTime - subtitle.startTime;
+          const duration = subtitle.endTime - subtitle.startTime;
 
-        return {
-          ...subtitle,
-          startTime: newStartTime,
-          endTime: newStartTime + duration,
-        };
-      }),
+          return {
+            ...subtitle,
+            startTime: newStartTime,
+            endTime: newStartTime + duration,
+          };
+        }),
+      ),
     );
+  };
+
+  const moveSubtitleToTrack = (
+    id: string,
+    targetTrackId: string,
+    requestedStartTime: number,
+  ) => {
+    if (!/^subtitle-\d+$/.test(targetTrackId)) {
+      return;
+    }
+
+    setSubtitles((current) => {
+      const target = current.find((subtitle) => subtitle.id === id);
+      if (!target) return current;
+
+      const duration = target.endTime - target.startTime;
+      const safeStart = clampStartAgainstTrackCollisions(
+        current,
+        id,
+        targetTrackId,
+        requestedStartTime,
+        duration,
+        Math.max(videoDuration, requestedStartTime + duration),
+      );
+
+      return sortSubtitles(
+        current.map((subtitle) =>
+          subtitle.id === id
+            ? {
+                ...subtitle,
+                trackId: targetTrackId,
+                startTime: safeStart,
+                endTime: safeStart + duration,
+              }
+            : subtitle,
+        ),
+      );
+    });
   };
 
   const moveSubtitleGroup = (
@@ -264,9 +377,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     const selectedIds = new Set(ids);
 
     setSubtitles((current) => {
-      const anchor = current.find(
-        (subtitle) => subtitle.id === anchorId,
-      );
+      const anchor = current.find((subtitle) => subtitle.id === anchorId);
 
       if (!anchor) {
         return current;
@@ -294,24 +405,28 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     newEndTime: number,
   ) => {
     setSubtitles((current) =>
-      current.map((subtitle) =>
-        subtitle.id === id
-          ? {
-              ...subtitle,
-              startTime: newStartTime,
-              endTime: newEndTime,
-            }
-          : subtitle,
+      sortSubtitles(
+        current.map((subtitle) =>
+          subtitle.id === id
+            ? {
+                ...subtitle,
+                startTime: newStartTime,
+                endTime: newEndTime,
+              }
+            : subtitle,
+        ),
       ),
     );
   };
 
-  const addSubtitle = (startTime: number) => {
+  const addSubtitle = (
+    startTime: number,
+    trackId = DEFAULT_SUBTITLE_TRACK_ID,
+  ) => {
     const safeStart = Math.max(
       0,
       Math.min(startTime, videoDuration || startTime),
     );
-
     const endTime =
       videoDuration > 0
         ? Math.min(videoDuration, safeStart + 2)
@@ -319,28 +434,23 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     const subtitle: Subtitle = {
       id: crypto.randomUUID(),
+      trackId,
       startTime: safeStart,
       endTime,
       text: "New subtitle",
     };
 
     setSubtitles((current) => sortSubtitles([...current, subtitle]));
-
     setSelectedSubtitleIds([subtitle.id]);
     setSelectedSubtitleId(subtitle.id);
     selectionAnchorIdRef.current = subtitle.id;
   };
 
-  const splitSubtitle = (
-    id: string,
-    splitTime: number,
-  ) => {
+  const splitSubtitle = (id: string, splitTime: number) => {
     const MIN_SPLIT_GAP = 0.05;
 
     setSubtitles((current) => {
-      const target = current.find(
-        (subtitle) => subtitle.id === id,
-      );
+      const target = current.find((subtitle) => subtitle.id === id);
 
       if (!target) {
         return current;
@@ -348,10 +458,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
       const safeSplitTime = Math.max(
         target.startTime + MIN_SPLIT_GAP,
-        Math.min(
-          target.endTime - MIN_SPLIT_GAP,
-          splitTime,
-        ),
+        Math.min(target.endTime - MIN_SPLIT_GAP, splitTime),
       );
 
       if (
@@ -367,16 +474,13 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
         startTime: safeSplitTime,
         endTime: target.endTime,
       };
-
       const firstSubtitle: Subtitle = {
         ...target,
         endTime: safeSplitTime,
       };
 
       const next = current.flatMap((subtitle) =>
-        subtitle.id === id
-          ? [firstSubtitle, secondSubtitle]
-          : [subtitle],
+        subtitle.id === id ? [firstSubtitle, secondSubtitle] : [subtitle],
       );
 
       window.requestAnimationFrame(() => {
@@ -395,46 +499,49 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     setSubtitles((current) =>
       current.filter((subtitle) => !idsToDelete.has(subtitle.id)),
     );
-
     setSelectedSubtitleIds((current) =>
       current.filter((id) => !idsToDelete.has(id)),
     );
-
     setSelectedSubtitleId((current) =>
       current && idsToDelete.has(current) ? null : current,
     );
-
     selectionAnchorIdRef.current = null;
   };
 
-  const deleteSubtitle = (id: string) => {
-    deleteSubtitles([id]);
-  };
-
   const replaceSubtitles = (nextSubtitles: Subtitle[]) => {
-    setSubtitles(sortSubtitles(nextSubtitles));
-
+    setSubtitles(
+      sortSubtitles(
+        nextSubtitles.map((subtitle) => ({
+          ...subtitle,
+          trackId: getSubtitleTrackId(subtitle),
+        })),
+      ),
+    );
     clearSubtitleSelection();
   };
 
   const replaceWithGeneratedSubtitles = (
-    segments: {
-      startTime: number;
-      endTime: number;
-      text: string;
-    }[],
+    segments: { startTime: number; endTime: number; text: string }[],
+    trackId = DEFAULT_SUBTITLE_TRACK_ID,
   ) => {
     const generated: Subtitle[] = segments.map((segment) => ({
       id: crypto.randomUUID(),
+      trackId,
       startTime: segment.startTime,
       endTime: segment.endTime,
       text: segment.text,
     }));
 
-    setSubtitles(sortSubtitles(generated));
+    setSubtitles((current) =>
+      sortSubtitles([
+        ...current.filter(
+          (subtitle) => getSubtitleTrackId(subtitle) !== trackId,
+        ),
+        ...generated,
+      ]),
+    );
 
     const firstId = generated[0]?.id ?? null;
-
     setSelectedSubtitleIds(firstId ? [firstId] : []);
     setSelectedSubtitleId(firstId);
     selectionAnchorIdRef.current = firstId;
@@ -443,40 +550,24 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   const updateSubtitleStyle = (id: string, style: SubtitleStyle) => {
     setSubtitles((current) =>
       current.map((subtitle) =>
-        subtitle.id === id
-          ? {
-              ...subtitle,
-              ...style,
-            }
-          : subtitle,
+        subtitle.id === id ? { ...subtitle, ...style } : subtitle,
       ),
     );
   };
 
-  const updateSubtitleStyles = (
-    ids: string[],
-    style: SubtitleStyle,
-  ) => {
+  const updateSubtitleStyles = (ids: string[], style: SubtitleStyle) => {
     const selectedIds = new Set(ids);
 
     setSubtitles((current) =>
       current.map((subtitle) =>
-        selectedIds.has(subtitle.id)
-          ? {
-              ...subtitle,
-              ...style,
-            }
-          : subtitle,
+        selectedIds.has(subtitle.id) ? { ...subtitle, ...style } : subtitle,
       ),
     );
   };
 
   const updateAllSubtitleStyles = (style: SubtitleStyle) => {
     setSubtitles((current) =>
-      current.map((subtitle) => ({
-        ...subtitle,
-        ...style,
-      })),
+      current.map((subtitle) => ({ ...subtitle, ...style })),
     );
   };
 
@@ -501,12 +592,12 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     updateAllSubtitleStyles,
 
     moveSubtitle,
+    moveSubtitleToTrack,
     moveSubtitleGroup,
     nudgeSelectedSubtitles,
     resizeSubtitle,
     addSubtitle,
     splitSubtitle,
-    deleteSubtitle,
     deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,

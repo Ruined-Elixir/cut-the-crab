@@ -6,12 +6,18 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
+import {
+  canShowNativeContextMenu,
+  showNativeContextMenu,
+} from "../../services/nativeContextMenu";
+
+import { getSubtitleTrackId, type Subtitle, type SubtitleStyle } from "../../types/subtitle";
 import type {
   AudioTimelineClip,
   TimelineTrackId,
@@ -21,6 +27,7 @@ import type {
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
+import { videoPlaybackRate } from "../../utils/videoRetime";
 import {
   PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
   snapProgramBoundsToBounds,
@@ -28,6 +35,11 @@ import {
   type ProgramBounds,
   type ProgramSnapGuide,
 } from "../../utils/programSnapping";
+import {
+  evaluateVideoTransform,
+  evaluateVideoTransformProperty,
+  withEvaluatedVideoTransform,
+} from "../../utils/videoTransformKeyframes";
 
 import "./VideoPlayer.css";
 
@@ -63,6 +75,7 @@ type VideoPlayerProps = {
       positionY?: number;
       scale?: number;
       rotation?: number;
+      opacity?: number;
       cropTop?: number;
       cropRight?: number;
       cropBottom?: number;
@@ -102,6 +115,19 @@ type ShellDimensions = {
   width: number;
   height: number;
 };
+
+type OpacityEditorState = {
+  clipId: string;
+  clientX: number;
+  clientY: number;
+};
+
+const MAX_NATIVE_VIDEO_PREVIEW_RATE = 2;
+const HIGH_SPEED_PREVIEW_MIN_SEEK_INTERVAL_MS = 90;
+
+function videoPreviewPlaybackRate(clip: VideoTimelineClip) {
+  return Math.min(videoPlaybackRate(clip), MAX_NATIVE_VIDEO_PREVIEW_RATE);
+}
 
 
 type SameTrackDissolve = {
@@ -152,8 +178,10 @@ function findSameTrackDissolve(
     const outgoingDuration = outgoing.timelineEnd - outgoing.timelineStart;
     const incomingDuration = incoming.timelineEnd - incoming.timelineStart;
     const sourceDuration = outgoing.sourceDuration ?? outgoing.sourceOut;
-    const outgoingPostHandle = Math.max(0, sourceDuration - outgoing.sourceOut);
-    const incomingPreHandle = Math.max(0, incoming.sourceIn);
+    const outgoingPostHandle =
+      Math.max(0, sourceDuration - outgoing.sourceOut) / videoPlaybackRate(outgoing);
+    const incomingPreHandle =
+      Math.max(0, incoming.sourceIn) / videoPlaybackRate(incoming);
 
     // A true centered dissolve needs media handles on both sides of the edit.
     // If either clip has no handle, the ordinary per-clip transition preview
@@ -254,7 +282,10 @@ function timelineTimeToSourceTime(
   clip: VideoTimelineClip | AudioTimelineClip,
   timelineTime: number,
 ) {
-  return clip.sourceIn + (timelineTime - clip.timelineStart);
+  return (
+    clip.sourceIn +
+    (timelineTime - clip.timelineStart) * videoPlaybackRate(clip)
+  );
 }
 
 function audioTrackIndex(trackId: string) {
@@ -311,6 +342,7 @@ function videoTransformStyle(
   clip: VideoTimelineClip | null,
   sourceSize: VideoDimensions = { width: 16, height: 9 },
   shellSize: ShellDimensions = { width: 0, height: 0 },
+  timelineTime = clip?.timelineStart ?? 0,
 ): CSSProperties {
   if (!clip) {
     return {
@@ -320,10 +352,11 @@ function videoTransformStyle(
     };
   }
 
-  const positionX = clip.positionX ?? 0;
-  const positionY = clip.positionY ?? 0;
-  const scale = Math.max(10, Math.min(400, clip.scale ?? 100));
-  const rotation = Math.max(-180, Math.min(180, clip.rotation ?? 0));
+  const evaluated = evaluateVideoTransform(clip, timelineTime);
+  const positionX = evaluated.positionX;
+  const positionY = evaluated.positionY;
+  const scale = evaluated.scale;
+  const rotation = evaluated.rotation;
   const cropTop = Math.max(0, Math.min(49, clip.cropTop ?? 0));
   const cropRight = Math.max(0, Math.min(49, clip.cropRight ?? 0));
   const cropBottom = Math.max(0, Math.min(49, clip.cropBottom ?? 0));
@@ -399,7 +432,7 @@ function videoTransitionStyle(
     return { opacity: 1, filter: "brightness(1)" };
   }
 
-  let opacity = 1;
+  let opacity = evaluateVideoTransformProperty(clip, "opacity", timelineTime) / 100;
   let brightness = 1;
 
   const clipDuration = Math.max(0.1, clip.timelineEnd - clip.timelineStart);
@@ -468,6 +501,7 @@ function programBoundsForClip(
   clip: VideoTimelineClip,
   dimensions: VideoDimensions,
   shell: ShellDimensions,
+  timelineTime = clip.timelineStart,
 ): ProgramBounds {
   const shellWidth = Math.max(1, shell.width);
   const shellHeight = Math.max(1, shell.height);
@@ -492,13 +526,14 @@ function programBoundsForClip(
   const localTop = -baseHeight / 2 + (cropTop / 100) * baseHeight;
   const localBottom = baseHeight / 2 - (cropBottom / 100) * baseHeight;
 
-  const scale = Math.max(10, Math.min(400, clip.scale ?? 100)) / 100;
-  const radians = (Math.max(-180, Math.min(180, clip.rotation ?? 0)) * Math.PI) / 180;
+  const evaluated = evaluateVideoTransform(clip, timelineTime);
+  const scale = evaluated.scale / 100;
+  const radians = (evaluated.rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
 
-  const centerX = shellWidth / 2 + ((clip.positionX ?? 0) / 100) * shellWidth;
-  const centerY = shellHeight / 2 + ((clip.positionY ?? 0) / 100) * shellHeight;
+  const centerX = shellWidth / 2 + (evaluated.positionX / 100) * shellWidth;
+  const centerY = shellHeight / 2 + (evaluated.positionY / 100) * shellHeight;
 
   const corners = [
     [localLeft, localTop],
@@ -569,6 +604,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   });
   const [programTransformClipId, setProgramTransformClipId] = useState<string | null>(null);
   const [cropModeClipId, setCropModeClipId] = useState<string | null>(null);
+  const [opacityEditor, setOpacityEditor] = useState<OpacityEditorState | null>(null);
   const cropStartRef = useRef<{
     clipId: string;
     cropTop: number;
@@ -584,6 +620,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const audioRefs = useRef<Record<AudioTrackId, HTMLAudioElement | null>>({});
   const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const opacityEditorRef = useRef<HTMLDivElement | null>(null);
+  const highSpeedPreviewSeekAtRef = useRef<Record<string, number>>({});
 
   const currentTimeRef = useRef(currentTime);
   const timelineDurationRef = useRef(timelineDuration);
@@ -732,6 +770,40 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   }, [onDurationChange]);
 
   useEffect(() => {
+    setOpacityEditor((current) =>
+      current && current.clipId !== selectedVideoClipId ? null : current,
+    );
+  }, [selectedVideoClipId]);
+
+  useEffect(() => {
+    if (!opacityEditor) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        opacityEditorRef.current &&
+        event.target instanceof Node &&
+        opacityEditorRef.current.contains(event.target)
+      ) {
+        return;
+      }
+      setOpacityEditor(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpacityEditor(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [opacityEditor]);
+
+  useEffect(() => {
     const shell = shellRef.current;
 
     if (!shell) {
@@ -765,6 +837,44 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     incoming: dissolveIncomingRefs.current[trackId] ?? null,
   });
 
+  const syncHighSpeedVideoPreview = (
+    element: HTMLVideoElement,
+    clip: VideoTimelineClip,
+    expectedSourceTime: number,
+    syncKey: string,
+    forceSeek: boolean,
+  ) => {
+    const requestedRate = videoPlaybackRate(clip);
+    element.playbackRate = videoPreviewPlaybackRate(clip);
+
+    if (requestedRate <= MAX_NATIVE_VIDEO_PREVIEW_RATE || forceSeek) {
+      return;
+    }
+
+    // WKWebView can struggle to continuously decode full-resolution media at
+    // 3x/4x. Keep the hardware-backed media element in its reliable <=2x
+    // range, then periodically jump over frames so the displayed source time
+    // remains aligned with the real retimed timeline. This is deliberately a
+    // preview-only trick-play path; export still renders the exact requested
+    // playback rate with FFmpeg.
+    const sourceLag = expectedSourceTime - element.currentTime;
+    const driftThreshold = Math.max(0.16, requestedRate * 0.06);
+    const now = performance.now();
+    const lastSeekAt = highSpeedPreviewSeekAtRef.current[syncKey] ?? 0;
+
+    if (
+      sourceLag > driftThreshold &&
+      now - lastSeekAt >= HIGH_SPEED_PREVIEW_MIN_SEEK_INTERVAL_MS
+    ) {
+      try {
+        element.currentTime = expectedSourceTime;
+        highSpeedPreviewSeekAtRef.current[syncKey] = now;
+      } catch (error) {
+        console.error(`${syncKey} high-speed preview seek failed:`, error);
+      }
+    }
+  };
+
   const syncSameTrackDissolve = (
     trackId: VideoTrackId,
     timelineTime: number,
@@ -794,19 +904,32 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         continue;
       }
 
-      const rawSourceTime = clip.sourceIn + (timelineTime - clip.timelineStart);
+      const rawSourceTime = timelineTimeToSourceTime(clip, timelineTime);
       const maxSourceTime = Number.isFinite(element.duration)
         ? element.duration
         : clip.sourceDuration ?? clip.sourceOut;
       const safeSourceTime = Math.max(0, Math.min(maxSourceTime || rawSourceTime, rawSourceTime));
 
-      if (forceSeek || Math.abs(element.currentTime - safeSourceTime) > 0.12) {
+      const requestedRate = videoPlaybackRate(clip);
+      if (
+        forceSeek ||
+        (requestedRate <= MAX_NATIVE_VIDEO_PREVIEW_RATE &&
+          Math.abs(element.currentTime - safeSourceTime) > 0.12)
+      ) {
         try {
           element.currentTime = safeSourceTime;
         } catch (error) {
           console.error(`${trackId} dissolve seek failed:`, error);
         }
       }
+
+      syncHighSpeedVideoPreview(
+        element,
+        clip,
+        safeSourceTime,
+        `${trackId}:dissolve:${clip.id}`,
+        forceSeek,
+      );
 
       if (shouldPlay) {
         if (element.paused) {
@@ -901,6 +1024,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     }
 
     activeVideoClipIdRefs.current[trackId] = activeClip.id;
+    syncHighSpeedVideoPreview(
+      video,
+      activeClip,
+      safeSourceTime,
+      `${trackId}:${activeClip.id}`,
+      clipChanged || forceSeek,
+    );
 
     if (shouldPlay) {
       if (video.paused) {
@@ -989,6 +1119,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       : standaloneClip?.volume ?? 100;
     audio.volume = Math.max(0, Math.min(1, (Math.max(0, Math.min(100, volumePercent)) / 100) * fadeGain));
     audio.muted = trackMuted || soloMuted || clipMuted;
+    audio.playbackRate = linkedVideoClip ? videoPlaybackRate(linkedVideoClip) : 1;
+    audio.preservesPitch = true;
 
     if (audio.muted) {
       activeAudioClipIdRefs.current[audioTrackId] = null;
@@ -1091,6 +1223,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     currentTimeRef.current = 0;
     activeVideoClipIdRefs.current = {};
     activeAudioClipIdRefs.current = {};
+    highSpeedPreviewSeekAtRef.current = {};
     playbackAnchorTimelineRef.current = 0;
     playbackAnchorPerformanceRef.current = 0;
 
@@ -1263,9 +1396,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     ? topVisualClip.timelineStart - topVisualClip.sourceIn
     : 0;
   const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? videoPath ?? "";
-  const visibleSubtitles = isTrackHidden(trackSettings, "subtitle-1")
-    ? []
-    : subtitles;
+  const visibleSubtitles = subtitles.filter(
+    (subtitle) => !isTrackHidden(trackSettings, getSubtitleTrackId(subtitle)),
+  );
 
   const selectedActiveClip = selectedVideoClipId
     ? visibleActiveClips.find((clip) => clip.id === selectedVideoClipId) ??
@@ -1276,6 +1409,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
           currentTime < clip.timelineEnd,
       ) ??
       null
+    : null;
+
+  const selectedDisplayClip = selectedActiveClip
+    ? withEvaluatedVideoTransform(selectedActiveClip, displayTime)
     : null;
 
   const selectedTrackId = selectedActiveClip?.trackId as VideoTrackId | undefined;
@@ -1334,8 +1471,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
     const startX = event.clientX;
     const startY = event.clientY;
-    const startPositionX = selectedActiveClip.positionX ?? 0;
-    const startPositionY = selectedActiveClip.positionY ?? 0;
+    const startPositionX = (selectedDisplayClip ?? selectedActiveClip).positionX ?? 0;
+    const startPositionY = (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const deltaX = moveEvent.clientX - startX;
@@ -1345,15 +1482,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       const rawPositionY = startPositionY + (deltaY / shellDimensions.height) * 100;
 
       const movingClip = {
-        ...selectedActiveClip,
+        ...(selectedDisplayClip ?? selectedActiveClip),
         positionX: rawPositionX,
         positionY: rawPositionY,
+        // Snap geometry must use the in-progress pointer values, not re-evaluate
+        // the clip's persisted animation channel at the same playhead time.
+        transformKeyframes: undefined,
       };
 
       const movingBounds = programBoundsForClip(
         movingClip,
         selectedVideoSize,
         shellDimensions,
+        displayTime,
       );
 
       const otherVisibleBounds: ProgramBounds[] = [];
@@ -1372,6 +1513,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
             otherClip,
             videoDimensions[otherClip.trackId] ?? { width: 16, height: 9 },
             shellDimensions,
+            displayTime,
           ),
         );
       }
@@ -1513,9 +1655,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const pointerOffsetX = event.clientX - movingCornerX;
     const pointerOffsetY = event.clientY - movingCornerY;
 
-    const startScale = Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100));
-    const startPositionX = selectedActiveClip.positionX ?? 0;
-    const startPositionY = selectedActiveClip.positionY ?? 0;
+    const startScale = Math.max(10, Math.min(400, (selectedDisplayClip ?? selectedActiveClip).scale ?? 100));
+    const startPositionX = (selectedDisplayClip ?? selectedActiveClip).positionX ?? 0;
+    const startPositionY = (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const pointerCornerX = moveEvent.clientX - pointerOffsetX;
@@ -1595,7 +1737,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       centerX,
       centerY,
     );
-    const startRotation = selectedActiveClip.rotation ?? 0;
+    const startRotation = (selectedDisplayClip ?? selectedActiveClip).rotation ?? 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const nextPointerAngle = pointerAngleDegrees(
@@ -1699,8 +1841,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const startRight = Math.max(0, Math.min(49, selectedActiveClip.cropRight ?? 0));
     const startBottom = Math.max(0, Math.min(49, selectedActiveClip.cropBottom ?? 0));
     const startLeft = Math.max(0, Math.min(49, selectedActiveClip.cropLeft ?? 0));
-    const rotationRadians = ((selectedActiveClip.rotation ?? 0) * Math.PI) / 180;
-    const clipScale = Math.max(0.1, Math.min(4, (selectedActiveClip.scale ?? 100) / 100));
+    const rotationRadians = (((selectedDisplayClip ?? selectedActiveClip).rotation ?? 0) * Math.PI) / 180;
+    const clipScale = Math.max(0.1, Math.min(4, ((selectedDisplayClip ?? selectedActiveClip).scale ?? 100) / 100));
     const cos = Math.cos(rotationRadians);
     const sin = Math.sin(rotationRadians);
 
@@ -1790,21 +1932,66 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     setProgramTransformClipId(clip.id);
   };
 
+  const openOpacityEditor = (
+    clip: VideoTimelineClip,
+    clientX: number,
+    clientY: number,
+  ) => {
+    setOpacityEditor({ clipId: clip.id, clientX, clientY });
+  };
+
+  const handleProgramClipContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    clip: VideoTimelineClip | null,
+  ) => {
+    if (!clip) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (cropModeClipId && cropModeClipId !== clip.id) {
+      finishCropMode();
+    }
+
+    onVideoClipSelect?.(clip.id);
+    setProgramTransformClipId(clip.id);
+
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    const locked = trackSettings[clip.trackId]?.locked ?? false;
+
+    if (!canShowNativeContextMenu()) {
+      if (!locked) openOpacityEditor(clip, clientX, clientY);
+      return;
+    }
+
+    void showNativeContextMenu([
+      {
+        id: `program-video.${clip.id}.opacity`,
+        text: "Opacity…",
+        enabled: !locked,
+        action: () => openOpacityEditor(clip, clientX, clientY),
+      },
+    ]).catch((error) => {
+      console.error("Failed to show Program Monitor video menu:", error);
+    });
+  };
+
   const isProgramTransformActive =
     !!selectedActiveClip && programTransformClipId === selectedActiveClip.id;
 
-  const transformOverlayStyle: CSSProperties | undefined = selectedActiveClip
+  const transformOverlayStyle: CSSProperties | undefined = selectedDisplayClip
     ? (() => {
         const clipScale =
-          Math.max(10, Math.min(400, selectedActiveClip.scale ?? 100)) / 100;
+          Math.max(10, Math.min(400, (selectedDisplayClip ?? selectedActiveClip).scale ?? 100)) / 100;
         const clipRotation = Math.max(
           -180,
-          Math.min(180, selectedActiveClip.rotation ?? 0),
+          Math.min(180, (selectedDisplayClip ?? selectedActiveClip).rotation ?? 0),
         );
 
         return {
-          transform: `translate3d(${selectedActiveClip.positionX ?? 0}%, ${
-            selectedActiveClip.positionY ?? 0
+          transform: `translate3d(${(selectedDisplayClip ?? selectedActiveClip).positionX ?? 0}%, ${
+            (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0
           }%, 0) scale(${clipScale}) rotate(${clipRotation}deg)`,
           transformOrigin: "center center",
           "--program-control-inverse-scale": `${1 / clipScale}`,
@@ -1837,6 +2024,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
    * During crop mode we intentionally expand back to the full fitted source so
    * the discarded regions remain visible/dimmed and can be restored by dragging.
    */
+  const opacityEditorClip = opacityEditor
+    ? videoClips.find((clip) => clip.id === opacityEditor.clipId) ?? null
+    : null;
+  const opacityEditorValue = opacityEditorClip
+    ? evaluateVideoTransformProperty(opacityEditorClip, "opacity", displayTime)
+    : 100;
+  const opacityEditorLocked = opacityEditorClip
+    ? trackSettings[opacityEditorClip.trackId]?.locked ?? false
+    : false;
+
+  const opacityEditorStyle: CSSProperties | undefined = opacityEditor
+    ? {
+        left: Math.max(10, Math.min(window.innerWidth - 250, opacityEditor.clientX)),
+        top: Math.max(10, Math.min(window.innerHeight - 92, opacityEditor.clientY)),
+      }
+    : undefined;
+
   const transformBoxRect = (() => {
     if (!selectedCropInsets || isCropModeActive) {
       return fittedVideoRect;
@@ -1943,16 +2147,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     data-source-path={dissolve.outgoing.sourcePath}
                     className="video-element video-track-layer program-dissolve-layer"
                     muted
+                    preload="auto"
                     style={{
                       zIndex,
                       ...videoTransformStyle(
                         dissolve.outgoing,
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
                         shellDimensions,
+                        displayTime,
                       ),
                       opacity:
                         (1 - dissolve.progress) *
-                        videoOpacityFadeFactor(dissolve.outgoing, displayTime),
+                        videoOpacityFadeFactor(dissolve.outgoing, displayTime) *
+                        (evaluateVideoTransformProperty(dissolve.outgoing, "opacity", displayTime) / 100),
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(
@@ -1970,16 +2177,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     data-source-path={dissolve.incoming.sourcePath}
                     className="video-element video-track-layer program-dissolve-layer incoming"
                     muted
+                    preload="auto"
                     style={{
                       zIndex,
                       ...videoTransformStyle(
                         dissolve.incoming,
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
                         shellDimensions,
+                        displayTime,
                       ),
                       opacity:
                         dissolve.progress *
-                        videoOpacityFadeFactor(dissolve.incoming, displayTime),
+                        videoOpacityFadeFactor(dissolve.incoming, displayTime) *
+                        (evaluateVideoTransformProperty(dissolve.incoming, "opacity", displayTime) / 100),
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(
@@ -2007,6 +2217,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                   data-source-path={clip.sourcePath}
                   className="video-element video-track-layer"
                   muted
+                  preload="auto"
                   style={{
                     zIndex: videoTrackIndex(trackId),
                     visibility:
@@ -2017,12 +2228,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       clip,
                       videoDimensions[trackId] ?? { width: 16, height: 9 },
                       shellDimensions,
+                      displayTime,
                     ),
                     ...videoTransitionStyle(clip, displayTime),
                   }}
                   onLoadedMetadata={() => handleVideoLoadedMetadata(trackId)}
                   onPointerDown={(event) =>
                     handleProgramClipPointerDown(event, clip)
+                  }
+                  onContextMenu={(event) =>
+                    handleProgramClipContextMenu(event, clip)
                   }
                 />
               );
@@ -2063,6 +2278,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     height: transformBoxRect.height,
                   }}
                   onPointerDown={isCropModeActive ? undefined : beginMoveTransform}
+                  onContextMenu={(event) =>
+                    handleProgramClipContextMenu(event, selectedActiveClip)
+                  }
                 >
                   <span className="program-transform-track-badge">
                     {videoTrackLabel(selectedActiveClip.trackId)}
@@ -2129,7 +2347,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                           className="program-transform-handle rotation"
                           onPointerDown={beginRotateTransform}
                           aria-label={`Rotate clip, ${formatRotation(
-                            selectedActiveClip.rotation ?? 0,
+                            (selectedDisplayClip ?? selectedActiveClip).rotation ?? 0,
                           )}`}
                           title="Drag to rotate · snaps every 45°"
                         >
@@ -2139,7 +2357,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                           className="program-transform-angle-readout"
                           aria-hidden="true"
                         >
-                          {formatRotation(selectedActiveClip.rotation ?? 0)}
+                          {formatRotation((selectedDisplayClip ?? selectedActiveClip).rotation ?? 0)}
                         </span>
                       </>
                     )
@@ -2187,7 +2405,42 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
             />
           </div>
 
-          <VideoControls
+          {opacityEditor && opacityEditorClip && opacityEditorStyle && (
+        <div
+          ref={opacityEditorRef}
+          className="program-opacity-popover"
+          style={opacityEditorStyle}
+          role="dialog"
+          aria-label="Video opacity"
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="program-opacity-popover-header">
+            <span>Opacity</span>
+            <strong>{Math.round(opacityEditorValue)}%</strong>
+          </div>
+          <input
+            className="program-opacity-slider"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={opacityEditorValue}
+            disabled={opacityEditorLocked}
+            aria-label="Video opacity"
+            onChange={(event) =>
+              onVideoTransformChange?.(opacityEditorClip.id, {
+                opacity: Number(event.target.value),
+              })
+            }
+          />
+          {opacityEditorLocked && (
+            <span className="program-opacity-locked">Track locked</span>
+          )}
+        </div>
+      )}
+
+      <VideoControls
             currentTime={currentTime}
             duration={monitorDuration}
             isPlaying={isPlaying}

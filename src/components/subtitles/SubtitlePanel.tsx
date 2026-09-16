@@ -12,6 +12,7 @@ import "./SubtitlePanel.css";
 
 type SubtitlePanelProps = {
   subtitles: Subtitle[];
+  activeTrackId: string;
   selectedSubtitle: Subtitle | null;
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
@@ -34,10 +35,12 @@ type SubtitlePanelProps = {
 
   onAdd: () => void;
   onDelete: (id: string) => void;
+  onReveal?: (id: string) => void;
 };
 
 function SubtitlePanel({
   subtitles,
+  activeTrackId,
   selectedSubtitle,
   selectedSubtitleId,
   selectedSubtitleIds,
@@ -50,6 +53,7 @@ function SubtitlePanel({
   onStyleChange,
   onAdd,
   onDelete,
+  onReveal,
 }: SubtitlePanelProps) {
   const [isInspectorExpanded, setIsInspectorExpanded] =
     useState(false);
@@ -73,7 +77,7 @@ function SubtitlePanel({
                 Browser
               </span>
 
-              <h2>Subtitles</h2>
+              <h2>Subtitles · S{activeTrackId.split("-")[1] ?? "1"}</h2>
             </div>
 
             <span className="subtitle-panel-count">
@@ -129,6 +133,7 @@ function SubtitlePanel({
           onSelect={onSelect}
           onTextChange={onTextChange}
           onDelete={onDelete}
+          onReveal={onReveal}
         />
       </section>
 
