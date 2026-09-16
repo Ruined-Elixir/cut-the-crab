@@ -96,6 +96,8 @@ type TimelineProps = {
     newTimelineEnd: number,
   ) => void;
   onVideoPlaybackRateChange?: (id: string, playbackRate: number) => void;
+  onToggleVideoReverse?: (id: string) => void;
+  onInsertFreezeFrame?: (id: string) => void;
   onVideoClipMoveToTrack?: (
     id: string,
     targetTrackId: TimelineTrackId,
@@ -222,6 +224,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   onVideoClipMove,
   onVideoClipResize,
   onVideoPlaybackRateChange,
+  onToggleVideoReverse,
+  onInsertFreezeFrame,
   onVideoClipMoveToTrack,
   onCopyVideoClip,
   onAudioClipSelect,
@@ -1548,7 +1552,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
               <span>Speed</span>
               <select
                 value={videoPlaybackRate(singleSelectedVideoClip)}
-                disabled={trackSettings[singleSelectedVideoClip.trackId]?.locked}
+                disabled={
+                  trackSettings[singleSelectedVideoClip.trackId]?.locked ||
+                  singleSelectedVideoClip.freezeFrameSourceTime !== undefined
+                }
                 onChange={(event) =>
                   onVideoPlaybackRateChange?.(
                     singleSelectedVideoClip.id,
@@ -1564,6 +1571,35 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                 ))}
               </select>
             </label>
+          )}
+
+          {singleSelectedVideoClip && (
+            <div className="timeline-retime-actions" aria-label="Retime clip actions">
+              <button
+                type="button"
+                className={`timeline-action-button ${singleSelectedVideoClip.playbackDirection === "reverse" ? "active" : ""}`.trim()}
+                disabled={
+                  trackSettings[singleSelectedVideoClip.trackId]?.locked ||
+                  singleSelectedVideoClip.freezeFrameSourceTime !== undefined
+                }
+                onClick={() => onToggleVideoReverse?.(singleSelectedVideoClip.id)}
+                title="Reverse the selected video clip"
+              >
+                Reverse
+              </button>
+              <button
+                type="button"
+                className="timeline-action-button"
+                disabled={
+                  trackSettings[singleSelectedVideoClip.trackId]?.locked ||
+                  singleSelectedVideoClip.freezeFrameSourceTime !== undefined
+                }
+                onClick={() => onInsertFreezeFrame?.(singleSelectedVideoClip.id)}
+                title="Insert a 2-second freeze frame at the playhead"
+              >
+                Freeze
+              </button>
+            </div>
           )}
 
           <div className="timeline-edit-actions" aria-label="Video clip actions">

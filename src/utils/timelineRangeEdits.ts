@@ -6,7 +6,7 @@ import type {
   VideoTimelineClip,
 } from "../types/timelineModel";
 import { sliceVideoTransformKeyframes } from "./videoTransformKeyframes";
-import { timelineDeltaToSourceDelta } from "./videoRetime";
+import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime } from "./videoRetime";
 
 export type TimelineRange = {
   start: number;
@@ -119,13 +119,15 @@ function leftVideoFragment(
   clip: VideoTimelineClip,
   timelineEnd: number,
 ) {
-  const sourceOut =
-    clip.sourceIn + timelineDeltaToSourceDelta(clip, timelineEnd - clip.timelineStart);
+  const sourceSplit = timelineTimeToSourceTime(clip, timelineEnd);
+  const reverse = isReverseVideoClip(clip);
+  const freeze = isFreezeFrameClip(clip);
 
   return clampVideoDurations({
     ...clip,
     timelineEnd,
-    sourceOut,
+    sourceIn: freeze ? clip.sourceIn : reverse ? sourceSplit : clip.sourceIn,
+    sourceOut: freeze ? clip.sourceOut : reverse ? clip.sourceOut : sourceSplit,
     transformKeyframes: sliceVideoTransformKeyframes(
       clip,
       clip.timelineStart,
@@ -145,14 +147,16 @@ function rightVideoFragment(
   timelineStart: number,
   id: string,
 ) {
-  const sourceIn =
-    clip.sourceIn + timelineDeltaToSourceDelta(clip, timelineStart - clip.timelineStart);
+  const sourceSplit = timelineTimeToSourceTime(clip, timelineStart);
+  const reverse = isReverseVideoClip(clip);
+  const freeze = isFreezeFrameClip(clip);
 
   return clampVideoDurations({
     ...clip,
     id,
     timelineStart,
-    sourceIn,
+    sourceIn: freeze ? clip.sourceIn : reverse ? clip.sourceIn : sourceSplit,
+    sourceOut: freeze ? clip.sourceOut : reverse ? sourceSplit : clip.sourceOut,
     transformKeyframes: sliceVideoTransformKeyframes(
       clip,
       timelineStart,

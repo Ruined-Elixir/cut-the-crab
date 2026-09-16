@@ -6,8 +6,8 @@ export const DEFAULT_VIDEO_PLAYBACK_RATE = 1;
 
 export type RateAwareTimelineClip = Pick<
   VideoTimelineClip | AudioTimelineClip,
-  "sourceIn" | "timelineStart" | "playbackRate"
->;
+  "sourceIn" | "sourceOut" | "timelineStart" | "playbackRate"
+> & Partial<Pick<VideoTimelineClip, "playbackDirection" | "freezeFrameSourceTime">>;
 
 export function normalizeVideoPlaybackRate(value: number | undefined) {
   if (!Number.isFinite(value)) return DEFAULT_VIDEO_PLAYBACK_RATE;
@@ -19,6 +19,14 @@ export function normalizeVideoPlaybackRate(value: number | undefined) {
 
 export function videoPlaybackRate(clip: { playbackRate?: number }) {
   return normalizeVideoPlaybackRate(clip.playbackRate);
+}
+
+export function isReverseVideoClip(clip: { playbackDirection?: "forward" | "reverse" }) {
+  return clip.playbackDirection === "reverse";
+}
+
+export function isFreezeFrameClip(clip: { freezeFrameSourceTime?: number }) {
+  return Number.isFinite(clip.freezeFrameSourceTime);
 }
 
 export function timelineDeltaToSourceDelta(
@@ -39,18 +47,31 @@ export function timelineTimeToSourceTime(
   clip: RateAwareTimelineClip,
   timelineTime: number,
 ) {
-  return (
-    clip.sourceIn +
-    timelineDeltaToSourceDelta(clip, timelineTime - clip.timelineStart)
+  if (isFreezeFrameClip(clip)) {
+    return clip.freezeFrameSourceTime!;
+  }
+
+  const sourceDelta = timelineDeltaToSourceDelta(
+    clip,
+    timelineTime - clip.timelineStart,
   );
+
+  return isReverseVideoClip(clip)
+    ? clip.sourceOut - sourceDelta
+    : clip.sourceIn + sourceDelta;
 }
 
 export function sourceTimeToTimelineTime(
   clip: RateAwareTimelineClip,
   sourceTime: number,
 ) {
-  return (
-    clip.timelineStart +
-    sourceDeltaToTimelineDelta(clip, sourceTime - clip.sourceIn)
-  );
+  if (isFreezeFrameClip(clip)) {
+    return clip.timelineStart;
+  }
+
+  const sourceDelta = isReverseVideoClip(clip)
+    ? clip.sourceOut - sourceTime
+    : sourceTime - clip.sourceIn;
+
+  return clip.timelineStart + sourceDeltaToTimelineDelta(clip, sourceDelta);
 }

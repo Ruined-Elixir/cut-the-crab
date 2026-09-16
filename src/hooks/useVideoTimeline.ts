@@ -17,12 +17,16 @@ import {
   findNextAvailableVideoClipGroupShift,
 } from "../utils/timelineMultiClip";
 import {
+  isFreezeFrameClip,
+  isReverseVideoClip,
   normalizeVideoPlaybackRate,
   sourceDeltaToTimelineDelta,
   timelineDeltaToSourceDelta,
+  timelineTimeToSourceTime,
 } from "../utils/videoRetime";
 import {
   autoHealRippleSplits,
+  deleteVideoClipsWithFreezeAutoRestore,
   rippleDeleteVideoClips,
   rippleInsertVideoClipGroup,
   rippleMoveVideoClipGroup,
@@ -31,6 +35,7 @@ import {
 import {
   retimeVideoTransformKeyframes,
   setVideoTransformPropertyAtTime,
+  withEvaluatedVideoTransform,
   sliceVideoTransformKeyframes,
   toggleVideoTransformKeyframeAtTime,
 } from "../utils/videoTransformKeyframes";
@@ -596,19 +601,46 @@ export function useVideoTimeline({
         return current;
       }
 
+      if (isFreezeFrameClip(target)) {
+        const nextStart = Math.max(0, Math.min(newTimelineStart, newTimelineEnd - MIN_VIDEO_CLIP_DURATION));
+        const nextEnd = Math.max(nextStart + MIN_VIDEO_CLIP_DURATION, newTimelineEnd);
+        const overlaps = clipsOnTrack(current, target.trackId, id).some(
+          (clip) => nextEnd > clip.timelineStart && nextStart < clip.timelineEnd,
+        );
+        if (overlaps) return current;
+
+        return sortVideoClips(current.map((clip) =>
+          clip.id === id
+            ? {
+                ...clip,
+                timelineStart: nextStart,
+                timelineEnd: nextEnd,
+                transformKeyframes: sliceVideoTransformKeyframes(target, nextStart, nextEnd),
+              }
+            : clip,
+        ));
+      }
+
+      const reverse = isReverseVideoClip(target);
+      const clipSourceDuration = target.sourceDuration ?? sourceDuration;
       const earliestTimelineStart = Math.max(
         0,
-        target.timelineStart - sourceDeltaToTimelineDelta(target, target.sourceIn),
+        target.timelineStart -
+          sourceDeltaToTimelineDelta(
+            target,
+            reverse
+              ? Math.max(0, clipSourceDuration - target.sourceOut)
+              : target.sourceIn,
+          ),
       );
-
-      const clipSourceDuration =
-        target.sourceDuration ?? sourceDuration;
 
       const latestTimelineEnd =
         target.timelineEnd +
         sourceDeltaToTimelineDelta(
           target,
-          Math.max(0, clipSourceDuration - target.sourceOut),
+          reverse
+            ? target.sourceIn
+            : Math.max(0, clipSourceDuration - target.sourceOut),
         );
 
       const nextStart = Math.max(
@@ -636,10 +668,12 @@ export function useVideoTimeline({
       const sourceStartDelta = nextStart - target.timelineStart;
       const sourceEndDelta = nextEnd - target.timelineEnd;
 
-      const nextSourceIn =
-        target.sourceIn + timelineDeltaToSourceDelta(target, sourceStartDelta);
-      const nextSourceOut =
-        target.sourceOut + timelineDeltaToSourceDelta(target, sourceEndDelta);
+      const nextSourceIn = reverse
+        ? target.sourceIn - timelineDeltaToSourceDelta(target, sourceEndDelta)
+        : target.sourceIn + timelineDeltaToSourceDelta(target, sourceStartDelta);
+      const nextSourceOut = reverse
+        ? target.sourceOut - timelineDeltaToSourceDelta(target, sourceStartDelta)
+        : target.sourceOut + timelineDeltaToSourceDelta(target, sourceEndDelta);
 
       if (
         sourceDeltaToTimelineDelta(target, nextSourceOut - nextSourceIn) <
@@ -711,14 +745,15 @@ export function useVideoTimeline({
         return current;
       }
 
-      const sourceSplit =
-        target.sourceIn +
-        timelineDeltaToSourceDelta(target, splitTime - target.timelineStart);
+      const sourceSplit = timelineTimeToSourceTime(target, splitTime);
+      const reverse = isReverseVideoClip(target);
+      const freeze = isFreezeFrameClip(target);
 
       const left: VideoTimelineClip = {
         ...target,
         timelineEnd: splitTime,
-        sourceOut: sourceSplit,
+        sourceIn: freeze ? target.sourceIn : reverse ? sourceSplit : target.sourceIn,
+        sourceOut: freeze ? target.sourceOut : reverse ? target.sourceOut : sourceSplit,
         transformKeyframes: sliceVideoTransformKeyframes(
           target,
           target.timelineStart,
@@ -735,7 +770,8 @@ export function useVideoTimeline({
         ...target,
         id: crypto.randomUUID(),
         timelineStart: splitTime,
-        sourceIn: sourceSplit,
+        sourceIn: freeze ? target.sourceIn : reverse ? target.sourceIn : sourceSplit,
+        sourceOut: freeze ? target.sourceOut : reverse ? sourceSplit : target.sourceOut,
         transformKeyframes: sliceVideoTransformKeyframes(
           target,
           splitTime,
@@ -1035,7 +1071,7 @@ export function useVideoTimeline({
     setVideoClips((current) => {
       const target = current.find((clip) => clip.id === id);
 
-      if (!target) {
+      if (!target || isFreezeFrameClip(target)) {
         return current;
       }
 
@@ -1116,6 +1152,140 @@ export function useVideoTimeline({
         }),
       );
     });
+  };
+
+  const toggleVideoClipReverse = (id: string) => {
+    setVideoClips((current) =>
+      current.map((clip) =>
+        clip.id === id && !isFreezeFrameClip(clip)
+          ? {
+              ...clip,
+              playbackDirection: isReverseVideoClip(clip) ? "forward" : "reverse",
+              rippleAutoHealInBoundaryId: undefined,
+              rippleAutoHealOutBoundaryId: undefined,
+            }
+          : clip,
+      ),
+    );
+  };
+
+  const insertVideoFreezeFrame = (
+    id: string,
+    timelineTime: number,
+    holdDuration = 2,
+  ) => {
+    const freezeId = crypto.randomUUID();
+    const rightId = crypto.randomUUID();
+    const safeHoldDuration = Math.max(MIN_VIDEO_CLIP_DURATION, holdDuration);
+
+    setVideoClips((current) => {
+      const target = current.find((clip) => clip.id === id);
+      if (
+        !target ||
+        isFreezeFrameClip(target) ||
+        timelineTime <= target.timelineStart + MIN_VIDEO_CLIP_DURATION ||
+        timelineTime >= target.timelineEnd - MIN_VIDEO_CLIP_DURATION
+      ) {
+        return current;
+      }
+
+      const sourceSplit = timelineTimeToSourceTime(target, timelineTime);
+      const reverse = isReverseVideoClip(target);
+      const sourceDurationForFrame = Math.max(
+        target.sourceDuration ?? target.sourceOut,
+        target.sourceOut,
+      );
+      const frameSpan = Math.min(1 / 30, Math.max(0.001, sourceDurationForFrame));
+      const frameIn = Math.max(
+        0,
+        Math.min(sourceSplit, Math.max(0, sourceDurationForFrame - frameSpan)),
+      );
+      const frameOut = Math.min(sourceDurationForFrame, frameIn + frameSpan);
+
+      // Reuse the existing auto-heal boundary metadata for Freeze insertion.
+      // The two source-contiguous fragments can then be restored if the HOLD
+      // clip is later deleted while the generated boundary is still untouched.
+      const freezeHealBoundaryId = `freeze-heal:${freezeId}`;
+
+      const left: VideoTimelineClip = {
+        ...target,
+        timelineEnd: timelineTime,
+        sourceIn: reverse ? sourceSplit : target.sourceIn,
+        sourceOut: reverse ? target.sourceOut : sourceSplit,
+        transformKeyframes: sliceVideoTransformKeyframes(
+          target,
+          target.timelineStart,
+          timelineTime,
+        ),
+        transitionOutType: "none",
+        videoFadeOutDuration: 0,
+        audioFadeOutDuration: 0,
+        rippleAutoHealOutBoundaryId: freezeHealBoundaryId,
+      };
+
+      const evaluated = withEvaluatedVideoTransform(target, timelineTime);
+      const freezeClip: VideoTimelineClip = {
+        ...stripRippleAutoHealMetadata(evaluated),
+        id: freezeId,
+        timelineStart: timelineTime,
+        timelineEnd: timelineTime + safeHoldDuration,
+        sourceIn: frameIn,
+        sourceOut: Math.max(frameIn + 0.001, frameOut),
+        playbackRate: 1,
+        playbackDirection: "forward",
+        freezeFrameSourceTime: sourceSplit,
+        transformKeyframes: undefined,
+        transitionInType: "none",
+        transitionOutType: "none",
+        videoFadeInDuration: 0,
+        videoFadeOutDuration: 0,
+        audioMuted: true,
+        audioFadeInDuration: 0,
+        audioFadeOutDuration: 0,
+      };
+
+      const right: VideoTimelineClip = {
+        ...target,
+        id: rightId,
+        timelineStart: timelineTime + safeHoldDuration,
+        timelineEnd: target.timelineEnd + safeHoldDuration,
+        sourceIn: reverse ? target.sourceIn : sourceSplit,
+        sourceOut: reverse ? sourceSplit : target.sourceOut,
+        transformKeyframes: sliceVideoTransformKeyframes(
+          target,
+          timelineTime,
+          target.timelineEnd,
+        ),
+        transitionInType: "none",
+        videoFadeInDuration: 0,
+        audioFadeInDuration: 0,
+        rippleAutoHealInBoundaryId: freezeHealBoundaryId,
+      };
+
+      const shifted = current.flatMap((clip) => {
+        if (clip.id === id) return [left, freezeClip, right];
+        if (
+          clip.trackId === target.trackId &&
+          clip.timelineStart >= target.timelineEnd - 0.000001
+        ) {
+          return [{
+            ...clip,
+            timelineStart: clip.timelineStart + safeHoldDuration,
+            timelineEnd: clip.timelineEnd + safeHoldDuration,
+          }];
+        }
+        return [clip];
+      });
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId(freezeId);
+        setSelectedVideoClipIds([freezeId]);
+      });
+
+      return sortVideoClips(shifted);
+    });
+
+    return freezeId;
   };
 
   const updateVideoClipTransform = (
@@ -1370,9 +1540,26 @@ export function useVideoTimeline({
     const removedIds = new Set(ids);
 
     setVideoClips((current) => {
-      const next = rippleMode
-        ? rippleDeleteVideoClips(current, removedIds).clips
-        : current.filter((clip) => !removedIds.has(clip.id));
+      // Generated Freeze/HOLD clips are an inverse edit: removing an untouched
+      // HOLD should first restore its original source clip regardless of whether
+      // Ripple mode is enabled. Do this before applying ordinary Delete
+      // semantics to any other selected clips.
+      const freezeRestore = deleteVideoClipsWithFreezeAutoRestore(
+        current,
+        removedIds,
+      );
+      const restoredFreezeIds = new Set(freezeRestore.restoredFreezeIds);
+      const ordinaryRemovedIds = new Set(
+        [...removedIds].filter((id) => !restoredFreezeIds.has(id)),
+      );
+
+      let next = freezeRestore.clips;
+
+      if (ordinaryRemovedIds.size > 0) {
+        next = rippleMode
+          ? rippleDeleteVideoClips(next, ordinaryRemovedIds).clips
+          : next.filter((clip) => !ordinaryRemovedIds.has(clip.id));
+      }
 
       return healRippleSplitsAndRemapSelection(next);
     });
@@ -1433,6 +1620,8 @@ export function useVideoTimeline({
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipPlaybackRate,
+    toggleVideoClipReverse,
+    insertVideoFreezeFrame,
     updateVideoClipTransform,
     toggleVideoClipTransformKeyframe,
     applyVideoClipCropToTrack,

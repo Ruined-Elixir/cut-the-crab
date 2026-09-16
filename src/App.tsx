@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -23,6 +23,7 @@ import { useVideoTimeline } from "./hooks/useVideoTimeline";
 import { useAudioTimeline } from "./hooks/useAudioTimeline";
 import { useTranscription } from "./hooks/useTranscription";
 import { useWaveform } from "./hooks/useWaveform";
+import { useVideoProxies } from "./hooks/useVideoProxies";
 
 import {
   exportSrtFile,
@@ -590,6 +591,8 @@ function App() {
     insertVideoClipCopies,
     insertVideoClipFromMedia,
     updateVideoClipPlaybackRate,
+    toggleVideoClipReverse,
+    insertVideoFreezeFrame,
     updateVideoClipTransform,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
@@ -603,6 +606,19 @@ function App() {
     sourceDuration: videoDuration,
     rippleMode,
   });
+
+  const videoProxySourcePaths = useMemo(() => [
+    ...(videoPath ? [videoPath] : []),
+    ...videoClips.map((clip) => clip.sourcePath),
+    ...mediaAssets
+      .filter((asset) => asset.kind === "video")
+      .map((asset) => asset.path),
+  ], [mediaAssets, videoClips, videoPath]);
+
+  const {
+    proxyStatesBySource,
+    proxyPathsBySource,
+  } = useVideoProxies(videoProxySourcePaths);
 
   const {
     audioClips,
@@ -1336,6 +1352,33 @@ function App() {
 
     markNextChangeImmediate();
     updateVideoClipPlaybackRate(id, effectiveRate);
+  };
+
+  const handleToggleVideoReverse = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+    if (!clip || trackSettings[clip.trackId]?.locked || clip.freezeFrameSourceTime !== undefined) {
+      return;
+    }
+    markNextChangeImmediate();
+    toggleVideoClipReverse(id);
+  };
+
+  const handleInsertFreezeFrame = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+    if (!clip || trackSettings[clip.trackId]?.locked) return;
+    if (clip.freezeFrameSourceTime !== undefined) {
+      window.alert("This clip is already a freeze frame.");
+      return;
+    }
+    if (
+      currentTime <= clip.timelineStart + 0.1 ||
+      currentTime >= clip.timelineEnd - 0.1
+    ) {
+      window.alert("Move the playhead inside the selected clip before creating a freeze frame.");
+      return;
+    }
+    markNextChangeImmediate();
+    insertVideoFreezeFrame(id, currentTime, 2);
   };
 
   const handleVideoTransformChange = (
@@ -3449,6 +3492,7 @@ function App() {
           onInsertMedia={handleInsertMediaAtPlayhead}
           timelineDuration={timelineDuration}
           onDropMedia={handleMediaDropOnTimeline}
+          proxyStatesBySource={proxyStatesBySource}
         />
 
         <section className="preview-panel">
@@ -3468,6 +3512,7 @@ function App() {
             onVideoClipSelect={handleVideoClipSelect}
             onVideoTransformChange={handleVideoTransformChange}
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
+            proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
             currentTime={currentTime}
             selectedSubtitleId={selectedSubtitleId}
@@ -3563,6 +3608,8 @@ function App() {
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
         onVideoClipResize={resizeVideoClip}
         onVideoPlaybackRateChange={handleVideoPlaybackRateChange}
+        onToggleVideoReverse={handleToggleVideoReverse}
+        onInsertFreezeFrame={handleInsertFreezeFrame}
         onVideoTransitionChange={handleVideoTransitionChange}
         onVideoFadeChange={handleVideoFadeChange}
         onAudioFadeChange={handleAudioFadeChange}

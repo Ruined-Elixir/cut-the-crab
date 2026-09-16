@@ -23,7 +23,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 18;
+export const CURRENT_PROJECT_VERSION = 19;
 
 export type SubtitleProject = {
   version: number;
@@ -299,6 +299,8 @@ function normalizeVideoClip(
     sourceOut,
     sourceDuration: asOptionalNumber(value.sourceDuration),
     playbackRate: normalizeVideoPlaybackRate(asOptionalNumber(value.playbackRate)),
+    playbackDirection: value.playbackDirection === "reverse" ? "reverse" : "forward",
+    freezeFrameSourceTime: asOptionalNumber(value.freezeFrameSourceTime),
     positionX: asOptionalNumber(value.positionX) ?? 0,
     positionY: asOptionalNumber(value.positionY) ?? 0,
     scale: Math.max(10, Math.min(400, asNumber(value.scale, 100))),

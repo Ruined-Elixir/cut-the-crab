@@ -27,7 +27,7 @@ import type {
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
-import { videoPlaybackRate } from "../../utils/videoRetime";
+import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime, videoPlaybackRate } from "../../utils/videoRetime";
 import {
   PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
   snapProgramBoundsToBounds,
@@ -83,6 +83,8 @@ type VideoPlayerProps = {
     },
   ) => void;
   onApplyVideoCropToTrack?: (id: string) => void;
+  /** Original source path -> disposable editing proxy path. */
+  proxyPathsBySource?: Record<string, string>;
 
   subtitles: Subtitle[];
   currentTime: number;
@@ -123,10 +125,17 @@ type OpacityEditorState = {
 };
 
 const MAX_NATIVE_VIDEO_PREVIEW_RATE = 2;
+const MAX_PROXY_VIDEO_PREVIEW_RATE = 4;
 const HIGH_SPEED_PREVIEW_MIN_SEEK_INTERVAL_MS = 90;
 
-function videoPreviewPlaybackRate(clip: VideoTimelineClip) {
-  return Math.min(videoPlaybackRate(clip), MAX_NATIVE_VIDEO_PREVIEW_RATE);
+function videoPreviewPlaybackRate(
+  clip: VideoTimelineClip,
+  hasProxy: boolean,
+) {
+  const maxRate = hasProxy
+    ? MAX_PROXY_VIDEO_PREVIEW_RATE
+    : MAX_NATIVE_VIDEO_PREVIEW_RATE;
+  return Math.min(videoPlaybackRate(clip), maxRate);
 }
 
 
@@ -153,6 +162,14 @@ function findSameTrackDissolve(
   for (let index = 0; index < trackClips.length - 1; index += 1) {
     const outgoing = trackClips[index];
     const incoming = trackClips[index + 1];
+    if (
+      isFreezeFrameClip(outgoing) ||
+      isFreezeFrameClip(incoming) ||
+      isReverseVideoClip(outgoing) ||
+      isReverseVideoClip(incoming)
+    ) {
+      continue;
+    }
     const cutTime = outgoing.timelineEnd;
 
     if (Math.abs(incoming.timelineStart - cutTime) > 0.03) {
@@ -275,16 +292,6 @@ function findActiveVideoClip(
         timelineTime >= clip.timelineStart &&
         timelineTime < clip.timelineEnd,
     ) ?? null
-  );
-}
-
-function timelineTimeToSourceTime(
-  clip: VideoTimelineClip | AudioTimelineClip,
-  timelineTime: number,
-) {
-  return (
-    clip.sourceIn +
-    (timelineTime - clip.timelineStart) * videoPlaybackRate(clip)
   );
 }
 
@@ -582,6 +589,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   onVideoClipSelect,
   onVideoTransformChange,
   onApplyVideoCropToTrack,
+  proxyPathsBySource = {},
   subtitles,
   currentTime,
   selectedSubtitleId,
@@ -706,10 +714,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const result: Record<string, string | null> = {};
     for (const trackId of videoTrackIds) {
       const clip = activeClipsByTrack[trackId];
-      result[trackId] = clip?.sourcePath ? convertFileSrc(clip.sourcePath) : null;
+      if (!clip?.sourcePath) {
+        result[trackId] = null;
+        continue;
+      }
+      const previewPath = proxyPathsBySource[clip.sourcePath] ?? clip.sourcePath;
+      result[trackId] = convertFileSrc(previewPath);
     }
     return result;
-  }, [activeClipsByTrack, videoTrackIds]);
+  }, [activeClipsByTrack, proxyPathsBySource, videoTrackIds]);
 
   const audioSourcesByTrack = useMemo(() => {
     const result: Record<string, string | null> = {};
@@ -845,9 +858,28 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     forceSeek: boolean,
   ) => {
     const requestedRate = videoPlaybackRate(clip);
-    element.playbackRate = videoPreviewPlaybackRate(clip);
+    if (isFreezeFrameClip(clip) || isReverseVideoClip(clip)) {
+      element.playbackRate = 1;
+      const now = performance.now();
+      const lastSeekAt = highSpeedPreviewSeekAtRef.current[syncKey] ?? 0;
+      const drift = Math.abs(expectedSourceTime - element.currentTime);
+      if ((forceSeek || drift > 0.035) && now - lastSeekAt >= 45) {
+        try {
+          element.currentTime = expectedSourceTime;
+          highSpeedPreviewSeekAtRef.current[syncKey] = now;
+        } catch (error) {
+          console.error(`${syncKey} special-playback seek failed:`, error);
+        }
+      }
+      return;
+    }
+    const hasProxy = element.dataset.previewProxy === "true";
+    const maxNativePreviewRate = hasProxy
+      ? MAX_PROXY_VIDEO_PREVIEW_RATE
+      : MAX_NATIVE_VIDEO_PREVIEW_RATE;
+    element.playbackRate = videoPreviewPlaybackRate(clip, hasProxy);
 
-    if (requestedRate <= MAX_NATIVE_VIDEO_PREVIEW_RATE || forceSeek) {
+    if (requestedRate <= maxNativePreviewRate || forceSeek) {
       return;
     }
 
@@ -1032,7 +1064,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       clipChanged || forceSeek,
     );
 
-    if (shouldPlay) {
+    const seekDrivenPlayback = isFreezeFrameClip(activeClip) || isReverseVideoClip(activeClip);
+    if (shouldPlay && !seekDrivenPlayback) {
       if (video.paused) {
         void video.play().catch((error) => {
           console.error(`${trackId} playback failed:`, error);
@@ -1091,8 +1124,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const soloMuted =
       hasSoloAudioTrack(trackSettingsRef.current) &&
       trackSettingsRef.current[audioTrackId]?.solo !== true;
+    const specialVideoPlaybackMuted = linkedVideoClip
+      ? isFreezeFrameClip(linkedVideoClip) || isReverseVideoClip(linkedVideoClip)
+      : false;
     const clipMuted = linkedVideoClip
-      ? linkedVideoClip.audioMuted ?? false
+      ? (linkedVideoClip.audioMuted ?? false) || specialVideoPlaybackMuted
       : standaloneClip?.muted ?? false;
     const clipDuration = Math.max(0.001, activeClip.timelineEnd - activeClip.timelineStart);
     const fadeInDuration = Math.max(
@@ -2143,8 +2179,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                   <video
                     key={`${trackId}-dissolve-out:${dissolve.outgoing.id}`}
                     ref={(element) => { dissolveOutgoingRefs.current[trackId] = element; }}
-                    src={convertFileSrc(dissolve.outgoing.sourcePath)}
+                    src={convertFileSrc(
+                      proxyPathsBySource[dissolve.outgoing.sourcePath] ?? dissolve.outgoing.sourcePath,
+                    )}
                     data-source-path={dissolve.outgoing.sourcePath}
+                    data-preview-proxy={proxyPathsBySource[dissolve.outgoing.sourcePath] ? "true" : "false"}
                     className="video-element video-track-layer program-dissolve-layer"
                     muted
                     preload="auto"
@@ -2173,8 +2212,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                   <video
                     key={`${trackId}-dissolve-in:${dissolve.incoming.id}`}
                     ref={(element) => { dissolveIncomingRefs.current[trackId] = element; }}
-                    src={convertFileSrc(dissolve.incoming.sourcePath)}
+                    src={convertFileSrc(
+                      proxyPathsBySource[dissolve.incoming.sourcePath] ?? dissolve.incoming.sourcePath,
+                    )}
                     data-source-path={dissolve.incoming.sourcePath}
+                    data-preview-proxy={proxyPathsBySource[dissolve.incoming.sourcePath] ? "true" : "false"}
                     className="video-element video-track-layer program-dissolve-layer incoming"
                     muted
                     preload="auto"
@@ -2215,6 +2257,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                   ref={(element) => { videoRefs.current[trackId] = element; }}
                   src={sourceUrl}
                   data-source-path={clip.sourcePath}
+                  data-preview-proxy={proxyPathsBySource[clip.sourcePath] ? "true" : "false"}
                   className="video-element video-track-layer"
                   muted
                   preload="auto"
@@ -2368,12 +2411,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
             {audioTrackIds.map((audioTrackId) => {
               const sourcePath = audioSourcesByTrack[audioTrackId];
+              const previewPath = sourcePath
+                ? proxyPathsBySource[sourcePath] ?? sourcePath
+                : null;
               return (
                 <audio
-                  key={`${audioTrackId}:${sourcePath ?? "gap"}`}
+                  key={`${audioTrackId}:${previewPath ?? "gap"}`}
                   ref={(element) => { audioRefs.current[audioTrackId] = element; }}
-                  src={sourcePath ? convertFileSrc(sourcePath) : undefined}
+                  src={previewPath ? convertFileSrc(previewPath) : undefined}
                   data-source-path={sourcePath ?? ""}
+                  data-preview-proxy={sourcePath && proxyPathsBySource[sourcePath] ? "true" : "false"}
                   preload="auto"
                   hidden
                   onLoadedMetadata={() => handleAudioLoadedMetadata(audioTrackId)}

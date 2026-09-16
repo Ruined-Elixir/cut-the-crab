@@ -673,10 +673,19 @@ function VideoTrack({
                   {clip.sourceName}
                 </span>
 
-                {Math.abs(videoPlaybackRate(clip) - 1) > 0.0001 && (
-                  <span className="timeline-video-speed-badge">
-                    {videoPlaybackRate(clip)}×
-                  </span>
+                {clip.freezeFrameSourceTime !== undefined ? (
+                  <span className="timeline-video-speed-badge">HOLD</span>
+                ) : (
+                  <>
+                    {clip.playbackDirection === "reverse" && (
+                      <span className="timeline-video-speed-badge">REV</span>
+                    )}
+                    {Math.abs(videoPlaybackRate(clip) - 1) > 0.0001 && (
+                      <span className="timeline-video-speed-badge">
+                        {videoPlaybackRate(clip)}×
+                      </span>
+                    )}
+                  </>
                 )}
 
                 {currentTime >= clip.timelineStart &&

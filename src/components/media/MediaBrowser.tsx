@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { ProjectMediaAsset } from "../../types/project";
+import type { VideoProxyStates } from "../../hooks/useVideoProxies";
 import type { TimelineTrackId } from "../../types/timelineModel";
 
 import "./MediaBrowser.css";
@@ -16,6 +17,7 @@ type MediaBrowserProps = {
     targetTrackId: TimelineTrackId,
     timelineTime: number,
   ) => void;
+  proxyStatesBySource?: VideoProxyStates;
 };
 
 function formatDuration(duration: number) {
@@ -31,6 +33,7 @@ function MediaBrowser({
   onInsertMedia,
   timelineDuration,
   onDropMedia,
+  proxyStatesBySource = {},
 }: MediaBrowserProps) {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const selectedAsset = useMemo(
@@ -170,6 +173,18 @@ function MediaBrowser({
           assets.map((asset) => {
             const selected = asset.id === selectedAssetId;
             const isPrimary = asset.kind === "video" && asset.path === primaryVideoPath;
+            const proxyState = asset.kind === "video"
+              ? proxyStatesBySource[asset.path]
+              : undefined;
+            const proxyLabel = proxyState?.status === "ready"
+              ? "Proxy"
+              : proxyState?.status === "generating"
+                ? "Proxying…"
+                : proxyState?.status === "queued"
+                  ? "Proxy queued"
+                  : proxyState?.status === "error"
+                    ? "Proxy unavailable"
+                    : null;
             return (
               <button
                 key={asset.id}
@@ -188,8 +203,18 @@ function MediaBrowser({
                 <span className="media-browser-item-copy">
                   <span className="media-browser-item-name">{asset.name}</span>
                   <span className="media-browser-item-meta">
-                    {asset.kind === "audio" ? "Audio · " : "Video · "}{formatDuration(asset.duration)}
-                    {isPrimary ? " · Primary" : ""}
+                    <span>
+                      {asset.kind === "audio" ? "Audio · " : "Video · "}{formatDuration(asset.duration)}
+                      {isPrimary ? " · Primary" : ""}
+                    </span>
+                    {proxyLabel && (
+                      <span
+                        className={`media-proxy-status ${proxyState?.status ?? ""}`}
+                        title={proxyState?.error ?? "Editing proxy status"}
+                      >
+                        {proxyLabel}
+                      </span>
+                    )}
                   </span>
                 </span>
               </button>

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { VideoTimelineClip } from "../types/timelineModel";
-import { timelineTimeToSourceTime, videoPlaybackRate } from "../utils/videoRetime";
+import { isFreezeFrameClip, timelineTimeToSourceTime, videoPlaybackRate } from "../utils/videoRetime";
 
 export type VideoClipFrame = {
   sourceTime: number;
@@ -226,7 +226,11 @@ function sourcePlansFor(
       const sourceEnd = timelineTimeToSourceTime(clip, overlapEnd);
       const sourceSampleInterval = timelineSampleInterval * videoPlaybackRate(clip);
       entry.priority.push(
-        ...uniformRangeTimes(sourceStart, sourceEnd, sourceSampleInterval),
+        ...uniformRangeTimes(
+          Math.min(sourceStart, sourceEnd),
+          Math.max(sourceStart, sourceEnd),
+          sourceSampleInterval,
+        ),
       );
     }
     bySource.set(clip.sourcePath, entry);
@@ -267,11 +271,13 @@ function displayFramesForClip(
     1,
     MAX_DISPLAY_SLOTS_PER_CLIP,
   );
-  const sourceSpan = Math.max(0, clip.sourceOut - clip.sourceIn);
   const slotWidth = 100 / slotCount;
   return Array.from({ length: slotCount }, (_, index) => {
     const ratio = index / slotCount;
-    const targetTime = clip.sourceIn + sourceSpan * ratio;
+    const timelineTime = clip.timelineStart + (clip.timelineEnd - clip.timelineStart) * ratio;
+    const targetTime = isFreezeFrameClip(clip)
+      ? clip.freezeFrameSourceTime!
+      : timelineTimeToSourceTime(clip, timelineTime);
     const nearest = nearestFrame(cache.frames, targetTime) ?? cache.frames[0];
     return {
       sourceTime: targetTime,

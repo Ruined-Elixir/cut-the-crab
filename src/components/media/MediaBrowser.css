@@ -206,3 +206,42 @@
   background: rgba(10, 84, 150, 0.94);
   opacity: 1;
 }
+
+.media-browser-item-meta {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+  min-width:0;
+}
+
+.media-browser-item-meta > span:first-child {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.media-proxy-status {
+  flex:0 0 auto;
+  padding:1px 5px;
+  border-radius:999px;
+  background:var(--control-fill);
+  color:var(--tertiary-label);
+  font-size:9px;
+  line-height:1.5;
+  white-space:nowrap;
+}
+
+.media-proxy-status.ready {
+  color:var(--secondary-label);
+}
+
+.media-proxy-status.generating,
+.media-proxy-status.queued {
+  opacity:.82;
+}
+
+.media-proxy-status.error {
+  opacity:.62;
+}

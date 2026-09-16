@@ -15,6 +15,7 @@ use crate::ffmpeg_paths::get_ffmpeg_path;
 
 mod ffmpeg_paths;
 mod model_manager;
+mod proxy_media;
 mod sensevoice_engine;
 mod sensevoice_paths;
 mod transcription;
@@ -1141,6 +1142,7 @@ pub fn run() {
             remove_recent_project,
             path_exists,
             get_project_thumbnail,
+            proxy_media::ensure_video_proxy,
             export_styled_video
         ])
         .run(tauri::generate_context!())

@@ -11,7 +11,7 @@ import type {
 } from "../types/timelineModel";
 
 import { buildAssTrack } from "../utils/assSubtitles";
-import { videoPlaybackRate } from "../utils/videoRetime";
+import { isFreezeFrameClip, isReverseVideoClip, videoPlaybackRate } from "../utils/videoRetime";
 import {
   baseVideoTransformValue,
   hasVideoTransformKeyframes,
@@ -166,6 +166,15 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
     for (let index = 0; index < clips.length - 1; index += 1) {
       const outgoing = clips[index];
       const incoming = clips[index + 1];
+
+      if (
+        isFreezeFrameClip(outgoing) ||
+        isFreezeFrameClip(incoming) ||
+        isReverseVideoClip(outgoing) ||
+        isReverseVideoClip(incoming)
+      ) {
+        continue;
+      }
 
       if (!isAdjacent(outgoing, incoming)) {
         continue;
@@ -361,10 +370,9 @@ function buildTimelineFilterGraph(
     const inputIndex = clipInputIndex.get(clip.id)!;
     const label = `vclip${index}`;
     const playbackRate = videoPlaybackRate(clip);
-    const localDuration = Math.max(
-      0.001,
-      (window.sourceOut - window.sourceIn) / playbackRate,
-    );
+    const localDuration = isFreezeFrameClip(clip)
+      ? Math.max(0.001, window.timelineEnd - window.timelineStart)
+      : Math.max(0.001, (window.sourceOut - window.sourceIn) / playbackRate);
 
     const cropTop = clamp(clip.cropTop ?? 0, 0, 49) / 100;
     const cropRight = clamp(clip.cropRight ?? 0, 0, 49) / 100;
@@ -381,12 +389,29 @@ function buildTimelineFilterGraph(
     const rotationAnimated = hasVideoTransformKeyframes(clip, "rotation");
     const opacityAnimated = hasVideoTransformKeyframes(clip, "opacity");
 
-    const videoFilters: string[] = [
-      `trim=start=${n(window.sourceIn)}:end=${n(window.sourceOut)}`,
-      `setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`,
+    const videoFilters: string[] = [];
+    if (isFreezeFrameClip(clip)) {
+      const frameTime = Math.max(0, clip.freezeFrameSourceTime ?? window.sourceIn);
+      const frameEnd = frameTime + 1 / OUTPUT_FPS;
+      videoFilters.push(
+        `trim=start=${n(frameTime, 6)}:end=${n(frameEnd, 6)}`,
+        "setpts=PTS-STARTPTS",
+        `fps=${OUTPUT_FPS}`,
+        `tpad=stop_mode=clone:stop_duration=${n(localDuration, 6)}`,
+        `trim=duration=${n(localDuration, 6)}`,
+      );
+    } else {
+      videoFilters.push(
+        `trim=start=${n(window.sourceIn)}:end=${n(window.sourceOut)}`,
+        "setpts=PTS-STARTPTS",
+      );
+      if (isReverseVideoClip(clip)) videoFilters.push("reverse", "setpts=PTS-STARTPTS");
+      videoFilters.push(`setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`);
+    }
+    videoFilters.push(
       `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease`,
       "format=rgba",
-    ];
+    );
 
     if (cropTop > 0 || cropRight > 0 || cropBottom > 0 || cropLeft > 0) {
       videoFilters.push(
@@ -562,6 +587,7 @@ function buildTimelineFilterGraph(
   const audioLabels: string[] = [];
 
   for (const clip of renderableClips) {
+    if (isFreezeFrameClip(clip)) continue;
     const audioTrackId = linkedAudioTrackId(clip.trackId, trackSettings);
     if (!audioTrackId || audioTrackMuted(audioTrackId, trackSettings) || clip.audioMuted) {
       continue;
@@ -576,6 +602,7 @@ function buildTimelineFilterGraph(
     const filters = [
       `atrim=start=${n(clip.sourceIn)}:end=${n(clip.sourceOut)}`,
       "asetpts=PTS-STARTPTS",
+      ...(isReverseVideoClip(clip) ? ["areverse", "asetpts=PTS-STARTPTS"] : []),
       ...atempoFilters(videoPlaybackRate(clip)),
       `volume=${n(volume)}`,
     ];

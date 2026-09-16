@@ -53,6 +53,10 @@ export type VideoTimelineClip = TimelineClipBase & {
   sourceDuration?: number;
   /** Source seconds consumed per one timeline second. 1 = normal speed. */
   playbackRate?: number;
+  /** Playback direction for ordinary clips. Freeze-frame clips ignore this. */
+  playbackDirection?: "forward" | "reverse";
+  /** When present, this clip is a still-image hold sampled from this source time. */
+  freezeFrameSourceTime?: number;
   positionX?: number;
   positionY?: number;
   scale?: number;
@@ -74,10 +78,10 @@ export type VideoTimelineClip = TimelineClipBase & {
   audioFadeInDuration?: number;
   audioFadeOutDuration?: number;
   /**
-   * Internal lineage markers for edit points created automatically by Ripple
-   * insertion. A matching Out/In pair may be healed when the two source
-   * fragments become adjacent again. Manual blade/range cuts never create
-   * these markers.
+   * Internal lineage markers for automatically-created edit points (currently
+   * Ripple insertion and Freeze/Hold insertion). A matching Out/In pair may be
+   * healed when the two source fragments become adjacent again. Manual blade
+   * and range cuts never create these markers.
    */
   rippleAutoHealInBoundaryId?: string;
   rippleAutoHealOutBoundaryId?: string;

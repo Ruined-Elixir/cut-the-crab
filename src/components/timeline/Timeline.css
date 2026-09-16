@@ -2082,3 +2082,14 @@
   font-weight:650;
   line-height:1
 }
+
+.timeline-retime-actions {
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+
+.timeline-action-button.active {
+  color:var(--system-blue);
+  background:color-mix(in srgb, var(--system-blue) 14%, var(--control-fill));
+}

@@ -3,7 +3,7 @@ import {
   mergeVideoTransformKeyframes,
   sliceVideoTransformKeyframes,
 } from "./videoTransformKeyframes";
-import { timelineDeltaToSourceDelta } from "./videoRetime";
+import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime } from "./videoRetime";
 
 const EPSILON = 0.000001;
 
@@ -43,6 +43,11 @@ function sameContinuousClipProperties(
     left.sourceName === right.sourceName &&
     optionalNumberEqual(left.sourceDuration, right.sourceDuration, -1) &&
     optionalNumberEqual(left.playbackRate, right.playbackRate, 1) &&
+    (left.playbackDirection ?? "forward") === (right.playbackDirection ?? "forward") &&
+    ((left.freezeFrameSourceTime === undefined && right.freezeFrameSourceTime === undefined) ||
+      (left.freezeFrameSourceTime !== undefined &&
+        right.freezeFrameSourceTime !== undefined &&
+        almostEqual(left.freezeFrameSourceTime, right.freezeFrameSourceTime))) &&
     optionalNumberEqual(left.positionX, right.positionX, 0) &&
     optionalNumberEqual(left.positionY, right.positionY, 0) &&
     optionalNumberEqual(left.scale, right.scale, 100) &&
@@ -71,19 +76,45 @@ function hasUntouchedAutoSplitEdges(
   );
 }
 
-function canAutoHealPair(
+function hasMatchingAutoHealBoundary(
   left: VideoTimelineClip,
   right: VideoTimelineClip,
 ) {
   const boundaryId = left.rippleAutoHealOutBoundaryId;
+  return Boolean(boundaryId) && boundaryId === right.rippleAutoHealInBoundaryId;
+}
 
+function hasContinuousSourceBoundary(
+  left: VideoTimelineClip,
+  right: VideoTimelineClip,
+) {
+  return isFreezeFrameClip(left)
+    ? isFreezeFrameClip(right) &&
+        almostEqual(left.freezeFrameSourceTime!, right.freezeFrameSourceTime!)
+    : isReverseVideoClip(left)
+      ? almostEqual(left.sourceIn, right.sourceOut)
+      : almostEqual(left.sourceOut, right.sourceIn);
+}
+
+function canAutoHealSourcePair(
+  left: VideoTimelineClip,
+  right: VideoTimelineClip,
+) {
   return (
-    Boolean(boundaryId) &&
-    boundaryId === right.rippleAutoHealInBoundaryId &&
-    almostEqual(left.timelineEnd, right.timelineStart) &&
-    almostEqual(left.sourceOut, right.sourceIn) &&
+    hasMatchingAutoHealBoundary(left, right) &&
+    hasContinuousSourceBoundary(left, right) &&
     sameContinuousClipProperties(left, right) &&
     hasUntouchedAutoSplitEdges(left, right)
+  );
+}
+
+function canAutoHealPair(
+  left: VideoTimelineClip,
+  right: VideoTimelineClip,
+) {
+  return (
+    almostEqual(left.timelineEnd, right.timelineStart) &&
+    canAutoHealSourcePair(left, right)
   );
 }
 
@@ -94,7 +125,8 @@ function mergeAutoHealPair(
   return {
     ...left,
     timelineEnd: right.timelineEnd,
-    sourceOut: right.sourceOut,
+    sourceIn: isReverseVideoClip(left) ? right.sourceIn : left.sourceIn,
+    sourceOut: isReverseVideoClip(left) ? left.sourceOut : right.sourceOut,
     transformKeyframes: mergeVideoTransformKeyframes(left, right),
     // The internal Ripple boundary disappears. Keep the real outer-right edge
     // settings from the right fragment and the real outer-left edge settings
@@ -171,6 +203,255 @@ export function stripRippleAutoHealMetadata(
   return copy;
 }
 
+export type FreezeAutoRestoreDeleteResult = {
+  clips: VideoTimelineClip[];
+  restoredFreezeIds: string[];
+  changed: boolean;
+};
+
+function canRestoreFreezeSourcePair(
+  left: VideoTimelineClip,
+  freeze: VideoTimelineClip,
+  right: VideoTimelineClip,
+  expectedBoundaryId: string,
+) {
+  const hasExpectedMarkers =
+    left.rippleAutoHealOutBoundaryId === expectedBoundaryId &&
+    right.rippleAutoHealInBoundaryId === expectedBoundaryId;
+  const isLegacyUnmarkedFreeze =
+    left.rippleAutoHealOutBoundaryId === undefined &&
+    right.rippleAutoHealInBoundaryId === undefined;
+  const sourceBoundary = isReverseVideoClip(left) ? left.sourceIn : left.sourceOut;
+
+  return (
+    (hasExpectedMarkers || isLegacyUnmarkedFreeze) &&
+    hasContinuousSourceBoundary(left, right) &&
+    almostEqual(freeze.freezeFrameSourceTime ?? Number.NaN, sourceBoundary) &&
+    sameContinuousClipProperties(left, right) &&
+    hasUntouchedAutoSplitEdges(left, right)
+  );
+}
+
+type FreezeRestoreTriple = {
+  freeze: VideoTimelineClip;
+  left: VideoTimelineClip;
+  right: VideoTimelineClip;
+  /** Entire current timeline gap that disappears when the HOLD is removed. */
+  collapseDuration: number;
+};
+
+function mergeFreezeRestorePair(
+  left: VideoTimelineClip,
+  right: VideoTimelineClip,
+  timelineStart: number,
+  timelineEnd: number,
+): VideoTimelineClip {
+  return {
+    ...left,
+    timelineStart,
+    timelineEnd,
+    sourceIn: isReverseVideoClip(left) ? right.sourceIn : left.sourceIn,
+    sourceOut: isReverseVideoClip(left) ? left.sourceOut : right.sourceOut,
+    transformKeyframes: mergeVideoTransformKeyframes(left, right),
+    transitionOutType: right.transitionOutType,
+    transitionOutDuration: right.transitionOutDuration,
+    videoFadeOutDuration: right.videoFadeOutDuration,
+    audioFadeOutDuration: right.audioFadeOutDuration,
+    // The Freeze-generated internal boundary is gone. Preserve only a real
+    // outer Ripple boundary that may already exist on the right fragment.
+    rippleAutoHealOutBoundaryId: right.rippleAutoHealOutBoundaryId,
+  };
+}
+
+/**
+ * Restores generated Freeze/HOLD insertions *before* ordinary Delete/Ripple
+ * Delete runs. This intentionally merges the original left/right fragments
+ * directly instead of relying on the generic Ripple auto-healer to notice the
+ * pair after the HOLD has been removed.
+ *
+ * Only HOLD clips included in `selectedIds` are considered. A HOLD is restored
+ * when its generated source fragments still belong to the same Freeze lineage
+ * and their original source/edit properties remain compatible. The right
+ * fragment may have been moved later and the HOLD may have been resized. Other selected clip IDs
+ * are left untouched here so the caller can apply normal Delete semantics to
+ * them afterward.
+ *
+ * v19.0 HOLDs created before dedicated auto-restore still work through the
+ * conservative legacy-unmarked fallback in `canRestoreFreezeSourcePair`.
+ */
+export function deleteVideoClipsWithFreezeAutoRestore(
+  clips: VideoTimelineClip[],
+  selectedIds: Iterable<string>,
+): FreezeAutoRestoreDeleteResult {
+  const selected = new Set(selectedIds);
+
+  if (selected.size === 0) {
+    return { clips, restoredFreezeIds: [], changed: false };
+  }
+
+  const sorted = sortVideoClips(clips);
+  const triples: FreezeRestoreTriple[] = [];
+  const claimedClipIds = new Set<string>();
+
+  for (const freeze of sorted) {
+    if (!selected.has(freeze.id) || !isFreezeFrameClip(freeze)) {
+      continue;
+    }
+
+    const expectedBoundaryId = `freeze-heal:${freeze.id}`;
+
+    // Newer Freeze insertions carry a stable lineage token on the two source
+    // fragments. Prefer that identity over timeline adjacency so users can move
+    // the right fragment later and/or resize the HOLD without losing the ability
+    // to restore the original continuous clip.
+    let left = sorted.find(
+      (clip) =>
+        !selected.has(clip.id) &&
+        !claimedClipIds.has(clip.id) &&
+        clip.trackId === freeze.trackId &&
+        clip.rippleAutoHealOutBoundaryId === expectedBoundaryId,
+    );
+    let right = sorted.find(
+      (clip) =>
+        !selected.has(clip.id) &&
+        !claimedClipIds.has(clip.id) &&
+        clip.trackId === freeze.trackId &&
+        clip.rippleAutoHealInBoundaryId === expectedBoundaryId,
+    );
+
+    // Legacy v19 HOLDs created before the lineage token existed can still use
+    // the old conservative adjacency fallback. We intentionally do not guess
+    // across arbitrary gaps for unmarked fragments.
+    if (!left || !right) {
+      left = sorted.find(
+        (clip) =>
+          !selected.has(clip.id) &&
+          !claimedClipIds.has(clip.id) &&
+          clip.trackId === freeze.trackId &&
+          clip.rippleAutoHealOutBoundaryId === undefined &&
+          almostEqual(clip.timelineEnd, freeze.timelineStart),
+      );
+      right = sorted.find(
+        (clip) =>
+          !selected.has(clip.id) &&
+          !claimedClipIds.has(clip.id) &&
+          clip.trackId === freeze.trackId &&
+          clip.rippleAutoHealInBoundaryId === undefined &&
+          almostEqual(clip.timelineStart, freeze.timelineEnd),
+      );
+    }
+
+    if (!left || !right || !canRestoreFreezeSourcePair(left, freeze, right, expectedBoundaryId)) {
+      continue;
+    }
+
+    // The right fragment may have been moved later and the HOLD may have been
+    // stretched to fill that space. Restoring the original source clip removes
+    // the entire *current* interval between the generated fragments, not merely
+    // the HOLD's original/current duration.
+    const collapseDuration = right.timelineStart - left.timelineEnd;
+    if (collapseDuration < -EPSILON) {
+      continue;
+    }
+
+    // Do not collapse unrelated material that the user inserted into the gap.
+    // The HOLD itself is allowed anywhere inside the interval.
+    const hasBlockingClip = sorted.some(
+      (clip) =>
+        clip.id !== freeze.id &&
+        clip.id !== left!.id &&
+        clip.id !== right!.id &&
+        !selected.has(clip.id) &&
+        clip.trackId === freeze.trackId &&
+        clip.timelineEnd > left!.timelineEnd + EPSILON &&
+        clip.timelineStart < right!.timelineStart - EPSILON,
+    );
+    if (hasBlockingClip) {
+      continue;
+    }
+
+    triples.push({
+      freeze,
+      left,
+      right,
+      collapseDuration: Math.max(0, collapseDuration),
+    });
+    claimedClipIds.add(freeze.id);
+    claimedClipIds.add(left.id);
+    claimedClipIds.add(right.id);
+  }
+
+  if (triples.length === 0) {
+    return { clips, restoredFreezeIds: [], changed: false };
+  }
+
+  triples.sort(
+    (a, b) =>
+      a.freeze.timelineStart - b.freeze.timelineStart ||
+      a.freeze.trackId.localeCompare(b.freeze.trackId),
+  );
+
+  const triplesByLeftId = new Map(triples.map((triple) => [triple.left.id, triple]));
+  const consumedIds = new Set<string>();
+  for (const triple of triples) {
+    consumedIds.add(triple.freeze.id);
+    consumedIds.add(triple.right.id);
+  }
+
+  const shiftBefore = (trackId: TimelineTrackId, time: number) => {
+    let shift = 0;
+    for (const triple of triples) {
+      if (
+        triple.freeze.trackId === trackId &&
+        triple.right.timelineStart <= time + EPSILON
+      ) {
+        shift += triple.collapseDuration;
+      }
+    }
+    return shift;
+  };
+
+  const output: VideoTimelineClip[] = [];
+
+  for (const clip of sorted) {
+    if (consumedIds.has(clip.id)) {
+      continue;
+    }
+
+    const triple = triplesByLeftId.get(clip.id);
+    if (triple) {
+      const startShift = shiftBefore(clip.trackId, triple.left.timelineStart);
+      const endShift = shiftBefore(clip.trackId, triple.right.timelineEnd);
+      output.push(
+        mergeFreezeRestorePair(
+          triple.left,
+          triple.right,
+          Math.max(0, triple.left.timelineStart - startShift),
+          Math.max(0, triple.right.timelineEnd - endShift),
+        ),
+      );
+      continue;
+    }
+
+    const shift = shiftBefore(clip.trackId, clip.timelineStart);
+    output.push(
+      shift > EPSILON
+        ? {
+            ...clip,
+            timelineStart: Math.max(0, clip.timelineStart - shift),
+            timelineEnd: Math.max(0, clip.timelineEnd - shift),
+          }
+        : clip,
+    );
+  }
+
+  return {
+    clips: sortVideoClips(output),
+    restoredFreezeIds: triples.map((triple) => triple.freeze.id),
+    changed: true,
+  };
+}
+
 function splitClipForRippleInsert(
   clip: VideoTimelineClip,
   insertTime: number,
@@ -184,15 +465,17 @@ function splitClipForRippleInsert(
     return [];
   }
 
-  const sourceSplit =
-    clip.sourceIn + timelineDeltaToSourceDelta(clip, insertTime - clip.timelineStart);
+  const sourceSplit = timelineTimeToSourceTime(clip, insertTime);
+  const reverse = isReverseVideoClip(clip);
+  const freeze = isFreezeFrameClip(clip);
   const rightId = createSplitId(clip);
   const boundaryId = `ripple-heal:${rightId}`;
 
   const left: VideoTimelineClip = {
     ...clip,
     timelineEnd: insertTime,
-    sourceOut: sourceSplit,
+    sourceIn: freeze ? clip.sourceIn : reverse ? sourceSplit : clip.sourceIn,
+    sourceOut: freeze ? clip.sourceOut : reverse ? clip.sourceOut : sourceSplit,
     transformKeyframes: sliceVideoTransformKeyframes(
       clip,
       clip.timelineStart,
@@ -209,7 +492,8 @@ function splitClipForRippleInsert(
     id: rightId,
     timelineStart: insertTime + openedDuration,
     timelineEnd: clip.timelineEnd + openedDuration,
-    sourceIn: sourceSplit,
+    sourceIn: freeze ? clip.sourceIn : reverse ? clip.sourceIn : sourceSplit,
+    sourceOut: freeze ? clip.sourceOut : reverse ? sourceSplit : clip.sourceOut,
     transformKeyframes: sliceVideoTransformKeyframes(
       clip,
       insertTime,
