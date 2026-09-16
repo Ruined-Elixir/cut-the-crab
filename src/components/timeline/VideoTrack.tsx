@@ -26,11 +26,14 @@ type VideoTrackProps = {
   currentTime: number;
   track: TimelineTrack;
   selectedVideoClipId: string | null;
+  selectedVideoClipIds: string[];
   framesByClipId: VideoClipFrames;
   showLabel?: boolean;
 
   onSeek?: (time: number) => void;
-  onSelect?: (id: string) => void;
+  onSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
+  onMoveStart?: (id: string) => boolean | void;
+  onMoveEnd?: () => void;
   onMove?: (
     id: string,
     newTimelineStart: number,
@@ -99,9 +102,12 @@ function VideoTrack({
   currentTime,
   track,
   selectedVideoClipId,
+  selectedVideoClipIds,
   framesByClipId,
   onSeek,
   onSelect,
+  onMoveStart,
+  onMoveEnd,
   onMove,
   onMoveToTrack,
   onMediaDrop,
@@ -165,7 +171,6 @@ function VideoTrack({
     clip: VideoTimelineClip,
   ) => {
     if (
-      track.locked ||
       (event.target as HTMLElement).closest(".video-resize-handle") ||
       (event.target as HTMLElement).closest(".clip-fade-handle")
     ) {
@@ -175,13 +180,31 @@ function VideoTrack({
     event.preventDefault();
     event.stopPropagation();
 
+    if (event.shiftKey) {
+      onSelect?.(clip.id, "toggle");
+      return;
+    }
+
+    if (!selectedVideoClipIds.includes(clip.id)) {
+      onSelect?.(clip.id, "single");
+    } else {
+      onSelect?.(clip.id, "focus");
+    }
+
+    if (track.locked) {
+      return;
+    }
+
     const trackElement = event.currentTarget.parentElement;
 
     if (!trackElement || duration <= 0) {
       return;
     }
 
-    onSelect?.(clip.id);
+    if (onMoveStart?.(clip.id) === false) {
+      return;
+    }
+
     setDraggingClipId(clip.id);
 
     const startX = event.clientX;
@@ -199,7 +222,7 @@ function VideoTrack({
       let bestTargetTime: number | null = null;
 
       for (const target of snapTargets) {
-        if (target.clipId === clip.id) {
+        if (target.clipId && selectedVideoClipIds.includes(target.clipId)) {
           continue;
         }
 
@@ -253,6 +276,7 @@ function VideoTrack({
       );
 
       if (
+        selectedVideoClipIds.length <= 1 &&
         targetTrackElement instanceof HTMLElement &&
         targetTrackElement.dataset.trackLocked !== "true" &&
         targetTrackElement.dataset.videoTrackId !== track.id
@@ -288,6 +312,7 @@ function VideoTrack({
           targetTrackElement.dataset.trackLocked === "true";
 
         if (
+          selectedVideoClipIds.length <= 1 &&
           targetTrackId &&
           targetTrackId !== track.id &&
           !targetLocked
@@ -302,6 +327,7 @@ function VideoTrack({
 
       onSnapGuideChange?.(null);
       clearExternalTrackPreview();
+      onMoveEnd?.();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -328,7 +354,7 @@ function VideoTrack({
       return;
     }
 
-    onSelect?.(clip.id);
+    onSelect?.(clip.id, "single");
     setDraggingClipId(clip.id);
 
     const startX = event.clientX;
@@ -614,8 +640,10 @@ function VideoTrack({
               ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100
               : 0;
 
-          const isSelected = clip.id === selectedVideoClipId;
+          const isSelected = selectedVideoClipIds.includes(clip.id);
+          const isPrimarySelected = clip.id === selectedVideoClipId;
           const isDragging = clip.id === draggingClipId;
+          const isGroupDragging = draggingClipId !== null && isSelected;
           const frames = framesByClipId[clip.id] ?? [];
           const clipDuration = Math.max(
             MIN_VIDEO_CLIP_DURATION,
@@ -648,7 +676,9 @@ function VideoTrack({
               className={[
                 "timeline-video-clip",
                 isSelected ? "selected" : "",
+                isPrimarySelected ? "primary-selected" : "",
                 isDragging ? "dragging" : "",
+                isGroupDragging && !isDragging ? "group-dragging" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -656,13 +686,17 @@ function VideoTrack({
                 left: `${left}%`,
                 width: `${width}%`,
               }}
+              data-video-clip-id={clip.id}
               title={`${clip.sourceName} · ${clip.sourceIn.toFixed(
                 2,
               )}–${clip.sourceOut.toFixed(2)} s · ${track.shortLabel}`}
               onMouseDown={(event) => startMove(event, clip)}
               onClick={(event) => {
                 event.stopPropagation();
-                onSelect?.(clip.id);
+
+                if (event.shiftKey) {
+                  return;
+                }
 
                 const trackElement = event.currentTarget.parentElement;
                 const time = trackElement

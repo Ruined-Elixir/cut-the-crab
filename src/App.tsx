@@ -84,6 +84,12 @@ type SeekRequest = {
   id: number;
 };
 
+type VideoClipboardPayload = {
+  clips: VideoTimelineClip[];
+  groupStart: number;
+  groupEnd: number;
+};
+
 type AppScreen = "home" | "editor";
 
 const AUTOSAVE_DEBOUNCE_MS = 200;
@@ -467,7 +473,7 @@ function App() {
   const handleSkimPreviewChange = useCallback((time: number | null) => {
     videoPlayerRef.current?.setSkimPreviewTime(time);
   }, []);
-  const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
+  const videoClipboardRef = useRef<VideoClipboardPayload | null>(null);
   const timelinePasteTargetRef = useRef<{
     trackId: TimelineTrackId;
     time: number;
@@ -528,17 +534,20 @@ function App() {
   const {
     videoClips,
     selectedVideoClipId,
+    selectedVideoClipIds,
     selectedVideoClip,
     selectVideoClip,
+    selectVideoClips,
     clearVideoClipSelection,
+    beginVideoClipMove,
+    endVideoClipMove,
     moveVideoClip,
     moveVideoClipToTrack,
     resizeVideoClip,
     splitVideoClip,
-    deleteVideoClip,
+    deleteVideoClips,
     deleteVideoTrack,
-    insertVideoClipCopy,
-    duplicateVideoClip,
+    insertVideoClipCopies,
     insertVideoClipFromMedia,
     updateVideoClipTransform,
     applyVideoClipCropToTrack,
@@ -600,6 +609,8 @@ function App() {
     redo,
     resetHistory,
     markNextChangeImmediate,
+    beginTransaction: beginHistoryTransaction,
+    endTransaction: endHistoryTransaction,
   } = useEditorHistory({
     snapshot: {
       subtitles,
@@ -618,6 +629,14 @@ function App() {
       setTrackSettings(snapshot.trackSettings);
     },
   });
+
+  const selectedVideoClips = videoClips.filter((clip) =>
+    selectedVideoClipIds.includes(clip.id),
+  );
+
+  const selectedVideoClipsAreEditable =
+    selectedVideoClips.length > 0 &&
+    selectedVideoClips.every((clip) => !trackSettings[clip.trackId]?.locked);
 
   const addSubtitleWithHistory = (time: number) => {
     markNextChangeImmediate();
@@ -655,45 +674,49 @@ function App() {
   };
 
   const deleteSelectedVideoClipWithHistory = () => {
-    if (!selectedVideoClipId) {
-      return false;
-    }
-
-    const selectedClip = videoClips.find((clip) => clip.id === selectedVideoClipId);
-
-    if (!selectedClip || trackSettings[selectedClip.trackId]?.locked) {
+    if (!selectedVideoClipsAreEditable) {
       return false;
     }
 
     markNextChangeImmediate();
-    deleteVideoClip(selectedVideoClipId);
+    clearSubtitleSelection();
+    deleteVideoClips(selectedVideoClipIds);
 
     return true;
   };
 
   const copySelectedVideoClip = () => {
-    if (!selectedVideoClip) {
+    if (selectedVideoClips.length === 0) {
       return false;
     }
 
-    videoClipboardRef.current = { ...selectedVideoClip };
-    // Default paste behaves like a normal NLE duplicate: place the copy
-    // immediately after the copied clip on the same video track. A later
-    // click on another video track/time replaces this destination.
+    const clips = selectedVideoClips
+      .map((clip) => ({ ...clip }))
+      .sort(
+        (a, b) =>
+          a.timelineStart - b.timelineStart ||
+          a.trackId.localeCompare(b.trackId) ||
+          a.timelineEnd - b.timelineEnd,
+      );
+    const groupStart = Math.min(...clips.map((clip) => clip.timelineStart));
+    const groupEnd = Math.max(...clips.map((clip) => clip.timelineEnd));
+
+    videoClipboardRef.current = { clips, groupStart, groupEnd };
+
+    // Default multi-clip paste preserves track assignments and relative spacing,
+    // placing the copied group immediately after the original group. If every
+    // copied clip came from one track, a later timeline click may retarget that
+    // entire group to another video track just like single-clip paste.
     timelinePasteTargetRef.current = {
-      trackId: selectedVideoClip.trackId,
-      time: selectedVideoClip.timelineEnd,
+      trackId: selectedVideoClip?.trackId ?? clips[0].trackId,
+      time: groupEnd,
     };
 
     return true;
   };
 
   const cutSelectedVideoClipWithHistory = () => {
-    if (!selectedVideoClipId || !selectedVideoClip) {
-      return false;
-    }
-
-    if (trackSettings[selectedVideoClip.trackId]?.locked) {
+    if (!selectedVideoClipsAreEditable) {
       return false;
     }
 
@@ -703,7 +726,7 @@ function App() {
 
     markNextChangeImmediate();
     clearSubtitleSelection();
-    deleteVideoClip(selectedVideoClipId);
+    deleteVideoClips(selectedVideoClipIds);
     return true;
   };
 
@@ -722,45 +745,97 @@ function App() {
   };
 
   const pasteVideoClipAtTarget = () => {
-    const clipboardClip = videoClipboardRef.current;
+    const clipboard = videoClipboardRef.current;
 
-    if (!clipboardClip) {
+    if (!clipboard || clipboard.clips.length === 0) {
       return false;
     }
 
     const target = timelinePasteTargetRef.current ?? {
-      trackId: clipboardClip.trackId,
-      time: clipboardClip.timelineEnd,
+      trackId: clipboard.clips[0].trackId,
+      time: clipboard.groupEnd,
     };
-    const targetSettings = trackSettings[target.trackId];
+    const sourceTrackIds = [...new Set(clipboard.clips.map((clip) => clip.trackId))];
+    const targetTrackIds =
+      sourceTrackIds.length === 1 ? [target.trackId] : sourceTrackIds;
 
     if (
       timelineTrackKindFromId(target.trackId) !== "video" ||
-      targetSettings?.deleted === true ||
-      targetSettings?.locked
+      targetTrackIds.some(
+        (trackId) =>
+          timelineTrackKindFromId(trackId) !== "video" ||
+          trackSettings[trackId]?.deleted === true ||
+          trackSettings[trackId]?.locked,
+      )
     ) {
       return false;
     }
 
     markNextChangeImmediate();
     clearSubtitleSelection();
-    insertVideoClipCopy(clipboardClip, target.time, target.trackId);
+    insertVideoClipCopies(
+      clipboard.clips,
+      target.time,
+      sourceTrackIds.length === 1 ? target.trackId : undefined,
+    );
     return true;
   };
 
   const duplicateSelectedVideoClipWithHistory = () => {
-    if (!selectedVideoClipId || !selectedVideoClip) {
+    if (!selectedVideoClipsAreEditable) {
       return false;
     }
 
-    if (trackSettings[selectedVideoClip.trackId]?.locked) {
-      return false;
-    }
+    const groupEnd = Math.max(...selectedVideoClips.map((clip) => clip.timelineEnd));
 
     markNextChangeImmediate();
     clearSubtitleSelection();
-    duplicateVideoClip(selectedVideoClipId);
+    insertVideoClipCopies(selectedVideoClips, groupEnd);
     return true;
+  };
+
+  const handleVideoClipSelect = (
+    id: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
+    selectVideoClip(id, mode);
+    clearSubtitleSelection();
+    setTimelineRange(null);
+  };
+
+  const handleVideoClipSelectionChange = (
+    ids: string[],
+    primaryId?: string | null,
+  ) => {
+    selectVideoClips(ids, primaryId);
+    clearSubtitleSelection();
+    setTimelineRange(null);
+  };
+
+  const handleVideoClipMoveStart = (id: string) => {
+    const hasMultiSelection =
+      selectedVideoClipIds.includes(id) && selectedVideoClipIds.length > 1;
+
+    if (hasMultiSelection && !selectedVideoClipsAreEditable) {
+      return false;
+    }
+
+    beginHistoryTransaction();
+
+    if (hasMultiSelection) {
+      beginVideoClipMove(id);
+    } else {
+      endVideoClipMove();
+    }
+
+    return true;
+  };
+
+  const handleVideoClipMoveEnd = () => {
+    endVideoClipMove();
+    window.requestAnimationFrame(() => {
+      endHistoryTransaction();
+    });
   };
 
   const applySelectedTimelineRangeEdit = (mode: TimelineRangeEditMode) => {
@@ -806,11 +881,6 @@ function App() {
 
   const extractTimelineRangeWithHistory = () =>
     applySelectedTimelineRangeEdit("extract");
-
-  const handleVideoClipSelect = (id: string) => {
-    selectVideoClip(id);
-    clearSubtitleSelection();
-  };
 
   const toggleTrackSetting = (
     trackId: TimelineTrackId,
@@ -2142,7 +2212,12 @@ function App() {
         return duplicateSelectedVideoClipWithHistory();
 
       case "select-all":
-        selectAllSubtitles();
+        if (selectedVideoClipIds.length > 0) {
+          selectVideoClips(videoClips.map((clip) => clip.id), selectedVideoClipId);
+          clearSubtitleSelection();
+        } else {
+          selectAllSubtitles();
+        }
         return true;
     }
   };
@@ -2524,7 +2599,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipId) {
+        if (selectedVideoClipIds.length > 0) {
           event.preventDefault();
           deleteSelectedVideoClipWithHistory();
           return;
@@ -2552,7 +2627,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipId) {
+        if (selectedVideoClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("cut", event.target);
         }
@@ -2565,7 +2640,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipId) {
+        if (selectedVideoClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("copy", event.target);
         }
@@ -2591,7 +2666,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipId) {
+        if (selectedVideoClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("duplicate", event.target);
         }
@@ -2662,7 +2737,10 @@ function App() {
     markNextChangeImmediate,
     currentTime,
     timelineRange,
+    trackSettings,
+    videoClips,
     selectedVideoClipId,
+    selectedVideoClipIds,
     selectedVideoClip,
     selectedSubtitleId,
     selectedSubtitleIds,
@@ -2817,6 +2895,7 @@ function App() {
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
+        selectedVideoClipIds={selectedVideoClipIds}
         onAddTrack={handleAddTimelineTrack}
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
@@ -2832,6 +2911,9 @@ function App() {
           clearVideoClipSelection();
         }}
         onVideoClipSelect={handleVideoClipSelect}
+        onVideoClipSelectionChange={handleVideoClipSelectionChange}
+        onVideoClipMoveStart={handleVideoClipMoveStart}
+        onVideoClipMoveEnd={handleVideoClipMoveEnd}
         onVideoClipMove={moveVideoClip}
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
         onMediaDrop={handleMediaDropOnTimeline}

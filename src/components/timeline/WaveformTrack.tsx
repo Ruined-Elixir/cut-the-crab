@@ -18,6 +18,7 @@ type WaveformTrackProps = {
   duration: number;
   track: TimelineTrack;
   waveformsBySource: Record<string, number[]>;
+  selectedVideoClipIds?: string[];
   onSeek?: (time: number) => void;
   onToggleMute?: (trackId: TimelineTrackId) => void;
   onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
@@ -154,6 +155,7 @@ function WaveformTrack({
   duration,
   track,
   waveformsBySource,
+  selectedVideoClipIds = [],
   onSeek,
   onToggleMute,
   onFadeChange,
@@ -403,7 +405,14 @@ function WaveformTrack({
           return (
             <span
               key={clip.id}
-              className="audio-clip-label"
+              className={[
+                "audio-clip-label",
+                clip.linkedVideoClipId && selectedVideoClipIds.includes(clip.linkedVideoClipId)
+                  ? "selected"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               style={{
                 left: `${
                   duration > 0

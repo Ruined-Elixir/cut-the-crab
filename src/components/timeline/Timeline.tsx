@@ -44,6 +44,7 @@ type TimelineProps = {
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
   selectedVideoClipId: string | null;
+  selectedVideoClipIds: string[];
 
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
@@ -57,7 +58,10 @@ type TimelineProps = {
   onExtractRange?: () => void;
   onExportRange?: () => void;
 
-  onVideoClipSelect?: (id: string) => void;
+  onVideoClipSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
+  onVideoClipSelectionChange?: (ids: string[], primaryId?: string | null) => void;
+  onVideoClipMoveStart?: (id: string) => boolean | void;
+  onVideoClipMoveEnd?: () => void;
   onVideoClipMove?: (
     id: string,
     newTimelineStart: number,
@@ -151,6 +155,7 @@ function Timeline({
   selectedSubtitleId,
   selectedSubtitleIds,
   selectedVideoClipId,
+  selectedVideoClipIds,
   onSeek,
   onSkimPreviewChange,
   onAddTrack,
@@ -163,6 +168,9 @@ function Timeline({
   onExtractRange,
   onExportRange,
   onVideoClipSelect,
+  onVideoClipSelectionChange,
+  onVideoClipMoveStart,
+  onVideoClipMoveEnd,
   onVideoClipMove,
   onVideoClipResize,
   onVideoClipMoveToTrack,
@@ -192,12 +200,26 @@ function Timeline({
     startClientX: number;
     moved: boolean;
   } | null>(null);
+  const marqueeDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startLocalX: number;
+    startLocalY: number;
+    baseSelectedIds: string[];
+    moved: boolean;
+  } | null>(null);
   const suppressRangeClickRef = useRef(false);
   const previousZoomRef = useRef(zoom);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
   const [workspaceDuration, setWorkspaceDuration] = useState(30);
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
+  const [marqueeRect, setMarqueeRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   const setTimelineRange = (range: TimelineRange | null) => {
     onTimelineRangeChange?.(range);
@@ -638,6 +660,101 @@ function Timeline({
       return;
     }
 
+    const marqueeSurface = target.closest(
+      ".video-track, .subtitle-track, .waveform-track",
+    );
+
+    if (event.shiftKey && marqueeSurface) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideSkimmer();
+
+      const content = event.currentTarget;
+      const contentRect = content.getBoundingClientRect();
+      const startLocalX = event.clientX - contentRect.left;
+      const startLocalY = event.clientY - contentRect.top;
+
+      marqueeDragRef.current = {
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startLocalX,
+        startLocalY,
+        baseSelectedIds:
+          event.metaKey || event.ctrlKey ? [...selectedVideoClipIds] : [],
+        moved: false,
+      };
+      suppressRangeClickRef.current = true;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const drag = marqueeDragRef.current;
+
+        if (!drag) {
+          return;
+        }
+
+        const dx = moveEvent.clientX - drag.startClientX;
+        const dy = moveEvent.clientY - drag.startClientY;
+
+        if (!drag.moved && Math.hypot(dx, dy) < 4) {
+          return;
+        }
+
+        drag.moved = true;
+        moveEvent.preventDefault();
+
+        const currentLocalX = Math.max(0, Math.min(contentRect.width, moveEvent.clientX - contentRect.left));
+        const currentLocalY = Math.max(0, Math.min(contentRect.height, moveEvent.clientY - contentRect.top));
+        const left = Math.min(drag.startLocalX, currentLocalX);
+        const top = Math.min(drag.startLocalY, currentLocalY);
+        const width = Math.abs(currentLocalX - drag.startLocalX);
+        const height = Math.abs(currentLocalY - drag.startLocalY);
+
+        setMarqueeRect({ left, top, width, height });
+
+        const selectionLeft = contentRect.left + left;
+        const selectionRight = selectionLeft + width;
+        const selectionTop = contentRect.top + top;
+        const selectionBottom = selectionTop + height;
+        const hitIds = (Array.from(
+          content.querySelectorAll(".timeline-video-clip[data-video-clip-id]"),
+        ) as HTMLElement[])
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            return (
+              rect.right >= selectionLeft &&
+              rect.left <= selectionRight &&
+              rect.bottom >= selectionTop &&
+              rect.top <= selectionBottom
+            );
+          })
+          .map((element) => element.dataset.videoClipId)
+          .filter((id): id is string => !!id);
+
+        const nextIds = [...new Set([...drag.baseSelectedIds, ...hitIds])];
+        onVideoClipSelectionChange?.(
+          nextIds,
+          selectedVideoClipId && nextIds.includes(selectedVideoClipId)
+            ? selectedVideoClipId
+            : hitIds[hitIds.length - 1] ?? nextIds[nextIds.length - 1] ?? null,
+        );
+      };
+
+      const handleMouseUp = () => {
+        marqueeDragRef.current = null;
+        setMarqueeRect(null);
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+
+        window.setTimeout(() => {
+          suppressRangeClickRef.current = false;
+        }, 0);
+      };
+
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -800,10 +917,13 @@ function Timeline({
             currentTime={currentTime}
             track={track}
             selectedVideoClipId={selectedVideoClipId}
+            selectedVideoClipIds={selectedVideoClipIds}
             framesByClipId={framesByClipId}
             showLabel={false}
             onSeek={onSeek}
             onSelect={onVideoClipSelect}
+            onMoveStart={onVideoClipMoveStart}
+            onMoveEnd={onVideoClipMoveEnd}
             onMove={onVideoClipMove}
             onMoveToTrack={onVideoClipMoveToTrack}
             onMediaDrop={onMediaDrop}
@@ -847,6 +967,7 @@ function Timeline({
             duration={workspaceDuration}
             track={track}
             waveformsBySource={waveformsBySource}
+            selectedVideoClipIds={selectedVideoClipIds}
             showLabel={false}
             onSeek={onSeek}
             onToggleMute={onToggleTrackMute}
@@ -1041,8 +1162,8 @@ function Timeline({
               type="button"
               className="timeline-action-button"
               onClick={onCopyVideoClip}
-              disabled={!selectedVideoClipId}
-              title="Copy selected video clip (⌘C / Ctrl+C)"
+              disabled={selectedVideoClipIds.length === 0}
+              title="Copy selected video clip(s) (⌘C / Ctrl+C)"
             >
               Copy
             </button>
@@ -1139,6 +1260,19 @@ function Timeline({
               <span className="timeline-skimmer-cap" />
               <span ref={skimmerTimeRef} className="timeline-skimmer-time" />
             </div>
+
+            {marqueeRect && (
+              <div
+                className="timeline-marquee-selection"
+                style={{
+                  left: `${marqueeRect.left}px`,
+                  top: `${marqueeRect.top}px`,
+                  width: `${marqueeRect.width}px`,
+                  height: `${marqueeRect.height}px`,
+                }}
+                aria-hidden="true"
+              />
+            )}
 
             {timelineRange && workspaceDuration > 0 && (
               <div

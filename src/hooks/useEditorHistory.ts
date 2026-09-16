@@ -77,6 +77,7 @@ export function useEditorHistory({
   const pendingStartRef = useRef<EditorHistorySnapshot | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const immediateNextChangeRef = useRef(false);
+  const transactionDepthRef = useRef(0);
 
   const pastRef = useRef<EditorHistorySnapshot[]>([]);
   const futureRef = useRef<EditorHistorySnapshot[]>([]);
@@ -153,6 +154,7 @@ export function useEditorHistory({
       futureRef.current = [];
       pendingStartRef.current = null;
       immediateNextChangeRef.current = false;
+      transactionDepthRef.current = 0;
 
       baselineRef.current = cloned;
       baselineKeyRef.current = key;
@@ -169,8 +171,32 @@ export function useEditorHistory({
   );
 
   const markNextChangeImmediate = useCallback(() => {
+    if (transactionDepthRef.current > 0) {
+      return;
+    }
+
     commitPending();
     immediateNextChangeRef.current = true;
+  }, [commitPending]);
+
+  const beginTransaction = useCallback(() => {
+    if (transactionDepthRef.current === 0) {
+      commitPending();
+    }
+
+    transactionDepthRef.current += 1;
+  }, [commitPending]);
+
+  const endTransaction = useCallback(() => {
+    if (transactionDepthRef.current <= 0) {
+      return;
+    }
+
+    transactionDepthRef.current -= 1;
+
+    if (transactionDepthRef.current === 0) {
+      commitPending();
+    }
   }, [commitPending]);
 
   const applyHistorySnapshot = useCallback(
@@ -286,6 +312,10 @@ export function useEditorHistory({
 
     clearPendingTimer();
 
+    if (transactionDepthRef.current > 0) {
+      return;
+    }
+
     if (immediateNextChangeRef.current) {
       immediateNextChangeRef.current = false;
 
@@ -327,5 +357,7 @@ export function useEditorHistory({
     resetHistory: reset,
     commitHistory: commitPending,
     markNextChangeImmediate,
+    beginTransaction,
+    endTransaction,
   };
 }

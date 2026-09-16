@@ -11,6 +11,10 @@ import type {
   VideoTimelineClip,
   VideoTransitionType,
 } from "../types/timelineModel";
+import {
+  clampVideoClipGroupMoveDelta,
+  findNextAvailableVideoClipGroupShift,
+} from "../utils/timelineMultiClip";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
 const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
@@ -192,7 +196,12 @@ export function useVideoTimeline({
     selectedVideoClipId,
     setSelectedVideoClipId,
   ] = useState<string | null>(null);
+  const [selectedVideoClipIds, setSelectedVideoClipIds] = useState<string[]>([]);
 
+  const groupMoveOriginRef = useRef<{
+    anchorId: string;
+    selectedClips: VideoTimelineClip[];
+  } | null>(null);
   const initializedSourceRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -219,6 +228,7 @@ export function useVideoTimeline({
     ]);
 
     setSelectedVideoClipId(null);
+    setSelectedVideoClipIds([]);
   }, [sourcePath, sourceName, sourceDuration]);
 
   const selectedVideoClip = useMemo(
@@ -231,10 +241,51 @@ export function useVideoTimeline({
 
   const clearVideoClipSelection = () => {
     setSelectedVideoClipId(null);
+    setSelectedVideoClipIds([]);
   };
 
-  const selectVideoClip = (id: string) => {
-    setSelectedVideoClipId(id);
+  const selectVideoClip = (
+    id: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
+    if (mode === "single") {
+      setSelectedVideoClipId(id);
+      setSelectedVideoClipIds([id]);
+      return;
+    }
+
+    if (mode === "focus") {
+      setSelectedVideoClipId(id);
+      setSelectedVideoClipIds((current) =>
+        current.includes(id) ? current : [id],
+      );
+      return;
+    }
+
+    setSelectedVideoClipIds((current) => {
+      if (current.includes(id)) {
+        const next = current.filter((clipId) => clipId !== id);
+        setSelectedVideoClipId((primary) =>
+          primary === id ? next[next.length - 1] ?? null : primary,
+        );
+        return next;
+      }
+
+      const next = [...current, id];
+      setSelectedVideoClipId(id);
+      return next;
+    });
+  };
+
+  const selectVideoClips = (ids: string[], primaryId?: string | null) => {
+    const unique = [...new Set(ids)];
+    const primary =
+      primaryId && unique.includes(primaryId)
+        ? primaryId
+        : unique[unique.length - 1] ?? null;
+
+    setSelectedVideoClipIds(unique);
+    setSelectedVideoClipId(primary);
   };
 
   const replaceVideoClips = (
@@ -252,10 +303,11 @@ export function useVideoTimeline({
 
     setVideoClips(sortVideoClips(normalized));
 
+    const availableIds = new Set(normalized.map((clip) => clip.id));
+
+    setSelectedVideoClipIds((current) => current.filter((id) => availableIds.has(id)));
     setSelectedVideoClipId((current) =>
-      current && normalized.some((clip) => clip.id === current)
-        ? current
-        : null,
+      current && availableIds.has(current) ? current : null,
     );
   };
 
@@ -280,6 +332,26 @@ export function useVideoTimeline({
     ]);
 
     setSelectedVideoClipId(null);
+    setSelectedVideoClipIds([]);
+  };
+
+  const beginVideoClipMove = (id: string) => {
+    if (!selectedVideoClipIds.includes(id) || selectedVideoClipIds.length <= 1) {
+      groupMoveOriginRef.current = null;
+      return;
+    }
+
+    const selectedSet = new Set(selectedVideoClipIds);
+    groupMoveOriginRef.current = {
+      anchorId: id,
+      selectedClips: videoClips
+        .filter((clip) => selectedSet.has(clip.id))
+        .map((clip) => ({ ...clip })),
+    };
+  };
+
+  const endVideoClipMove = () => {
+    groupMoveOriginRef.current = null;
   };
 
   const moveVideoClip = (
@@ -287,6 +359,42 @@ export function useVideoTimeline({
     requestedTimelineStart: number,
   ) => {
     setVideoClips((current) => {
+      const groupOrigin = groupMoveOriginRef.current;
+
+      if (groupOrigin?.anchorId === id && groupOrigin.selectedClips.length > 1) {
+        const anchor = groupOrigin.selectedClips.find((clip) => clip.id === id);
+
+        if (!anchor) {
+          return current;
+        }
+
+        const selectedSet = new Set(groupOrigin.selectedClips.map((clip) => clip.id));
+        const unselected = current.filter((clip) => !selectedSet.has(clip.id));
+        const requestedDelta = requestedTimelineStart - anchor.timelineStart;
+        const delta = clampVideoClipGroupMoveDelta(
+          groupOrigin.selectedClips,
+          unselected,
+          requestedDelta,
+        );
+        const originsById = new Map(
+          groupOrigin.selectedClips.map((clip) => [clip.id, clip]),
+        );
+
+        return sortVideoClips(
+          current.map((clip) => {
+            const origin = originsById.get(clip.id);
+
+            return origin
+              ? {
+                  ...clip,
+                  timelineStart: origin.timelineStart + delta,
+                  timelineEnd: origin.timelineEnd + delta,
+                }
+              : clip;
+          }),
+        );
+      }
+
       const target = current.find((clip) => clip.id === id);
 
       if (!target) {
@@ -489,6 +597,7 @@ export function useVideoTimeline({
 
       window.requestAnimationFrame(() => {
         setSelectedVideoClipId(right.id);
+        setSelectedVideoClipIds([right.id]);
       });
 
       return sortVideoClips(
@@ -529,6 +638,7 @@ export function useVideoTimeline({
 
       window.requestAnimationFrame(() => {
         setSelectedVideoClipId(newId);
+        setSelectedVideoClipIds([newId]);
       });
 
       return sortVideoClips([...current, copy]);
@@ -567,6 +677,7 @@ export function useVideoTimeline({
 
       window.requestAnimationFrame(() => {
         setSelectedVideoClipId(newId);
+        setSelectedVideoClipIds([newId]);
       });
 
       return sortVideoClips([...current, copy]);
@@ -627,12 +738,57 @@ export function useVideoTimeline({
 
       window.requestAnimationFrame(() => {
         setSelectedVideoClipId(newId);
+        setSelectedVideoClipIds([newId]);
       });
 
       return sortVideoClips([...current, clip]);
     });
   };
 
+
+  const insertVideoClipCopies = (
+    sourceClips: VideoTimelineClip[],
+    requestedTimelineStart: number,
+    requestedTrackId?: TimelineTrackId,
+  ) => {
+    if (sourceClips.length === 0) {
+      return [] as string[];
+    }
+
+    const sourceTrackIds = [...new Set(sourceClips.map((clip) => clip.trackId))];
+    const canRetargetSingleTrack = requestedTrackId && sourceTrackIds.length === 1;
+    const prepared = sourceClips.map((clip) => ({
+      ...clip,
+      trackId: canRetargetSingleTrack
+        ? normalizeVideoTrackId(requestedTrackId)
+        : normalizeVideoTrackId(clip.trackId),
+    }));
+    const newIds = prepared.map(() => crypto.randomUUID());
+
+    setVideoClips((current) => {
+      const shift = findNextAvailableVideoClipGroupShift(
+        current,
+        prepared,
+        requestedTimelineStart,
+      );
+
+      const copies = prepared.map((clip, index) => ({
+        ...clip,
+        id: newIds[index],
+        timelineStart: clip.timelineStart + shift,
+        timelineEnd: clip.timelineEnd + shift,
+      }));
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipIds(newIds);
+        setSelectedVideoClipId(newIds[0] ?? null);
+      });
+
+      return sortVideoClips([...current, ...copies]);
+    });
+
+    return newIds;
+  };
 
   const updateVideoClipTransform = (
     id: string,
@@ -854,14 +1010,18 @@ export function useVideoTimeline({
     );
   };
 
-  const deleteVideoClip = (id: string) => {
-    setVideoClips((current) =>
-      current.filter((clip) => clip.id !== id),
-    );
+  const deleteVideoClips = (ids: string[]) => {
+    const removedIds = new Set(ids);
 
+    setVideoClips((current) => current.filter((clip) => !removedIds.has(clip.id)));
+    setSelectedVideoClipIds((current) => current.filter((id) => !removedIds.has(id)));
     setSelectedVideoClipId((current) =>
-      current === id ? null : current,
+      current && removedIds.has(current) ? null : current,
     );
+  };
+
+  const deleteVideoClip = (id: string) => {
+    deleteVideoClips([id]);
   };
 
   const deleteVideoTrack = (trackId: TimelineTrackId) => {
@@ -875,6 +1035,9 @@ export function useVideoTimeline({
       );
 
       window.requestAnimationFrame(() => {
+        setSelectedVideoClipIds((selectedIds) =>
+          selectedIds.filter((id) => !removedIds.has(id)),
+        );
         setSelectedVideoClipId((selectedId) =>
           selectedId && removedIds.has(selectedId) ? null : selectedId,
         );
@@ -887,18 +1050,24 @@ export function useVideoTimeline({
   return {
     videoClips,
     selectedVideoClipId,
+    selectedVideoClipIds,
     selectedVideoClip,
 
     selectVideoClip,
+    selectVideoClips,
     clearVideoClipSelection,
 
+    beginVideoClipMove,
+    endVideoClipMove,
     moveVideoClip,
     moveVideoClipToTrack,
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
+    deleteVideoClips,
     deleteVideoTrack,
     insertVideoClipCopy,
+    insertVideoClipCopies,
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipTransform,
