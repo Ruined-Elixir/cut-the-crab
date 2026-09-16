@@ -95,6 +95,8 @@ export type TimelineTrackControlState = {
   locked: boolean;
   muted?: boolean;
   hidden?: boolean;
+  /** Persisted tombstone used when the user deletes a timeline track. */
+  deleted?: boolean;
 };
 
 export type TimelineTrackSettings = Record<string, TimelineTrackControlState>;

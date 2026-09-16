@@ -64,7 +64,13 @@ import type {
   RecentProject,
 } from "./types/project";
 
-import { defaultTrackControlState, nextTimelineTrackId } from "./utils/timelineModel";
+import {
+  defaultTrackControlState,
+  nextTimelineTrackId,
+  timelineTrackIndexFromId,
+  timelineTrackKindFromId,
+  timelineTrackId,
+} from "./utils/timelineModel";
 
 import "./App.css";
 
@@ -166,6 +172,242 @@ function transcriptionOptionsForLanguage(language: ProjectLanguage) {
   }
 }
 
+
+type EditorEditCommand =
+  | "undo"
+  | "redo"
+  | "cut"
+  | "copy"
+  | "paste"
+  | "duplicate"
+  | "select-all";
+
+function isTextEditableInput(element: HTMLInputElement) {
+  return ![
+    "button",
+    "checkbox",
+    "color",
+    "file",
+    "hidden",
+    "image",
+    "radio",
+    "range",
+    "reset",
+    "submit",
+  ].includes(element.type);
+}
+
+function getEditableElement(target: EventTarget | Element | null) {
+  const element = target instanceof Element ? target : null;
+
+  if (!element) {
+    return null;
+  }
+
+  if (element instanceof HTMLTextAreaElement) {
+    return element.disabled ? null : element;
+  }
+
+  if (element instanceof HTMLInputElement) {
+    return element.disabled || !isTextEditableInput(element) ? null : element;
+  }
+
+  const contentEditable = element.closest<HTMLElement>("[contenteditable]");
+
+  if (
+    contentEditable &&
+    contentEditable.contentEditable !== "false" &&
+    contentEditable.isContentEditable
+  ) {
+    return contentEditable;
+  }
+
+  return null;
+}
+
+function tryDocumentEditCommand(command: string) {
+  try {
+    return document.execCommand(command);
+  } catch {
+    return false;
+  }
+}
+
+function dispatchTextInputEvent(
+  element: HTMLElement,
+  inputType: string,
+  data: string | null = null,
+) {
+  try {
+    element.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType,
+        data,
+      }),
+    );
+  } catch {
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+function selectAllEditableText(element: HTMLElement) {
+  element.focus();
+
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    try {
+      element.select();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const selection = window.getSelection();
+
+  if (!selection) {
+    return false;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+function getContentEditableRange(element: HTMLElement) {
+  const selection = window.getSelection();
+
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const commonAncestor =
+    range.commonAncestorContainer instanceof Element
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement;
+
+  if (!commonAncestor || !element.contains(commonAncestor)) {
+    return null;
+  }
+
+  return range;
+}
+
+async function runFocusedTextEditCommand(
+  command: Exclude<EditorEditCommand, "duplicate">,
+  element: HTMLElement,
+) {
+  element.focus();
+
+  if (command === "select-all") {
+    return selectAllEditableText(element);
+  }
+
+  if (command === "undo" || command === "redo") {
+    return tryDocumentEditCommand(command);
+  }
+
+  if (tryDocumentEditCommand(command)) {
+    return true;
+  }
+
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    const start = element.selectionStart ?? element.value.length;
+    const end = element.selectionEnd ?? start;
+
+    if (command === "copy" || command === "cut") {
+      const selectedText = element.value.slice(start, end);
+
+      try {
+        await navigator.clipboard.writeText(selectedText);
+      } catch {
+        return false;
+      }
+
+      if (command === "cut" && !element.readOnly && end > start) {
+        try {
+          element.setRangeText("", start, end, "end");
+          dispatchTextInputEvent(element, "deleteByCut");
+        } catch {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    if (command === "paste") {
+      if (element.readOnly) {
+        return false;
+      }
+
+      try {
+        const clipboardText = await navigator.clipboard.readText();
+        element.setRangeText(clipboardText, start, end, "end");
+        dispatchTextInputEvent(element, "insertFromPaste", clipboardText);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  const range = getContentEditableRange(element);
+
+  if (!range) {
+    return false;
+  }
+
+  if (command === "copy" || command === "cut") {
+    const selectedText = range.toString();
+
+    try {
+      await navigator.clipboard.writeText(selectedText);
+    } catch {
+      return false;
+    }
+
+    if (command === "cut" && !range.collapsed) {
+      range.deleteContents();
+      dispatchTextInputEvent(element, "deleteByCut");
+    }
+
+    return true;
+  }
+
+  if (command === "paste") {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      range.deleteContents();
+
+      const textNode = document.createTextNode(clipboardText);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.collapse(true);
+
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      dispatchTextInputEvent(element, "insertFromPaste", clipboardText);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 function App() {
   // ==========================================================================
   // Application / Home
@@ -220,6 +462,10 @@ function App() {
     videoPlayerRef.current?.setSkimPreviewTime(time);
   }, []);
   const videoClipboardRef = useRef<VideoTimelineClip | null>(null);
+  const timelinePasteTargetRef = useRef<{
+    trackId: TimelineTrackId;
+    time: number;
+  } | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const lastSavedSnapshotRef = useRef<string>(
@@ -284,6 +530,7 @@ function App() {
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
+    deleteVideoTrack,
     insertVideoClipCopy,
     duplicateVideoClip,
     insertVideoClipFromMedia,
@@ -352,6 +599,7 @@ function App() {
       subtitles,
       markers,
       videoClips,
+      trackSettings,
     },
     enabled:
       screen === "editor" &&
@@ -361,6 +609,7 @@ function App() {
       replaceSubtitles(snapshot.subtitles);
       setMarkers(snapshot.markers);
       replaceVideoClips(snapshot.videoClips);
+      setTrackSettings(snapshot.trackSettings);
     },
   });
 
@@ -422,19 +671,74 @@ function App() {
     }
 
     videoClipboardRef.current = { ...selectedVideoClip };
+    // Default paste behaves like a normal NLE duplicate: place the copy
+    // immediately after the copied clip on the same video track. A later
+    // click on another video track/time replaces this destination.
+    timelinePasteTargetRef.current = {
+      trackId: selectedVideoClip.trackId,
+      time: selectedVideoClip.timelineEnd,
+    };
+
     return true;
   };
 
-  const pasteVideoClipAtPlayhead = () => {
-    const clipboardClip = videoClipboardRef.current;
+  const cutSelectedVideoClipWithHistory = () => {
+    if (!selectedVideoClipId || !selectedVideoClip) {
+      return false;
+    }
 
-    if (!clipboardClip || trackSettings[clipboardClip.trackId]?.locked) {
+    if (trackSettings[selectedVideoClip.trackId]?.locked) {
+      return false;
+    }
+
+    if (!copySelectedVideoClip()) {
       return false;
     }
 
     markNextChangeImmediate();
     clearSubtitleSelection();
-    insertVideoClipCopy(clipboardClip, currentTime);
+    deleteVideoClip(selectedVideoClipId);
+    return true;
+  };
+
+  const handleTimelinePasteTargetChange = (
+    trackId: TimelineTrackId,
+    time: number,
+  ) => {
+    if (timelineTrackKindFromId(trackId) !== "video") {
+      return;
+    }
+
+    timelinePasteTargetRef.current = {
+      trackId,
+      time: Math.max(0, time),
+    };
+  };
+
+  const pasteVideoClipAtTarget = () => {
+    const clipboardClip = videoClipboardRef.current;
+
+    if (!clipboardClip) {
+      return false;
+    }
+
+    const target = timelinePasteTargetRef.current ?? {
+      trackId: clipboardClip.trackId,
+      time: clipboardClip.timelineEnd,
+    };
+    const targetSettings = trackSettings[target.trackId];
+
+    if (
+      timelineTrackKindFromId(target.trackId) !== "video" ||
+      targetSettings?.deleted === true ||
+      targetSettings?.locked
+    ) {
+      return false;
+    }
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    insertVideoClipCopy(clipboardClip, target.time, target.trackId);
     return true;
   };
 
@@ -487,7 +791,7 @@ function App() {
         const match = /^video-(\d+)$/.exec(id);
         if (match) {
           const audioId = `audio-${match[1]}`;
-          if (!next[audioId]) {
+          if (!next[audioId] || next[audioId].deleted) {
             next[audioId] = defaultTrackControlState("audio");
           }
         }
@@ -495,6 +799,82 @@ function App() {
 
       return next;
     });
+  };
+
+  const handleDeleteTimelineTrack = (trackId: TimelineTrackId) => {
+    const kind = timelineTrackKindFromId(trackId);
+
+    if (!kind) {
+      return;
+    }
+
+    // S1 is the canonical subtitle data track in the current subtitle model.
+    // Extra subtitle rows can be removed safely; S1 stays until subtitle
+    // routing is generalized to per-track subtitle data.
+    if (kind === "subtitle" && trackId === "subtitle-1") {
+      return;
+    }
+
+    if (kind === "audio") {
+      const index = timelineTrackIndexFromId(trackId);
+      const pairedVideoId = timelineTrackId("video", index);
+      const pairedVideoActive =
+        trackSettings[pairedVideoId]?.deleted !== true &&
+        (trackSettings[pairedVideoId] !== undefined ||
+          videoClips.some((clip) => clip.trackId === pairedVideoId));
+
+      // Linked A-tracks are owned by their V-track and are removed together.
+      if (pairedVideoActive) {
+        return;
+      }
+    }
+
+    if (kind === "video") {
+      const index = timelineTrackIndexFromId(trackId);
+      const pairedAudioId = timelineTrackId("audio", index);
+      const clipCount = videoClips.filter((clip) => clip.trackId === trackId).length;
+      const message =
+        clipCount > 0
+          ? `Delete V${index} and A${index}? This will remove ${clipCount} clip${clipCount === 1 ? "" : "s"} from the project.`
+          : `Delete V${index} and its linked A${index} track?`;
+
+      if (!window.confirm(message)) {
+        return;
+      }
+
+      markNextChangeImmediate();
+      deleteVideoTrack(trackId);
+      setTrackSettings((current) => ({
+        ...current,
+        [trackId]: {
+          ...(current[trackId] ?? defaultTrackControlState("video")),
+          deleted: true,
+        },
+        [pairedAudioId]: {
+          ...(current[pairedAudioId] ?? defaultTrackControlState("audio")),
+          deleted: true,
+        },
+      }));
+
+      if (timelinePasteTargetRef.current?.trackId === trackId) {
+        timelinePasteTargetRef.current = null;
+      }
+
+      return;
+    }
+
+    if (!window.confirm(`Delete ${trackId.replace("-", " ")}?`)) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    setTrackSettings((current) => ({
+      ...current,
+      [trackId]: {
+        ...(current[trackId] ?? defaultTrackControlState(kind)),
+        deleted: true,
+      },
+    }));
   };
 
   const handleMoveVideoClipToTrack = (
@@ -1028,6 +1408,7 @@ function App() {
       markers: [] as TimelineMarker[],
       videoClips: [] as VideoTimelineClip[],
       mediaAssets: [] as ProjectMediaAsset[],
+      trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS } as TimelineTrackSettings,
     };
 
     try {
@@ -1065,6 +1446,7 @@ function App() {
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
           mediaAssets: loadedMediaAssets,
+          trackSettings: matchingProject.trackSettings,
         };
 
         lastSavedSnapshotRef.current = JSON.stringify({
@@ -1087,6 +1469,7 @@ function App() {
             markers: [],
             videoClips: [],
             mediaAssets: [],
+            trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
           };
 
           lastSavedSnapshotRef.current = JSON.stringify({
@@ -1116,6 +1499,7 @@ function App() {
         markers: [],
         videoClips: [],
         mediaAssets: [],
+        trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
       };
 
       lastSavedSnapshotRef.current = JSON.stringify({
@@ -1644,6 +2028,47 @@ function App() {
     }
   };
 
+  const executeEditorEditCommand = async (
+    command: EditorEditCommand,
+    target: EventTarget | Element | null = document.activeElement,
+  ) => {
+    const editableElement = getEditableElement(target);
+
+    if (editableElement && command !== "duplicate") {
+      return runFocusedTextEditCommand(command, editableElement);
+    }
+
+    if (screen !== "editor") {
+      return false;
+    }
+
+    switch (command) {
+      case "undo":
+        undo();
+        return true;
+
+      case "redo":
+        redo();
+        return true;
+
+      case "cut":
+        return cutSelectedVideoClipWithHistory();
+
+      case "copy":
+        return copySelectedVideoClip();
+
+      case "paste":
+        return pasteVideoClipAtTarget();
+
+      case "duplicate":
+        return duplicateSelectedVideoClipWithHistory();
+
+      case "select-all":
+        selectAllSubtitles();
+        return true;
+    }
+  };
+
   // ==========================================================================
   // Application command dispatch
   // ==========================================================================
@@ -1711,15 +2136,31 @@ function App() {
         return;
 
       case "edit.undo":
-        if (screen === "editor") {
-          undo();
-        }
+        await executeEditorEditCommand("undo");
         return;
 
       case "edit.redo":
-        if (screen === "editor") {
-          redo();
-        }
+        await executeEditorEditCommand("redo");
+        return;
+
+      case "edit.cut":
+        await executeEditorEditCommand("cut");
+        return;
+
+      case "edit.copy":
+        await executeEditorEditCommand("copy");
+        return;
+
+      case "edit.paste":
+        await executeEditorEditCommand("paste");
+        return;
+
+      case "edit.duplicate":
+        await executeEditorEditCommand("duplicate");
+        return;
+
+      case "edit.select-all":
+        await executeEditorEditCommand("select-all");
         return;
 
       case "edit.split-subtitle":
@@ -1864,11 +2305,7 @@ function App() {
         return;
       }
 
-      const target = event.target as HTMLElement;
-      const isEditingText =
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable;
+      const isEditingText = getEditableElement(event.target) !== null;
 
       if (!isEditingText && event.key === "Escape") {
         if (selectedSubtitleIds.length > 0) {
@@ -1998,42 +2435,68 @@ function App() {
 
       const key = event.key.toLowerCase();
 
-      if (!isEditingText && key === "c" && !event.shiftKey) {
+      if (key === "x" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
         if (selectedVideoClipId) {
           event.preventDefault();
-          copySelectedVideoClip();
+          void executeEditorEditCommand("cut", event.target);
         }
 
         return;
       }
 
-      if (!isEditingText && key === "v" && !event.shiftKey) {
+      if (key === "c" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
+        if (selectedVideoClipId) {
+          event.preventDefault();
+          void executeEditorEditCommand("copy", event.target);
+        }
+
+        return;
+      }
+
+      if (key === "v" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
         if (videoClipboardRef.current) {
           event.preventDefault();
-          pasteVideoClipAtPlayhead();
+          void executeEditorEditCommand("paste", event.target);
         }
 
         return;
       }
 
-      if (!isEditingText && key === "d" && !event.shiftKey) {
+      if (key === "d" && !event.shiftKey) {
+        if (isEditingText) {
+          return;
+        }
+
         if (selectedVideoClipId) {
           event.preventDefault();
-          duplicateSelectedVideoClipWithHistory();
+          void executeEditorEditCommand("duplicate", event.target);
         }
 
         return;
       }
 
       if (key === "z") {
-        event.preventDefault();
-
-        if (event.shiftKey) {
-          redo();
-        } else {
-          undo();
+        if (isEditingText) {
+          return;
         }
 
+        event.preventDefault();
+        void executeEditorEditCommand(
+          event.shiftKey ? "redo" : "undo",
+          event.target,
+        );
         return;
       }
 
@@ -2043,7 +2506,7 @@ function App() {
         }
 
         event.preventDefault();
-        selectAllSubtitles();
+        void executeEditorEditCommand("select-all", event.target);
         return;
       }
 
@@ -2241,6 +2704,8 @@ function App() {
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
         onAddTrack={handleAddTimelineTrack}
+        onDeleteTrack={handleDeleteTimelineTrack}
+        onPasteTargetChange={handleTimelinePasteTargetChange}
         onClearSubtitleSelection={() => {
           clearSubtitleSelection();
           clearVideoClipSelection();
@@ -2255,9 +2720,6 @@ function App() {
         onAudioFadeChange={handleAudioFadeChange}
         onAudioVolumeChange={handleAudioVolumeChange}
         onCopyVideoClip={copySelectedVideoClip}
-        onPasteVideoClip={pasteVideoClipAtPlayhead}
-        onDuplicateVideoClip={duplicateSelectedVideoClipWithHistory}
-        canPasteVideoClip={videoClipboardRef.current !== null}
         onSubtitleSelect={handleSubtitleTrackSelect}
         onSubtitleMove={moveSubtitle}
         onSubtitleGroupMove={moveSubtitleGroup}

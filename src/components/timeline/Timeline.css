@@ -1801,3 +1801,55 @@
   height: auto;
   min-height: 0;
 }
+
+
+/* ==========================================================================
+   Timeline usability pass — track deletion + long-form zoom
+   ========================================================================== */
+
+.timeline-track-delete {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.timeline-track-delete:hover {
+  background: rgba(255, 69, 58, 0.14);
+  color: var(--system-red, #ff453a);
+}
+
+.timeline-fit-button {
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--control-fill);
+  color: var(--secondary-label);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.timeline-fit-button:hover:not(:disabled) {
+  background: var(--control-fill-hover);
+  color: var(--label);
+}
+
+.timeline-fit-button:disabled {
+  opacity: 0.34;
+}
+
+.timeline-zoom-reset-button {
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.timeline-zoom-reset-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--secondary-label);
+}
+
+.timeline-zoom-reset-button:disabled {
+  cursor: default;
+}

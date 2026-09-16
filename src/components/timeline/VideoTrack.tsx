@@ -58,6 +58,7 @@ type VideoTrackProps = {
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
   onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   snapTargets?: VideoMoveSnapTarget[];
   onSnapGuideChange?: (time: number | null) => void;
 };
@@ -109,6 +110,7 @@ function VideoTrack({
   onToggleHidden,
   onTransitionChange,
   onFadeChange,
+  onPasteTargetChange,
   snapTargets = [],
   onSnapGuideChange,
   showLabel = true,
@@ -153,7 +155,9 @@ function VideoTrack({
       return;
     }
 
-    onSeek?.(timeFromClientX(event.clientX, event.currentTarget));
+    const time = timeFromClientX(event.clientX, event.currentTarget);
+    onPasteTargetChange?.(track.id, time);
+    onSeek?.(time);
   };
 
   const startMove = (
@@ -661,11 +665,12 @@ function VideoTrack({
                 onSelect?.(clip.id);
 
                 const trackElement = event.currentTarget.parentElement;
-                onSeek?.(
-                  trackElement
-                    ? timeFromClientX(event.clientX, trackElement)
-                    : clip.timelineStart,
-                );
+                const time = trackElement
+                  ? timeFromClientX(event.clientX, trackElement)
+                  : clip.timelineStart;
+
+                onPasteTargetChange?.(track.id, time);
+                onSeek?.(time);
               }}
             >
               <div

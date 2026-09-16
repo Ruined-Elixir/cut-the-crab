@@ -10,7 +10,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 12;
+export const CURRENT_PROJECT_VERSION = 13;
 
 export type SubtitleProject = {
   version: number;
@@ -106,6 +106,10 @@ function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
         typeof trackValue.hidden === "boolean"
           ? trackValue.hidden
           : normalized[trackId]?.hidden,
+      deleted:
+        typeof trackValue.deleted === "boolean"
+          ? trackValue.deleted
+          : normalized[trackId]?.deleted,
     };
   }
 

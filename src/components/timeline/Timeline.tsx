@@ -46,6 +46,8 @@ type TimelineProps = {
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
   onAddTrack?: (kind: TimelineTrackKind) => void;
+  onDeleteTrack?: (trackId: TimelineTrackId) => void;
+  onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   onClearSubtitleSelection?: () => void;
 
   onVideoClipSelect?: (id: string) => void;
@@ -69,9 +71,6 @@ type TimelineProps = {
     timelineTime: number,
   ) => void;
   onCopyVideoClip?: () => void;
-  onPasteVideoClip?: () => void;
-  onDuplicateVideoClip?: () => void;
-  canPasteVideoClip?: boolean;
 
   onSubtitleSelect?: (
     id: string,
@@ -103,7 +102,7 @@ type TimelineProps = {
   onAudioVolumeChange?: (id: string, volume: number) => void;
 };
 
-export const MIN_TIMELINE_ZOOM = 1;
+export const MIN_TIMELINE_ZOOM = 0.05;
 export const MAX_TIMELINE_ZOOM = 12;
 export const TIMELINE_ZOOM_STEP = 0.25;
 
@@ -147,6 +146,8 @@ function Timeline({
   onSeek,
   onSkimPreviewChange,
   onAddTrack,
+  onDeleteTrack,
+  onPasteTargetChange,
   onClearSubtitleSelection,
   onVideoClipSelect,
   onVideoClipMove,
@@ -154,9 +155,6 @@ function Timeline({
   onVideoClipMoveToTrack,
   onMediaDrop,
   onCopyVideoClip,
-  onPasteVideoClip,
-  onDuplicateVideoClip,
-  canPasteVideoClip = false,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
@@ -221,10 +219,34 @@ function Timeline({
               TIMELINE_ZOOM_STEP,
           ) * TIMELINE_ZOOM_STEP,
         )
-      : MIN_TIMELINE_ZOOM;
+      : 1;
   const effectiveMaxZoom = Math.max(
     MIN_TIMELINE_ZOOM,
     Math.min(MAX_TIMELINE_ZOOM, oneSecondRulerZoomLimit),
+  );
+
+  // 100% keeps the editor's established working scale. Zooming below 100%
+  // is allowed only as far as the complete workspace can still fit inside the
+  // viewport, which keeps timeline coordinates and hit-testing exact.
+  const effectiveMinZoom = Math.max(
+    MIN_TIMELINE_ZOOM,
+    Math.min(
+      1,
+      workspaceDuration > 0
+        ? scaleReferenceDuration / workspaceDuration
+        : 1,
+    ),
+  );
+
+  // Fit focuses on edited content rather than the intentionally blank trailing
+  // workspace. Five percent padding keeps the last clip from touching the edge.
+  const fitContentDuration = Math.max(
+    scaleReferenceDuration,
+    Math.max(0.001, duration) * 1.05,
+  );
+  const fitContentZoom = Math.max(
+    effectiveMinZoom,
+    Math.min(1, scaleReferenceDuration / fitContentDuration),
   );
 
   const baseTrackWidthPx = Math.max(1, timelineViewportWidth);
@@ -291,7 +313,7 @@ function Timeline({
 
   const setTimelineZoom = (nextZoom: number) => {
     const clamped = Math.max(
-      MIN_TIMELINE_ZOOM,
+      effectiveMinZoom,
       Math.min(effectiveMaxZoom, nextZoom),
     );
     onZoomChange?.(clamped);
@@ -300,8 +322,13 @@ function Timeline({
   useEffect(() => {
     if (zoom > effectiveMaxZoom + 0.0001) {
       onZoomChange?.(effectiveMaxZoom);
+      return;
     }
-  }, [effectiveMaxZoom, onZoomChange, zoom]);
+
+    if (zoom < effectiveMinZoom - 0.0001) {
+      onZoomChange?.(effectiveMinZoom);
+    }
+  }, [effectiveMaxZoom, effectiveMinZoom, onZoomChange, zoom]);
 
   useEffect(() => {
     const stableDuration = Math.max(0, scaleDuration || duration || 0);
@@ -383,6 +410,14 @@ function Timeline({
 
   const zoomOut = () => setTimelineZoom(zoom - TIMELINE_ZOOM_STEP);
   const zoomIn = () => setTimelineZoom(zoom + TIMELINE_ZOOM_STEP);
+  const fitTimelineContent = () => {
+    setTimelineZoom(fitContentZoom);
+    window.requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollLeft = 0;
+      }
+    });
+  };
 
   const addMarker = (time: number) => {
     if (workspaceDuration <= 0) {
@@ -596,6 +631,18 @@ function Timeline({
 
     const content = event.currentTarget;
     const anchorTime = timelineTimeFromClientX(event.clientX, content);
+
+    // Range-selection capture owns empty-track clicks, so record a video paste
+    // destination here before stopping propagation. Clip clicks are handled by
+    // VideoTrack itself and therefore preserve the exact clicked time as well.
+    const videoSurface = editableSurface.closest(
+      ".video-track[data-video-track-id]",
+    ) as HTMLElement | null;
+    const pasteTrackId = videoSurface?.dataset.videoTrackId;
+    if (pasteTrackId) {
+      onPasteTargetChange?.(pasteTrackId, anchorTime);
+    }
+
     rangeDragRef.current = {
       anchorTime,
       startClientX: event.clientX,
@@ -753,6 +800,7 @@ function Timeline({
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
             onFadeChange={onVideoFadeChange}
+            onPasteTargetChange={onPasteTargetChange}
             snapTargets={videoMoveSnapTargets}
             onSnapGuideChange={setSnapGuideTime}
           />
@@ -823,6 +871,16 @@ function Timeline({
         : track.kind === "subtitle"
           ? "timeline-subtitle-row"
           : "timeline-waveform-row";
+    const hasPairedVideoTrack =
+      track.kind === "audio" &&
+      timelineTracks.some(
+        (candidate) =>
+          candidate.kind === "video" && candidate.index === track.index,
+      );
+    const canDeleteTrack =
+      track.kind === "video" ||
+      (track.kind === "subtitle" && track.index > 1) ||
+      (track.kind === "audio" && !hasPairedVideoTrack);
 
     return (
       <div key={`label-${track.id}`} className={`timeline-fixed-label-row ${rowClass}`}>
@@ -847,6 +905,11 @@ function Timeline({
           onToggleHidden={
             track.kind !== "audio"
               ? () => onToggleTrackHidden?.(track.id)
+              : undefined
+          }
+          onDelete={
+            canDeleteTrack && onDeleteTrack
+              ? () => onDeleteTrack(track.id)
               : undefined
           }
         />
@@ -936,43 +999,35 @@ function Timeline({
               Copy
             </button>
 
-            <button
-              type="button"
-              className="timeline-action-button"
-              onClick={onPasteVideoClip}
-              disabled={!canPasteVideoClip}
-              title="Paste video clip at playhead (⌘V / Ctrl+V)"
-            >
-              Paste
-            </button>
-
-            <button
-              type="button"
-              className="timeline-action-button"
-              onClick={onDuplicateVideoClip}
-              disabled={!selectedVideoClipId}
-              title="Duplicate selected video clip (⌘D / Ctrl+D)"
-            >
-              Duplicate
-            </button>
           </div>
 
           <button
             type="button"
             className="timeline-zoom-button"
             onClick={zoomOut}
-            disabled={zoom <= MIN_TIMELINE_ZOOM}
+            disabled={zoom <= effectiveMinZoom + 0.0001}
             aria-label="Zoom timeline out"
           >
             −
           </button>
 
+          <button
+            type="button"
+            className="timeline-fit-button"
+            onClick={fitTimelineContent}
+            disabled={Math.abs(zoom - fitContentZoom) < 0.0001}
+            title="Fit edited timeline content in view"
+            aria-label="Fit timeline content"
+          >
+            Fit
+          </button>
+
           <input
             className="timeline-zoom-slider"
             type="range"
-            min={MIN_TIMELINE_ZOOM}
+            min={effectiveMinZoom}
             max={effectiveMaxZoom}
-            step={TIMELINE_ZOOM_STEP}
+            step="any"
             value={zoom}
             onChange={(event) => setTimelineZoom(Number(event.target.value))}
             aria-label="Timeline zoom"
@@ -988,7 +1043,15 @@ function Timeline({
             +
           </button>
 
-          <span className="timeline-zoom-label">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            className="timeline-zoom-label timeline-zoom-reset-button"
+            onClick={() => setTimelineZoom(1)}
+            disabled={Math.abs(zoom - 1) < 0.0001}
+            title="Reset timeline zoom to 100%"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
         </div>
       </div>
 

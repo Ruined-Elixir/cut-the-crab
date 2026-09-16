@@ -502,6 +502,7 @@ export function useVideoTimeline({
   const insertVideoClipCopy = (
     sourceClip: VideoTimelineClip,
     requestedTimelineStart: number,
+    requestedTrackId: TimelineTrackId = sourceClip.trackId,
   ) => {
     const newId = crypto.randomUUID();
 
@@ -510,7 +511,7 @@ export function useVideoTimeline({
         MIN_VIDEO_CLIP_DURATION,
         sourceClip.timelineEnd - sourceClip.timelineStart,
       );
-      const trackId = normalizeVideoTrackId(sourceClip.trackId);
+      const trackId = normalizeVideoTrackId(requestedTrackId);
       const timelineStart = findNextAvailableTimelineStart(
         current,
         trackId,
@@ -863,6 +864,26 @@ export function useVideoTimeline({
     );
   };
 
+  const deleteVideoTrack = (trackId: TimelineTrackId) => {
+    const normalizedTrackId = normalizeVideoTrackId(trackId);
+
+    setVideoClips((current) => {
+      const removedIds = new Set(
+        current
+          .filter((clip) => clip.trackId === normalizedTrackId)
+          .map((clip) => clip.id),
+      );
+
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId((selectedId) =>
+          selectedId && removedIds.has(selectedId) ? null : selectedId,
+        );
+      });
+
+      return current.filter((clip) => clip.trackId !== normalizedTrackId);
+    });
+  };
+
   return {
     videoClips,
     selectedVideoClipId,
@@ -876,6 +897,7 @@ export function useVideoTimeline({
     resizeVideoClip,
     splitVideoClip,
     deleteVideoClip,
+    deleteVideoTrack,
     insertVideoClipCopy,
     duplicateVideoClip,
     insertVideoClipFromMedia,

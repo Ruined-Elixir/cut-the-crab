@@ -39,17 +39,36 @@ export function nextTimelineTrackId(
   trackSettings: TimelineTrackSettings,
   videoClips: VideoTimelineClip[] = [],
 ) {
-  const ids = new Set(Object.keys(trackSettings));
-  for (const clip of videoClips) ids.add(clip.trackId);
+  const activeIds = new Set<string>();
 
-  let maxIndex = 0;
-  for (const id of ids) {
-    if (timelineTrackKindFromId(id) === kind) {
-      maxIndex = Math.max(maxIndex, timelineTrackIndexFromId(id));
+  for (const id of Object.keys(DEFAULT_TIMELINE_TRACK_SETTINGS)) {
+    if (timelineTrackKindFromId(id) === kind && trackSettings[id]?.deleted !== true) {
+      activeIds.add(id);
     }
   }
 
-  return timelineTrackId(kind, maxIndex + 1);
+  for (const [id, settings] of Object.entries(trackSettings)) {
+    if (timelineTrackKindFromId(id) === kind && settings.deleted !== true) {
+      activeIds.add(id);
+    }
+  }
+
+  if (kind === "video") {
+    for (const clip of videoClips) {
+      if (trackSettings[clip.trackId]?.deleted !== true) {
+        activeIds.add(clip.trackId);
+      }
+    }
+  }
+
+  // Reuse the lowest deleted/missing index instead of permanently leaving
+  // holes such as V1, V3 after V2 has been removed.
+  let index = 1;
+  while (activeIds.has(timelineTrackId(kind, index))) {
+    index += 1;
+  }
+
+  return timelineTrackId(kind, index);
 }
 
 export function defaultTrackControlState(kind: TimelineTrackKind): TimelineTrackControlState {
@@ -99,23 +118,39 @@ function collectTrackIds(
   trackSettings: TimelineTrackSettings | undefined,
   videoClips: VideoTimelineClip[],
 ) {
-  const ids = new Set<string>(Object.keys(DEFAULT_TIMELINE_TRACK_SETTINGS));
+  const ids = new Set<string>();
 
-  for (const id of Object.keys(trackSettings ?? {})) {
-    if (timelineTrackKindFromId(id)) ids.add(id);
+  for (const id of Object.keys(DEFAULT_TIMELINE_TRACK_SETTINGS)) {
+    if (trackSettings?.[id]?.deleted !== true) {
+      ids.add(id);
+    }
+  }
+
+  for (const [id, settings] of Object.entries(trackSettings ?? {})) {
+    if (timelineTrackKindFromId(id) && settings.deleted !== true) {
+      ids.add(id);
+    }
   }
 
   for (const clip of videoClips) {
-    if (timelineTrackKindFromId(clip.trackId) === "video") ids.add(clip.trackId);
+    if (
+      timelineTrackKindFromId(clip.trackId) === "video" &&
+      trackSettings?.[clip.trackId]?.deleted !== true
+    ) {
+      ids.add(clip.trackId);
+    }
   }
 
-  // Every video track owns a linked audio partner with the same index.
-  // This also migrates older projects that already contain V3+ but were saved
-  // before automatic V/A pairing was introduced.
+  // Every active video track owns a linked audio partner with the same index.
+  // A deleted video track tombstones both halves of the pair, while older
+  // projects with V3+ still reconstruct their missing A3+ automatically.
   for (const id of [...ids]) {
     if (timelineTrackKindFromId(id) === "video") {
       const index = timelineTrackIndexFromId(id);
-      ids.add(timelineTrackId("audio", index));
+      const audioId = timelineTrackId("audio", index);
+      if (trackSettings?.[audioId]?.deleted !== true) {
+        ids.add(audioId);
+      }
     }
   }
 

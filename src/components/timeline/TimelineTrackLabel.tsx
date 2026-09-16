@@ -9,6 +9,7 @@ type TimelineTrackLabelProps = {
   onToggleLock?: () => void;
   onToggleMute?: () => void;
   onToggleHidden?: () => void;
+  onDelete?: () => void;
 };
 
 function TimelineTrackLabel({
@@ -22,6 +23,7 @@ function TimelineTrackLabel({
   onToggleLock,
   onToggleMute,
   onToggleHidden,
+  onDelete,
 }: TimelineTrackLabelProps) {
   return (
     <div className="timeline-row-label timeline-track-label">
@@ -82,6 +84,21 @@ function TimelineTrackLabel({
             </svg>
           </span>
         ) : null}
+
+        {onDelete && (
+          <button
+            type="button"
+            className="timeline-track-control timeline-track-delete"
+            onClick={onDelete}
+            aria-label={`Delete ${shortLabel}`}
+            title="Delete track"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 5.5v6M8 5.5v6M11 5.5v6" />
+              <path d="M3.5 4h9M6 4V2.8h4V4M4.5 4l.6 9h5.8l.6-9" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

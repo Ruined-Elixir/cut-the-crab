@@ -275,6 +275,30 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+Shift+Z")
         .build(app)?;
 
+    // App-owned editing commands. These intentionally use custom menu items
+    // instead of Tauri's predefined Cut/Copy/Paste/Select All items so the
+    // frontend can route the same command to either timeline editing or the
+    // currently focused text field.
+    let cut_editor = MenuItemBuilder::with_id("edit.cut", "Cut")
+        .accelerator("CmdOrCtrl+X")
+        .build(app)?;
+
+    let copy_editor = MenuItemBuilder::with_id("edit.copy", "Copy")
+        .accelerator("CmdOrCtrl+C")
+        .build(app)?;
+
+    let paste_editor = MenuItemBuilder::with_id("edit.paste", "Paste")
+        .accelerator("CmdOrCtrl+V")
+        .build(app)?;
+
+    let duplicate_editor = MenuItemBuilder::with_id("edit.duplicate", "Duplicate")
+        .accelerator("CmdOrCtrl+D")
+        .build(app)?;
+
+    let select_all_editor = MenuItemBuilder::with_id("edit.select-all", "Select All")
+        .accelerator("CmdOrCtrl+A")
+        .build(app)?;
+
     let split_subtitle =
         MenuItemBuilder::with_id("edit.split-subtitle", "Split Subtitle at Playhead")
             .accelerator("CmdOrCtrl+B")
@@ -385,10 +409,11 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&undo_editor)
         .item(&redo_editor)
         .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
+        .item(&cut_editor)
+        .item(&copy_editor)
+        .item(&paste_editor)
+        .item(&duplicate_editor)
+        .item(&select_all_editor)
         .separator()
         .item(&select_all_subtitles)
         .item(&deselect_all_subtitles)
@@ -469,6 +494,11 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
             | "file.export-video"
             | "edit.undo"
             | "edit.redo"
+            | "edit.cut"
+            | "edit.copy"
+            | "edit.paste"
+            | "edit.duplicate"
+            | "edit.select-all"
             | "edit.split-subtitle"
             | "edit.select-all-subtitles"
             | "edit.deselect-all-subtitles"

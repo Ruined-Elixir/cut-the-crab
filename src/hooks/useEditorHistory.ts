@@ -8,12 +8,13 @@ import {
 
 import type { Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
-import type { VideoTimelineClip } from "../types/timelineModel";
+import type { TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
 
 export type EditorHistorySnapshot = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
+  trackSettings: TimelineTrackSettings;
 };
 
 type UseEditorHistoryOptions = {
@@ -38,6 +39,12 @@ function cloneSnapshot(
       (clip) => ({
         ...clip,
       }),
+    ),
+    trackSettings: Object.fromEntries(
+      Object.entries(snapshot.trackSettings).map(([trackId, settings]) => [
+        trackId,
+        { ...settings },
+      ]),
     ),
   };
 }
