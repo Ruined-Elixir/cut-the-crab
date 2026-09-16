@@ -40,6 +40,7 @@ type TimelineProps = {
   zoom: number;
   trackSettings: TimelineTrackSettings;
   timelineRange: TimelineRange | null;
+  rippleMode: boolean;
 
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
@@ -53,6 +54,7 @@ type TimelineProps = {
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   onClearSubtitleSelection?: () => void;
   onTimelineRangeChange?: (range: TimelineRange | null) => void;
+  onRippleModeChange?: (enabled: boolean) => void;
   onDeleteRange?: () => void;
   onLiftRange?: () => void;
   onExtractRange?: () => void;
@@ -152,6 +154,7 @@ function Timeline({
   zoom,
   trackSettings,
   timelineRange,
+  rippleMode,
   selectedSubtitleId,
   selectedSubtitleIds,
   selectedVideoClipId,
@@ -163,6 +166,7 @@ function Timeline({
   onPasteTargetChange,
   onClearSubtitleSelection,
   onTimelineRangeChange,
+  onRippleModeChange,
   onDeleteRange,
   onLiftRange,
   onExtractRange,
@@ -1099,7 +1103,7 @@ function Timeline({
             </div>
           </div>
           <span className="timeline-help">
-            Dynamic video, subtitle, and audio tracks · drag media or clips between video tracks
+            Dynamic video, subtitle, and audio tracks · drag media or clips between video tracks · R toggles Ripple
           </span>
         </div>
 
@@ -1116,7 +1120,11 @@ function Timeline({
                   type="button"
                   className="timeline-range-command"
                   onClick={onDeleteRange}
-                  title="Delete range and leave a gap (Delete / Backspace)"
+                  title={
+                    rippleMode
+                      ? "Ripple-delete range and close the gap (Delete / Backspace)"
+                      : "Delete range and leave a gap (Delete / Backspace)"
+                  }
                 >
                   Delete
                 </button>
@@ -1156,6 +1164,21 @@ function Timeline({
               </div>
             </div>
           )}
+
+          <button
+            type="button"
+            className={`timeline-ripple-toggle ${rippleMode ? "active" : ""}`.trim()}
+            aria-pressed={rippleMode}
+            onClick={() => onRippleModeChange?.(!rippleMode)}
+            title={
+              rippleMode
+                ? "Ripple mode is on: deletes close gaps and inserts push later clips (R)"
+                : "Ripple mode is off: normal freeform timeline editing (R)"
+            }
+          >
+            <span className="timeline-ripple-symbol" aria-hidden="true">⇥</span>
+            Ripple
+          </button>
 
           <div className="timeline-edit-actions" aria-label="Video clip actions">
             <button

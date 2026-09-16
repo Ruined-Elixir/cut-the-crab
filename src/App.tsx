@@ -449,6 +449,7 @@ function App() {
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [timelineRange, setTimelineRange] = useState<TimelineRange | null>(null);
+  const [rippleMode, setRippleMode] = useState(false);
   const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(() => ({
     ...DEFAULT_TIMELINE_TRACK_SETTINGS,
   }));
@@ -560,6 +561,7 @@ function App() {
     sourcePath: videoPath,
     sourceName: videoName,
     sourceDuration: videoDuration,
+    rippleMode,
   });
 
   const latestSaveStateRef = useRef({
@@ -822,7 +824,9 @@ function App() {
 
     beginHistoryTransaction();
 
-    if (hasMultiSelection) {
+    // Ripple mode needs an immutable drag-origin snapshot even for a single
+    // clip. Freeform mode still only captures multi-clip moves.
+    if (rippleMode || hasMultiSelection) {
       beginVideoClipMove(id);
     } else {
       endVideoClipMove();
@@ -2322,7 +2326,11 @@ function App() {
 
       case "edit.delete-range":
         if (screen === "editor") {
-          deleteTimelineRangeWithHistory();
+          if (rippleMode) {
+            extractTimelineRangeWithHistory();
+          } else {
+            deleteTimelineRangeWithHistory();
+          }
         }
         return;
 
@@ -2595,7 +2603,11 @@ function App() {
       ) {
         if (timelineRange) {
           event.preventDefault();
-          deleteTimelineRangeWithHistory();
+          if (rippleMode) {
+            extractTimelineRangeWithHistory();
+          } else {
+            deleteTimelineRangeWithHistory();
+          }
           return;
         }
 
@@ -2610,6 +2622,19 @@ function App() {
           deleteSelectionWithHistory();
         }
 
+        return;
+      }
+
+      if (
+        !isEditingText &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "r"
+      ) {
+        event.preventDefault();
+        setRippleMode((current) => !current);
         return;
       }
 
@@ -2737,6 +2762,7 @@ function App() {
     markNextChangeImmediate,
     currentTime,
     timelineRange,
+    rippleMode,
     trackSettings,
     videoClips,
     selectedVideoClipId,
@@ -2892,6 +2918,7 @@ function App() {
         zoom={timelineZoom}
         trackSettings={trackSettings}
         timelineRange={timelineRange}
+        rippleMode={rippleMode}
         selectedSubtitleId={selectedSubtitleId}
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
@@ -2900,7 +2927,12 @@ function App() {
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
         onTimelineRangeChange={setTimelineRange}
-        onDeleteRange={deleteTimelineRangeWithHistory}
+        onRippleModeChange={setRippleMode}
+        onDeleteRange={
+          rippleMode
+            ? extractTimelineRangeWithHistory
+            : deleteTimelineRangeWithHistory
+        }
         onLiftRange={liftTimelineRangeWithHistory}
         onExtractRange={extractTimelineRangeWithHistory}
         onExportRange={() => {

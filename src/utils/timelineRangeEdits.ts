@@ -125,6 +125,8 @@ function leftVideoFragment(
     transitionOutDuration: 0,
     videoFadeOutDuration: 0,
     audioFadeOutDuration: 0,
+    // Range edits create intentional boundaries, not temporary Ripple splits.
+    rippleAutoHealOutBoundaryId: undefined,
   });
 }
 
@@ -145,6 +147,7 @@ function rightVideoFragment(
     transitionInDuration: 0,
     videoFadeInDuration: 0,
     audioFadeInDuration: 0,
+    rippleAutoHealInBoundaryId: undefined,
   });
 }
 

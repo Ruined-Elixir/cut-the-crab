@@ -44,6 +44,37 @@
 }
 
 
+
+.timeline-ripple-toggle {
+  height:26px;
+  padding:0 9px;
+  border:1px solid transparent;
+  border-radius:8px;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:10px;
+  font-weight:600
+}
+
+.timeline-ripple-toggle:hover {
+  background:var(--control-fill-hover);
+  color:var(--label)
+}
+
+.timeline-ripple-toggle.active {
+  border-color:var(--system-blue);
+  color:var(--system-blue);
+  background:color-mix(in srgb, var(--system-blue) 14%, var(--control-fill))
+}
+
+.timeline-ripple-symbol {
+  font-size:13px;
+  line-height:1
+}
+
 .timeline-edit-actions {
   display:flex;
   align-items:center;

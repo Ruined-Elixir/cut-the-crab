@@ -15,6 +15,13 @@ import {
   clampVideoClipGroupMoveDelta,
   findNextAvailableVideoClipGroupShift,
 } from "../utils/timelineMultiClip";
+import {
+  autoHealRippleSplits,
+  rippleDeleteVideoClips,
+  rippleInsertVideoClipGroup,
+  rippleMoveVideoClipGroup,
+  stripRippleAutoHealMetadata,
+} from "../utils/timelineRippleEdits";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
 const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
@@ -25,6 +32,7 @@ type UseVideoTimelineOptions = {
   sourcePath: string | null;
   sourceName: string | null;
   sourceDuration: number;
+  rippleMode?: boolean;
 };
 
 function normalizeVideoTrackId(trackId: TimelineTrackId): TimelineTrackId {
@@ -188,6 +196,7 @@ export function useVideoTimeline({
   sourcePath,
   sourceName,
   sourceDuration,
+  rippleMode = false,
 }: UseVideoTimelineOptions) {
   const [videoClips, setVideoClips] =
     useState<VideoTimelineClip[]>([]);
@@ -201,6 +210,8 @@ export function useVideoTimeline({
   const groupMoveOriginRef = useRef<{
     anchorId: string;
     selectedClips: VideoTimelineClip[];
+    allClips: VideoTimelineClip[];
+    rippleToken: string;
   } | null>(null);
   const initializedSourceRef = useRef<string | null>(null);
 
@@ -288,6 +299,44 @@ export function useVideoTimeline({
     setSelectedVideoClipId(primary);
   };
 
+  const healRippleSplitsAndRemapSelection = (clips: VideoTimelineClip[]) => {
+    const healed = autoHealRippleSplits(clips);
+
+    if (!healed.changed) {
+      return healed.clips;
+    }
+
+    const resolveId = (id: string) => {
+      let current = id;
+      const visited = new Set<string>();
+
+      while (healed.healedIdMap.has(current) && !visited.has(current)) {
+        visited.add(current);
+        current = healed.healedIdMap.get(current)!;
+      }
+
+      return current;
+    };
+
+    const availableIds = new Set(healed.clips.map((clip) => clip.id));
+
+    window.requestAnimationFrame(() => {
+      setSelectedVideoClipIds((current) =>
+        [...new Set(current.map(resolveId))].filter((id) => availableIds.has(id)),
+      );
+      setSelectedVideoClipId((current) => {
+        if (!current) {
+          return null;
+        }
+
+        const resolved = resolveId(current);
+        return availableIds.has(resolved) ? resolved : null;
+      });
+    });
+
+    return healed.clips;
+  };
+
   const replaceVideoClips = (
     clips: VideoTimelineClip[],
     options?: { markSourceInitializedFor?: string },
@@ -300,15 +349,34 @@ export function useVideoTimeline({
       ...clip,
       trackId: normalizeVideoTrackId(clip.trackId),
     }));
+    const healed = autoHealRippleSplits(normalized);
 
-    setVideoClips(sortVideoClips(normalized));
+    setVideoClips(healed.clips);
 
-    const availableIds = new Set(normalized.map((clip) => clip.id));
+    const resolveId = (id: string) => {
+      let current = id;
+      const visited = new Set<string>();
 
-    setSelectedVideoClipIds((current) => current.filter((id) => availableIds.has(id)));
-    setSelectedVideoClipId((current) =>
-      current && availableIds.has(current) ? current : null,
+      while (healed.healedIdMap.has(current) && !visited.has(current)) {
+        visited.add(current);
+        current = healed.healedIdMap.get(current)!;
+      }
+
+      return current;
+    };
+    const availableIds = new Set(healed.clips.map((clip) => clip.id));
+
+    setSelectedVideoClipIds((current) =>
+      [...new Set(current.map(resolveId))].filter((id) => availableIds.has(id)),
     );
+    setSelectedVideoClipId((current) => {
+      if (!current) {
+        return null;
+      }
+
+      const resolved = resolveId(current);
+      return availableIds.has(resolved) ? resolved : null;
+    });
   };
 
   const initializeDefaultVideoClip = () => {
@@ -336,7 +404,11 @@ export function useVideoTimeline({
   };
 
   const beginVideoClipMove = (id: string) => {
-    if (!selectedVideoClipIds.includes(id) || selectedVideoClipIds.length <= 1) {
+    const isSelected = selectedVideoClipIds.includes(id);
+    const shouldCaptureOrigin =
+      isSelected && (rippleMode || selectedVideoClipIds.length > 1);
+
+    if (!shouldCaptureOrigin) {
       groupMoveOriginRef.current = null;
       return;
     }
@@ -347,6 +419,8 @@ export function useVideoTimeline({
       selectedClips: videoClips
         .filter((clip) => selectedSet.has(clip.id))
         .map((clip) => ({ ...clip })),
+      allClips: videoClips.map((clip) => ({ ...clip })),
+      rippleToken: crypto.randomUUID(),
     };
   };
 
@@ -360,6 +434,19 @@ export function useVideoTimeline({
   ) => {
     setVideoClips((current) => {
       const groupOrigin = groupMoveOriginRef.current;
+
+      if (rippleMode && groupOrigin?.anchorId === id) {
+        return healRippleSplitsAndRemapSelection(rippleMoveVideoClipGroup(
+          groupOrigin.allClips,
+          groupOrigin.selectedClips.map((clip) => clip.id),
+          id,
+          requestedTimelineStart,
+          {
+            createSplitId: (clip) =>
+              `${clip.id}-ripple-${groupOrigin.rippleToken}`,
+          },
+        ));
+      }
 
       if (groupOrigin?.anchorId === id && groupOrigin.selectedClips.length > 1) {
         const anchor = groupOrigin.selectedClips.find((clip) => clip.id === id);
@@ -380,7 +467,7 @@ export function useVideoTimeline({
           groupOrigin.selectedClips.map((clip) => [clip.id, clip]),
         );
 
-        return sortVideoClips(
+        return healRippleSplitsAndRemapSelection(sortVideoClips(
           current.map((clip) => {
             const origin = originsById.get(clip.id);
 
@@ -392,7 +479,7 @@ export function useVideoTimeline({
                 }
               : clip;
           }),
-        );
+        ));
       }
 
       const target = current.find((clip) => clip.id === id);
@@ -411,7 +498,7 @@ export function useVideoTimeline({
         id,
       );
 
-      return sortVideoClips(
+      return healRippleSplitsAndRemapSelection(sortVideoClips(
         current.map((clip) =>
           clip.id === id
             ? {
@@ -422,7 +509,7 @@ export function useVideoTimeline({
               }
             : clip,
         ),
-      );
+      ));
     });
   };
 
@@ -434,6 +521,24 @@ export function useVideoTimeline({
     const normalizedTrackId = normalizeVideoTrackId(targetTrackId);
 
     setVideoClips((current) => {
+      const groupOrigin = groupMoveOriginRef.current;
+
+      if (rippleMode && groupOrigin?.anchorId === id) {
+        return healRippleSplitsAndRemapSelection(rippleMoveVideoClipGroup(
+          groupOrigin.allClips,
+          groupOrigin.selectedClips.map((clip) => clip.id),
+          id,
+          requestedTimelineStart ??
+            groupOrigin.selectedClips.find((clip) => clip.id === id)?.timelineStart ??
+            0,
+          {
+            requestedTrackId: normalizedTrackId,
+            createSplitId: (clip) =>
+              `${clip.id}-ripple-${groupOrigin.rippleToken}`,
+          },
+        ));
+      }
+
       const target = current.find((clip) => clip.id === id);
 
       if (!target) {
@@ -450,7 +555,7 @@ export function useVideoTimeline({
         id,
       );
 
-      return sortVideoClips(
+      return healRippleSplitsAndRemapSelection(sortVideoClips(
         current.map((clip) =>
           clip.id === id
             ? {
@@ -461,7 +566,7 @@ export function useVideoTimeline({
               }
             : clip,
         ),
-      );
+      ));
     });
   };
 
@@ -548,6 +653,14 @@ export function useVideoTimeline({
                 timelineEnd: nextEnd,
                 sourceIn: nextSourceIn,
                 sourceOut: nextSourceOut,
+                rippleAutoHealInBoundaryId:
+                  Math.abs(nextStart - target.timelineStart) > 0.000001
+                    ? undefined
+                    : clip.rippleAutoHealInBoundaryId,
+                rippleAutoHealOutBoundaryId:
+                  Math.abs(nextEnd - target.timelineEnd) > 0.000001
+                    ? undefined
+                    : clip.rippleAutoHealOutBoundaryId,
               }
             : clip,
         ),
@@ -583,6 +696,8 @@ export function useVideoTimeline({
         transitionOutType: "none",
         videoFadeOutDuration: 0,
         audioFadeOutDuration: 0,
+        // Manual blade boundaries are intentional and must never auto-heal.
+        rippleAutoHealOutBoundaryId: undefined,
       };
 
       const right: VideoTimelineClip = {
@@ -593,6 +708,7 @@ export function useVideoTimeline({
         transitionInType: "none",
         videoFadeInDuration: 0,
         audioFadeInDuration: 0,
+        rippleAutoHealInBoundaryId: undefined,
       };
 
       window.requestAnimationFrame(() => {
@@ -621,6 +737,32 @@ export function useVideoTimeline({
         sourceClip.timelineEnd - sourceClip.timelineStart,
       );
       const trackId = normalizeVideoTrackId(requestedTrackId);
+
+      if (rippleMode) {
+        const result = rippleInsertVideoClipGroup(
+          current,
+          [
+            {
+              ...sourceClip,
+              trackId,
+              timelineEnd: sourceClip.timelineStart + clipDuration,
+            },
+          ],
+          requestedTimelineStart,
+          {
+            requestedTrackId: trackId,
+            createId: () => newId,
+          },
+        );
+
+        window.requestAnimationFrame(() => {
+          setSelectedVideoClipId(newId);
+          setSelectedVideoClipIds([newId]);
+        });
+
+        return result.clips;
+      }
+
       const timelineStart = findNextAvailableTimelineStart(
         current,
         trackId,
@@ -629,7 +771,7 @@ export function useVideoTimeline({
       );
 
       const copy: VideoTimelineClip = {
-        ...sourceClip,
+        ...stripRippleAutoHealMetadata(sourceClip),
         id: newId,
         trackId,
         timelineStart,
@@ -660,6 +802,26 @@ export function useVideoTimeline({
         sourceClip.timelineEnd - sourceClip.timelineStart,
       );
       const trackId = normalizeVideoTrackId(sourceClip.trackId);
+
+      if (rippleMode) {
+        const result = rippleInsertVideoClipGroup(
+          current,
+          [sourceClip],
+          sourceClip.timelineEnd,
+          {
+            requestedTrackId: trackId,
+            createId: () => newId,
+          },
+        );
+
+        window.requestAnimationFrame(() => {
+          setSelectedVideoClipId(newId);
+          setSelectedVideoClipIds([newId]);
+        });
+
+        return result.clips;
+      }
+
       const timelineStart = findNextAvailableTimelineStart(
         current,
         trackId,
@@ -668,7 +830,7 @@ export function useVideoTimeline({
       );
 
       const copy: VideoTimelineClip = {
-        ...sourceClip,
+        ...stripRippleAutoHealMetadata(sourceClip),
         id: newId,
         trackId,
         timelineStart,
@@ -697,12 +859,14 @@ export function useVideoTimeline({
     const trackId = normalizeVideoTrackId(requestedTrackId);
 
     setVideoClips((current) => {
-      const timelineStart = findNextAvailableTimelineStart(
-        current,
-        trackId,
-        requestedTimelineStart,
-        asset.duration,
-      );
+      const timelineStart = rippleMode
+        ? Math.max(0, requestedTimelineStart)
+        : findNextAvailableTimelineStart(
+            current,
+            trackId,
+            requestedTimelineStart,
+            asset.duration,
+          );
 
       const clip: VideoTimelineClip = {
         id: newId,
@@ -741,6 +905,18 @@ export function useVideoTimeline({
         setSelectedVideoClipIds([newId]);
       });
 
+      if (rippleMode) {
+        return rippleInsertVideoClipGroup(
+          current,
+          [clip],
+          timelineStart,
+          {
+            requestedTrackId: trackId,
+            preserveIds: true,
+          },
+        ).clips;
+      }
+
       return sortVideoClips([...current, clip]);
     });
   };
@@ -766,6 +942,28 @@ export function useVideoTimeline({
     const newIds = prepared.map(() => crypto.randomUUID());
 
     setVideoClips((current) => {
+      if (rippleMode) {
+        let idIndex = 0;
+        const result = rippleInsertVideoClipGroup(
+          current,
+          prepared,
+          requestedTimelineStart,
+          {
+            requestedTrackId: canRetargetSingleTrack
+              ? normalizeVideoTrackId(requestedTrackId)
+              : undefined,
+            createId: () => newIds[idIndex++] ?? crypto.randomUUID(),
+          },
+        );
+
+        window.requestAnimationFrame(() => {
+          setSelectedVideoClipIds(result.insertedIds);
+          setSelectedVideoClipId(result.insertedIds[0] ?? null);
+        });
+
+        return result.clips;
+      }
+
       const shift = findNextAvailableVideoClipGroupShift(
         current,
         prepared,
@@ -773,7 +971,7 @@ export function useVideoTimeline({
       );
 
       const copies = prepared.map((clip, index) => ({
-        ...clip,
+        ...stripRippleAutoHealMetadata(clip),
         id: newIds[index],
         timelineStart: clip.timelineStart + shift,
         timelineEnd: clip.timelineEnd + shift,
@@ -1013,7 +1211,13 @@ export function useVideoTimeline({
   const deleteVideoClips = (ids: string[]) => {
     const removedIds = new Set(ids);
 
-    setVideoClips((current) => current.filter((clip) => !removedIds.has(clip.id)));
+    setVideoClips((current) => {
+      const next = rippleMode
+        ? rippleDeleteVideoClips(current, removedIds).clips
+        : current.filter((clip) => !removedIds.has(clip.id));
+
+      return healRippleSplitsAndRemapSelection(next);
+    });
     setSelectedVideoClipIds((current) => current.filter((id) => !removedIds.has(id)));
     setSelectedVideoClipId((current) =>
       current && removedIds.has(current) ? null : current,

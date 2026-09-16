@@ -10,7 +10,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 13;
+export const CURRENT_PROJECT_VERSION = 14;
 
 export type SubtitleProject = {
   version: number;
@@ -275,6 +275,8 @@ function normalizeVideoClip(
       0,
       Math.min(timelineEnd - timelineStart, asNumber(value.audioFadeOutDuration, 0)),
     ),
+    rippleAutoHealInBoundaryId: asOptionalString(value.rippleAutoHealInBoundaryId),
+    rippleAutoHealOutBoundaryId: asOptionalString(value.rippleAutoHealOutBoundaryId),
     timelineStart,
     timelineEnd,
   };
