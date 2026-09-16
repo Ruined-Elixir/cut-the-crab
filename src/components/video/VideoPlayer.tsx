@@ -13,6 +13,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 import type {
+  AudioTimelineClip,
   TimelineTrackId,
   TimelineTrackSettings,
   VideoTimelineClip,
@@ -50,6 +51,7 @@ type VideoPlayerProps = {
   seekRequest?: SeekRequest | null;
 
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   timelineDuration: number;
   trackSettings: TimelineTrackSettings;
   selectedVideoClipId?: string | null;
@@ -249,15 +251,28 @@ function findActiveVideoClip(
 }
 
 function timelineTimeToSourceTime(
-  clip: VideoTimelineClip,
+  clip: VideoTimelineClip | AudioTimelineClip,
   timelineTime: number,
 ) {
   return clip.sourceIn + (timelineTime - clip.timelineStart);
 }
 
-function audioTrackForVideoTrack(trackId: VideoTrackId): AudioTrackId {
-  const match = /^video-(\d+)$/.exec(trackId);
-  return match ? `audio-${match[1]}` : "audio-1";
+function audioTrackIndex(trackId: string) {
+  const match = /^audio-(\d+)$/.exec(trackId);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
+function findActiveAudioClip(
+  clips: AudioTimelineClip[],
+  timelineTime: number,
+  trackId: AudioTrackId,
+) {
+  return clips.find(
+    (clip) =>
+      clip.trackId === trackId &&
+      timelineTime >= clip.timelineStart &&
+      timelineTime < clip.timelineEnd,
+  ) ?? null;
 }
 
 function videoTrackIndex(trackId: string) {
@@ -281,6 +296,15 @@ function isTrackMuted(
   trackId: TimelineTrackId,
 ) {
   return trackSettings[trackId]?.muted ?? false;
+}
+
+function hasSoloAudioTrack(trackSettings: TimelineTrackSettings) {
+  return Object.entries(trackSettings).some(
+    ([trackId, settings]) =>
+      /^audio-\d+$/.test(trackId) &&
+      settings.deleted !== true &&
+      settings.solo === true,
+  );
 }
 
 function videoTransformStyle(
@@ -516,6 +540,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   onTimeChange,
   seekRequest,
   videoClips,
+  audioClips,
   timelineDuration,
   trackSettings,
   selectedVideoClipId,
@@ -564,9 +589,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const timelineDurationRef = useRef(timelineDuration);
   const sourceDurationRef = useRef(duration);
   const videoClipsRef = useRef(videoClips);
+  const audioClipsRef = useRef(audioClips);
   const trackSettingsRef = useRef(trackSettings);
   const isPlayingRef = useRef(false);
   const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
+  const audioTrackIdsRef = useRef<AudioTrackId[]>([]);
   const displayTimeRef = useRef(currentTime);
 
   useImperativeHandle(ref, () => ({
@@ -610,6 +637,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     return [...ids].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
   }, [trackSettings, videoClips]);
 
+  const audioTrackIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of Object.keys(trackSettings)) {
+      if (/^audio-\d+$/.test(id) && trackSettings[id]?.deleted !== true) ids.add(id);
+    }
+    for (const clip of audioClips) {
+      if (/^audio-\d+$/.test(clip.trackId)) ids.add(clip.trackId);
+    }
+    return [...ids].sort((a, b) => audioTrackIndex(a) - audioTrackIndex(b));
+  }, [audioClips, trackSettings]);
+
   const activeClipsByTrack = useMemo(() => {
     const result: Record<string, VideoTimelineClip | null> = {};
     for (const trackId of videoTrackIds) {
@@ -635,6 +673,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     return result;
   }, [activeClipsByTrack, videoTrackIds]);
 
+  const audioSourcesByTrack = useMemo(() => {
+    const result: Record<string, string | null> = {};
+    for (const audioTrackId of audioTrackIds) {
+      const linkedVideoTrackId = trackSettings[audioTrackId]?.linkedTrackId;
+      if (linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)) {
+        result[audioTrackId] = activeClipsByTrack[linkedVideoTrackId]?.sourcePath ?? null;
+      } else {
+        result[audioTrackId] = findActiveAudioClip(audioClips, displayTime, audioTrackId)?.sourcePath ?? null;
+      }
+    }
+    return result;
+  }, [activeClipsByTrack, audioClips, audioTrackIds, displayTime, trackSettings]);
+
   const primaryVideoUrl = useMemo(
     () => (videoPath ? convertFileSrc(videoPath) : null),
     [videoPath],
@@ -657,12 +708,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   }, [videoClips]);
 
   useEffect(() => {
+    audioClipsRef.current = audioClips;
+  }, [audioClips]);
+
+  useEffect(() => {
     trackSettingsRef.current = trackSettings;
   }, [trackSettings]);
 
   useEffect(() => {
     videoTrackIdsRef.current = videoTrackIds;
   }, [videoTrackIds]);
+
+  useEffect(() => {
+    audioTrackIdsRef.current = audioTrackIds;
+  }, [audioTrackIds]);
 
   useEffect(() => {
     onTimeChangeRef.current = onTimeChange;
@@ -855,48 +914,41 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   };
 
   const syncAudioTrackToTimeline = (
-    videoTrackId: VideoTrackId,
+    audioTrackId: AudioTrackId,
     timelineTime: number,
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    const audioTrackId = audioTrackForVideoTrack(videoTrackId);
     const audio = audioElementForTrack(audioTrackId);
-    const activeClip = findActiveVideoClip(
-      videoClipsRef.current,
-      timelineTime,
-      videoTrackId,
-    );
+    const linkedVideoTrackId = trackSettingsRef.current[audioTrackId]?.linkedTrackId;
+    const linkedVideoClip = linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)
+      ? findActiveVideoClip(videoClipsRef.current, timelineTime, linkedVideoTrackId)
+      : null;
+    const standaloneClip = linkedVideoClip
+      ? null
+      : findActiveAudioClip(audioClipsRef.current, timelineTime, audioTrackId);
+    const activeClip = linkedVideoClip ?? standaloneClip;
 
-    if (!audio || !activeClip) {
+    if (!audio || !activeClip || trackSettingsRef.current[audioTrackId]?.deleted) {
       activeAudioClipIdRefs.current[audioTrackId] = null;
       audio?.pause();
       return;
     }
 
     const loadedSourcePath = audio.dataset.sourcePath ?? "";
-
     if (loadedSourcePath !== activeClip.sourcePath) {
       activeAudioClipIdRefs.current[audioTrackId] = null;
       audio.pause();
       return;
     }
-
-    if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
-      return;
-    }
+    if (audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
 
     const expectedSourceTime = timelineTimeToSourceTime(activeClip, timelineTime);
     const maxSourceTime = Number.isFinite(audio.duration)
       ? audio.duration
       : activeClip.sourceDuration ?? activeClip.sourceOut;
-    const safeSourceTime = Math.max(
-      0,
-      Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
-    );
-    const clipChanged =
-      activeAudioClipIdRefs.current[audioTrackId] !== activeClip.id;
-
+    const safeSourceTime = Math.max(0, Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime));
+    const clipChanged = activeAudioClipIdRefs.current[audioTrackId] !== activeClip.id;
     if (clipChanged || forceSeek) {
       try {
         audio.currentTime = safeSourceTime;
@@ -906,40 +958,48 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     }
 
     const trackMuted = isTrackMuted(trackSettingsRef.current, audioTrackId);
-    const clipMuted = activeClip.audioMuted ?? false;
-    const muted = trackMuted || clipMuted;
-    audio.muted = muted;
-
+    const soloMuted =
+      hasSoloAudioTrack(trackSettingsRef.current) &&
+      trackSettingsRef.current[audioTrackId]?.solo !== true;
+    const clipMuted = linkedVideoClip
+      ? linkedVideoClip.audioMuted ?? false
+      : standaloneClip?.muted ?? false;
     const clipDuration = Math.max(0.001, activeClip.timelineEnd - activeClip.timelineStart);
     const fadeInDuration = Math.max(
       0,
-      Math.min(activeClip.audioFadeInDuration ?? 0, clipDuration),
+      Math.min(
+        linkedVideoClip ? linkedVideoClip.audioFadeInDuration ?? 0 : standaloneClip?.fadeInDuration ?? 0,
+        clipDuration,
+      ),
     );
     const fadeOutDuration = Math.max(
       0,
-      Math.min(activeClip.audioFadeOutDuration ?? 0, clipDuration),
+      Math.min(
+        linkedVideoClip ? linkedVideoClip.audioFadeOutDuration ?? 0 : standaloneClip?.fadeOutDuration ?? 0,
+        clipDuration,
+      ),
     );
     const localTime = Math.max(0, timelineTime - activeClip.timelineStart);
     const timeToEnd = Math.max(0, activeClip.timelineEnd - timelineTime);
     const fadeInGain = fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
     const fadeOutGain = fadeOutDuration > 0 ? Math.min(1, timeToEnd / fadeOutDuration) : 1;
     const fadeGain = Math.max(0, Math.min(1, fadeInGain, fadeOutGain));
-    const clipVolume = Math.max(0, Math.min(100, activeClip.audioVolume ?? 100)) / 100;
-    audio.volume = Math.max(0, Math.min(1, clipVolume * fadeGain));
+    const volumePercent = linkedVideoClip
+      ? linkedVideoClip.audioVolume ?? 100
+      : standaloneClip?.volume ?? 100;
+    audio.volume = Math.max(0, Math.min(1, (Math.max(0, Math.min(100, volumePercent)) / 100) * fadeGain));
+    audio.muted = trackMuted || soloMuted || clipMuted;
 
-    if (muted) {
+    if (audio.muted) {
       activeAudioClipIdRefs.current[audioTrackId] = null;
       audio.pause();
       return;
     }
 
     activeAudioClipIdRefs.current[audioTrackId] = activeClip.id;
-
     if (shouldPlay) {
       if (audio.paused) {
-        void audio.play().catch((error) => {
-          console.error(`${audioTrackId} playback failed:`, error);
-        });
+        void audio.play().catch((error) => console.error(`${audioTrackId} playback failed:`, error));
       }
     } else if (!audio.paused) {
       audio.pause();
@@ -954,7 +1014,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     for (const trackId of videoTrackIdsRef.current) {
       syncVideoTrackToTimeline(trackId, timelineTime, shouldPlay, forceSeek);
       syncSameTrackDissolve(trackId, timelineTime, shouldPlay, forceSeek);
-      syncAudioTrackToTimeline(trackId, timelineTime, shouldPlay, forceSeek);
+    }
+    for (const audioTrackId of audioTrackIdsRef.current) {
+      syncAudioTrackToTimeline(audioTrackId, timelineTime, shouldPlay, forceSeek);
     }
   };
 
@@ -1042,7 +1104,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     }
 
     syncAllMediaToTimeline(displayTime, false, true);
-  }, [displayTime, isPlaying, videoClips, videoPath, duration, trackSettings]);
+  }, [displayTime, isPlaying, videoClips, audioClips, videoPath, duration, trackSettings]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -1118,11 +1180,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     );
   };
 
-  const handleAudioLoadedMetadata = (videoTrackId: VideoTrackId) => {
-    const audioTrackId = audioTrackForVideoTrack(videoTrackId);
+  const handleAudioLoadedMetadata = (audioTrackId: AudioTrackId) => {
     activeAudioClipIdRefs.current[audioTrackId] = null;
     syncAudioTrackToTimeline(
-      videoTrackId,
+      audioTrackId,
       isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
       isPlayingRef.current,
       true,
@@ -2087,19 +2148,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               </div>
             )}
 
-            {videoTrackIds.map((trackId) => {
-              const clip = activeClipsByTrack[trackId];
-              const audioTrackId = audioTrackForVideoTrack(trackId);
-
+            {audioTrackIds.map((audioTrackId) => {
+              const sourcePath = audioSourcesByTrack[audioTrackId];
               return (
                 <audio
-                  key={`${audioTrackId}:${clip?.id ?? "gap"}:${clip?.sourcePath ?? ""}`}
+                  key={`${audioTrackId}:${sourcePath ?? "gap"}`}
                   ref={(element) => { audioRefs.current[audioTrackId] = element; }}
-                  src={clip?.sourcePath ? convertFileSrc(clip.sourcePath) : undefined}
-                  data-source-path={clip?.sourcePath ?? ""}
+                  src={sourcePath ? convertFileSrc(sourcePath) : undefined}
+                  data-source-path={sourcePath ?? ""}
                   preload="auto"
                   hidden
-                  onLoadedMetadata={() => handleAudioLoadedMetadata(trackId)}
+                  onLoadedMetadata={() => handleAudioLoadedMetadata(audioTrackId)}
                 />
               );
             })}

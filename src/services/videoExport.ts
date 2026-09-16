@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import type { Subtitle } from "../types/subtitle";
 import type {
+  AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "../types/timelineModel";
@@ -23,6 +24,7 @@ export type ExportTimelineRange = {
 type ExportTimelineVideoOptions = {
   timelineDuration: number;
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   trackSettings: TimelineTrackSettings;
   range?: ExportTimelineRange | null;
   onStart?: () => void;
@@ -163,13 +165,28 @@ function videoTrackVisible(
   return !trackSettings[trackId]?.hidden;
 }
 
-function audioTrackMuted(
+function linkedAudioTrackId(
   videoTrackId: string,
   trackSettings: TimelineTrackSettings,
 ) {
-  const index = videoTrackIndex(videoTrackId);
-  const audioTrackId = Number.isFinite(index) ? `audio-${index}` : "audio-1";
-  return !!trackSettings[audioTrackId]?.muted;
+  const candidate = trackSettings[videoTrackId]?.linkedTrackId;
+  return candidate && /^audio-\d+$/.test(candidate) ? candidate : null;
+}
+
+function audioTrackMuted(
+  audioTrackId: string,
+  trackSettings: TimelineTrackSettings,
+) {
+  const soloActive = Object.entries(trackSettings).some(
+    ([trackId, settings]) =>
+      /^audio-\d+$/.test(trackId) &&
+      settings.deleted !== true &&
+      settings.solo === true,
+  );
+  return (
+    !!trackSettings[audioTrackId]?.muted ||
+    (soloActive && trackSettings[audioTrackId]?.solo !== true)
+  );
 }
 
 function normalizeExportRange(
@@ -217,6 +234,7 @@ function subtitlesForExportRange(
 
 function buildTimelineFilterGraph(
   videoClips: VideoTimelineClip[],
+  audioClips: AudioTimelineClip[],
   trackSettings: TimelineTrackSettings,
   timelineDuration: number,
   range?: ExportTimelineRange | null,
@@ -243,9 +261,24 @@ function buildTimelineFilterGraph(
       a.timelineStart - b.timelineStart
     );
 
-  const inputPaths = renderableClips.map((clip) => clip.sourcePath);
+  const standaloneAudioClips = [...audioClips]
+    .filter((clip) =>
+      /^audio-\d+$/.test(clip.trackId) &&
+      !trackSettings[clip.trackId]?.deleted &&
+      !trackSettings[clip.trackId]?.linkedTrackId
+    )
+    .sort((a, b) => a.trackId.localeCompare(b.trackId) || a.timelineStart - b.timelineStart);
+
+  const inputPaths = [
+    ...renderableClips.map((clip) => clip.sourcePath),
+    ...standaloneAudioClips.map((clip) => clip.sourcePath),
+  ];
   const clipInputIndex = new Map<string, number>();
   renderableClips.forEach((clip, index) => clipInputIndex.set(clip.id, index));
+  const standaloneAudioInputIndex = new Map<string, number>();
+  standaloneAudioClips.forEach((clip, index) =>
+    standaloneAudioInputIndex.set(clip.id, renderableClips.length + index),
+  );
 
   const orderedVideoClips = renderableClips.filter((clip) =>
     videoTrackVisible(clip.trackId, trackSettings),
@@ -403,7 +436,8 @@ function buildTimelineFilterGraph(
   const audioLabels: string[] = [];
 
   for (const clip of renderableClips) {
-    if (audioTrackMuted(clip.trackId, trackSettings) || clip.audioMuted) {
+    const audioTrackId = linkedAudioTrackId(clip.trackId, trackSettings);
+    if (!audioTrackId || audioTrackMuted(audioTrackId, trackSettings) || clip.audioMuted) {
       continue;
     }
 
@@ -432,6 +466,37 @@ function buildTimelineFilterGraph(
     const delayMs = Math.max(0, Math.round(clip.timelineStart * 1000));
     filters.push(`adelay=${delayMs}:all=1`);
 
+    filterParts.push(`[${inputIndex}:a]${filters.join(",")}[${label}]`);
+    audioLabels.push(label);
+  }
+
+  for (const clip of standaloneAudioClips) {
+    if (audioTrackMuted(clip.trackId, trackSettings) || clip.muted) {
+      continue;
+    }
+
+    const inputIndex = standaloneAudioInputIndex.get(clip.id);
+    if (inputIndex === undefined) continue;
+    const duration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
+    const volume = clamp(clip.volume ?? 100, 0, 100) / 100;
+    const fadeIn = clamp(clip.fadeInDuration ?? 0, 0, duration);
+    const fadeOut = clamp(clip.fadeOutDuration ?? 0, 0, duration);
+    const label = `astandalone${audioLabels.length}`;
+    const filters = [
+      `atrim=start=${n(clip.sourceIn)}:end=${n(clip.sourceOut)}`,
+      "asetpts=PTS-STARTPTS",
+      `volume=${n(volume)}`,
+    ];
+
+    if (fadeIn > 0.001) filters.push(`afade=t=in:st=0:d=${n(fadeIn)}`);
+    if (fadeOut > 0.001) {
+      filters.push(
+        `afade=t=out:st=${n(Math.max(0, duration - fadeOut))}:d=${n(fadeOut)}`,
+      );
+    }
+
+    const delayMs = Math.max(0, Math.round(clip.timelineStart * 1000));
+    filters.push(`adelay=${delayMs}:all=1`);
     filterParts.push(`[${inputIndex}:a]${filters.join(",")}[${label}]`);
     audioLabels.push(label);
   }
@@ -515,6 +580,7 @@ export async function exportStyledVideo(
   const { inputPaths, filterComplex, outputDuration } =
     buildTimelineFilterGraph(
       options.videoClips,
+      options.audioClips,
       options.trackSettings,
       options.timelineDuration,
       normalizedRange,

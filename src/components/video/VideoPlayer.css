@@ -124,14 +124,7 @@
   inset:0;
 }
 
-.video-track-layer-v1 {
-  z-index:1;
-}
 
-.video-track-layer-v2 {
-  z-index:2;
-  background:transparent;
-}
 
 /* Clip transform preview: update immediately while dragging Inspector controls. */
 .video-track-layer {
@@ -294,21 +287,9 @@
   will-change:opacity,transform;
 }
 
-.program-dissolve-v1 {
-  z-index:1;
-}
 
-.program-dissolve-v1.incoming {
-  z-index:1;
-}
 
-.program-dissolve-v2 {
-  z-index:2;
-}
 
-.program-dissolve-v2.incoming {
-  z-index:2;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Program crop mode                                                          */

@@ -1,6 +1,7 @@
 import type { Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
 import type {
+  AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "../types/timelineModel";
@@ -16,6 +17,7 @@ type TimelineRangeEditInput = {
   range: TimelineRange;
   mode: TimelineRangeEditMode;
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   trackSettings: TimelineTrackSettings;
@@ -23,6 +25,7 @@ type TimelineRangeEditInput = {
 
 export type TimelineRangeEditResult = {
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   changed: boolean;
@@ -226,6 +229,84 @@ function editVideoClips(
   };
 }
 
+function sortAudioClips(clips: AudioTimelineClip[]) {
+  return [...clips].sort(
+    (a, b) =>
+      a.timelineStart - b.timelineStart ||
+      a.timelineEnd - b.timelineEnd ||
+      a.trackId.localeCompare(b.trackId),
+  );
+}
+
+function editAudioClips(
+  clips: AudioTimelineClip[],
+  range: TimelineRange,
+  mode: TimelineRangeEditMode,
+  trackSettings: TimelineTrackSettings,
+) {
+  const duration = range.end - range.start;
+  const next: AudioTimelineClip[] = [];
+  let changed = false;
+
+  for (const clip of clips) {
+    if (isTrackLocked(clip.trackId, trackSettings)) {
+      next.push(clip);
+      continue;
+    }
+
+    if (clip.timelineEnd <= range.start + EPSILON) {
+      next.push(clip);
+      continue;
+    }
+
+    if (clip.timelineStart >= range.end - EPSILON) {
+      if (mode === "extract") {
+        next.push({
+          ...clip,
+          timelineStart: Math.max(0, clip.timelineStart - duration),
+          timelineEnd: Math.max(0, clip.timelineEnd - duration),
+        });
+        changed = true;
+      } else {
+        next.push(clip);
+      }
+      continue;
+    }
+
+    changed = true;
+    const hasLeft = clip.timelineStart < range.start - EPSILON;
+    const hasRight = clip.timelineEnd > range.end + EPSILON;
+
+    if (hasLeft) {
+      const sourceOut = clip.sourceIn + (range.start - clip.timelineStart);
+      const left: AudioTimelineClip = {
+        ...clip,
+        timelineEnd: range.start,
+        sourceOut,
+        fadeOutDuration: 0,
+      };
+      if (left.timelineEnd - left.timelineStart >= MIN_FRAGMENT_DURATION) next.push(left);
+    }
+
+    if (hasRight) {
+      const sourceIn = clip.sourceIn + (range.end - clip.timelineStart);
+      const rightStart = mode === "extract" ? range.start : range.end;
+      const rightEnd = mode === "extract" ? clip.timelineEnd - duration : clip.timelineEnd;
+      const right: AudioTimelineClip = {
+        ...clip,
+        id: hasLeft ? crypto.randomUUID() : clip.id,
+        timelineStart: rightStart,
+        timelineEnd: rightEnd,
+        sourceIn,
+        fadeInDuration: 0,
+      };
+      if (right.timelineEnd - right.timelineStart >= MIN_FRAGMENT_DURATION) next.push(right);
+    }
+  }
+
+  return { clips: sortAudioClips(next), changed };
+}
+
 function editSubtitles(
   subtitles: Subtitle[],
   range: TimelineRange,
@@ -365,6 +446,7 @@ export function applyTimelineRangeEdit({
   range: rawRange,
   mode,
   videoClips,
+  audioClips,
   subtitles,
   markers,
   trackSettings,
@@ -374,6 +456,7 @@ export function applyTimelineRangeEdit({
   if (!range) {
     return {
       videoClips,
+      audioClips,
       subtitles,
       markers,
       changed: false,
@@ -382,6 +465,12 @@ export function applyTimelineRangeEdit({
 
   const videoResult = editVideoClips(
     videoClips,
+    range,
+    mode,
+    trackSettings,
+  );
+  const audioResult = editAudioClips(
+    audioClips,
     range,
     mode,
     trackSettings,
@@ -396,10 +485,12 @@ export function applyTimelineRangeEdit({
 
   return {
     videoClips: videoResult.clips,
+    audioClips: audioResult.clips,
     subtitles: subtitleResult.subtitles,
     markers: markerResult.markers,
     changed:
       videoResult.changed ||
+      audioResult.changed ||
       subtitleResult.changed ||
       markerResult.changed,
   };

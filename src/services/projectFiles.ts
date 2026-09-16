@@ -3,14 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Subtitle, SubtitleTextAlign } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
-import type { TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
+import type { AudioTimelineClip, TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 14;
+export const CURRENT_PROJECT_VERSION = 15;
 
 export type SubtitleProject = {
   version: number;
@@ -21,6 +21,7 @@ export type SubtitleProject = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   mediaAssets: ProjectMediaAsset[];
   trackSettings: TimelineTrackSettings;
   updatedAt: string;
@@ -102,6 +103,10 @@ function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
         typeof trackValue.muted === "boolean"
           ? trackValue.muted
           : normalized[trackId]?.muted,
+      solo:
+        typeof trackValue.solo === "boolean"
+          ? trackValue.solo
+          : normalized[trackId]?.solo,
       hidden:
         typeof trackValue.hidden === "boolean"
           ? trackValue.hidden
@@ -110,6 +115,12 @@ function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
         typeof trackValue.deleted === "boolean"
           ? trackValue.deleted
           : normalized[trackId]?.deleted,
+      linkedTrackId:
+        trackValue.linkedTrackId === null
+          ? null
+          : typeof trackValue.linkedTrackId === "string"
+            ? trackValue.linkedTrackId
+            : normalized[trackId]?.linkedTrackId,
     };
   }
 
@@ -282,6 +293,42 @@ function normalizeVideoClip(
   };
 }
 
+function normalizeAudioClip(
+  value: unknown,
+  index: number,
+): AudioTimelineClip | null {
+  if (!isRecord(value)) return null;
+
+  const timelineStart = asNumber(value.timelineStart, 0);
+  const timelineEnd = asNumber(value.timelineEnd, timelineStart);
+  const sourceIn = asNumber(value.sourceIn, 0);
+  const sourceOut = asNumber(value.sourceOut, sourceIn + (timelineEnd - timelineStart));
+  const sourcePath = typeof value.sourcePath === "string" ? value.sourcePath : "";
+
+  if (!sourcePath || timelineStart < 0 || timelineEnd <= timelineStart || sourceIn < 0 || sourceOut <= sourceIn) {
+    return null;
+  }
+
+  const duration = timelineEnd - timelineStart;
+  return {
+    id: typeof value.id === "string" && value.id ? value.id : `audio-clip-${index}-${crypto.randomUUID()}`,
+    kind: "audio",
+    trackId: typeof value.trackId === "string" ? value.trackId : "audio-1",
+    sourceId: typeof value.sourceId === "string" && value.sourceId ? value.sourceId : sourcePath,
+    sourcePath,
+    sourceName: typeof value.sourceName === "string" && value.sourceName ? value.sourceName : (sourcePath.split(/[\\/]/).pop() ?? "Audio"),
+    sourceIn,
+    sourceOut,
+    sourceDuration: asOptionalNumber(value.sourceDuration),
+    volume: Math.max(0, Math.min(100, asNumber(value.volume, 100))),
+    muted: value.muted === true,
+    fadeInDuration: Math.max(0, Math.min(duration, asNumber(value.fadeInDuration, 0))),
+    fadeOutDuration: Math.max(0, Math.min(duration, asNumber(value.fadeOutDuration, 0))),
+    timelineStart,
+    timelineEnd,
+  };
+}
+
 function normalizeMediaAsset(
   value: unknown,
   index: number,
@@ -301,12 +348,12 @@ function normalizeMediaAsset(
       typeof value.id === "string" && value.id.length > 0
         ? value.id
         : `media-${index}-${crypto.randomUUID()}`,
-    kind: "video",
+    kind: value.kind === "audio" ? "audio" : "video",
     path,
     name:
       typeof value.name === "string" && value.name.length > 0
         ? value.name
-        : path.split(/[\\/]/).pop() ?? "Video",
+        : path.split(/[\\/]/).pop() ?? (value.kind === "audio" ? "Audio" : "Video"),
     duration: Math.max(0, asNumber(value.duration, 0)),
   };
 }
@@ -376,6 +423,40 @@ function normalizeProject(
         )
     : [];
 
+  const audioClips = Array.isArray(value.audioClips)
+    ? value.audioClips
+        .map((clip, index) => normalizeAudioClip(clip, index))
+        .filter((clip): clip is AudioTimelineClip => clip !== null)
+        .sort((a, b) => a.timelineStart - b.timelineStart)
+    : [];
+
+  const normalizedTrackSettings = normalizeTrackSettings(value.trackSettings);
+
+  // v14 and older implicitly paired Vn with An. Preserve that behavior by
+  // turning it into explicit links during migration. v15+ stores the links.
+  if (version < 15) {
+    const videoTrackIds = new Set<string>([
+      ...Object.keys(normalizedTrackSettings).filter((id) => /^video-\d+$/.test(id) && normalizedTrackSettings[id]?.deleted !== true),
+      ...videoClips.map((clip) => clip.trackId),
+    ]);
+
+    for (const videoTrackId of videoTrackIds) {
+      const match = /^video-(\d+)$/.exec(videoTrackId);
+      if (!match) continue;
+      const audioTrackId = `audio-${match[1]}`;
+      if (normalizedTrackSettings[audioTrackId]?.deleted === true) continue;
+      normalizedTrackSettings[videoTrackId] = {
+        ...(normalizedTrackSettings[videoTrackId] ?? { locked: false, hidden: false }),
+        linkedTrackId: audioTrackId,
+      };
+      normalizedTrackSettings[audioTrackId] = {
+        ...(normalizedTrackSettings[audioTrackId] ?? { locked: true, muted: false }),
+        locked: true,
+        linkedTrackId: videoTrackId,
+      };
+    }
+  }
+
   return {
     version: CURRENT_PROJECT_VERSION,
     projectId:
@@ -392,8 +473,9 @@ function normalizeProject(
     subtitles,
     markers,
     videoClips,
+    audioClips,
     mediaAssets,
-    trackSettings: normalizeTrackSettings(value.trackSettings),
+    trackSettings: normalizedTrackSettings,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
 }
@@ -445,6 +527,7 @@ export async function saveProjectFile(
   markers: TimelineMarker[],
   metadata?: ProjectMetadata,
   videoClips: VideoTimelineClip[] = [],
+  audioClips: AudioTimelineClip[] = [],
   mediaAssets: ProjectMediaAsset[] = [],
   trackSettings: TimelineTrackSettings = DEFAULT_TIMELINE_TRACK_SETTINGS,
 ): Promise<void> {
@@ -457,8 +540,10 @@ export async function saveProjectFile(
     subtitles,
     markers: [...markers].sort((a, b) => a.time - b.time),
     videoClips: [...videoClips].sort(
-      (a, b) =>
-        a.timelineStart - b.timelineStart,
+      (a, b) => a.timelineStart - b.timelineStart,
+    ),
+    audioClips: [...audioClips].sort(
+      (a, b) => a.timelineStart - b.timelineStart,
     ),
     mediaAssets,
     trackSettings,

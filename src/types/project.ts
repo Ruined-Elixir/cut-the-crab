@@ -12,7 +12,7 @@ export type ProjectMetadata = {
 
 export type ProjectMediaAsset = {
   id: string;
-  kind: "video";
+  kind: "video" | "audio";
   path: string;
   name: string;
   duration: number;

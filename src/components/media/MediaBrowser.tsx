@@ -19,15 +19,9 @@ type MediaBrowserProps = {
 };
 
 function formatDuration(duration: number) {
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return "--:--";
-  }
-
+  if (!Number.isFinite(duration) || duration <= 0) return "--:--";
   const totalSeconds = Math.round(duration);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
 }
 
 function MediaBrowser({
@@ -39,19 +33,16 @@ function MediaBrowser({
   onDropMedia,
 }: MediaBrowserProps) {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
-
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedAssetId) ?? null,
     [assets, selectedAssetId],
   );
-
-
   const dragGhostRef = useRef<HTMLDivElement | null>(null);
   const didDragRef = useRef(false);
 
   const clearTrackPreview = () => {
     document
-      .querySelectorAll<HTMLElement>(".video-track.media-drag-target")
+      .querySelectorAll<HTMLElement>(".video-track.media-drag-target, .waveform-track.media-drag-target")
       .forEach((element) => {
         element.classList.remove("media-drag-target");
         element.style.removeProperty("--media-drag-left");
@@ -64,99 +55,65 @@ function MediaBrowser({
     dragGhostRef.current = null;
   };
 
-  const getTimelineDropTarget = (clientX: number, clientY: number) => {
-    const target = document
-      .elementsFromPoint(clientX, clientY)
-      .find(
-        (element) =>
-          element instanceof HTMLElement &&
-          element.matches(".video-track[data-video-track-id]"),
+  const getTimelineDropTarget = (
+    asset: ProjectMediaAsset,
+    clientX: number,
+    clientY: number,
+  ) => {
+    const elements = document.elementsFromPoint(clientX, clientY);
+    const target = elements.find((element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (asset.kind === "audio") {
+        return element.matches(".waveform-track[data-audio-track-id]");
+      }
+      return element.matches(
+        ".video-track[data-video-track-id], .waveform-track[data-audio-track-id]",
       );
+    });
 
-    if (!(target instanceof HTMLElement)) {
-      return null;
-    }
+    if (!(target instanceof HTMLElement)) return null;
+    if (target.dataset.trackLocked === "true" || target.dataset.trackLinked === "true") return null;
 
-    if (target.dataset.trackLocked === "true") {
-      return null;
-    }
-
-    const trackId = target.dataset.videoTrackId;
-
-    if (!trackId || timelineDuration <= 0) {
-      return null;
-    }
+    const trackId = target.dataset.videoTrackId ?? target.dataset.audioTrackId;
+    if (!trackId || timelineDuration <= 0) return null;
 
     const rect = target.getBoundingClientRect();
-    const ratio = Math.max(
-      0,
-      Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),
-    );
-
-    return {
-      element: target,
-      trackId,
-      timelineTime: ratio * timelineDuration,
-    };
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    return { element: target, trackId, timelineTime: ratio * timelineDuration };
   };
 
-  const setTrackPreview = (
-    element: HTMLElement,
-    timelineTime: number,
-    mediaDuration: number,
-  ) => {
+  const setTrackPreview = (element: HTMLElement, timelineTime: number, mediaDuration: number) => {
     clearTrackPreview();
-
-    const left =
-      timelineDuration > 0 ? (timelineTime / timelineDuration) * 100 : 0;
-    const width =
-      timelineDuration > 0 ? (mediaDuration / timelineDuration) * 100 : 0;
-
+    const left = timelineDuration > 0 ? (timelineTime / timelineDuration) * 100 : 0;
+    const width = timelineDuration > 0 ? (mediaDuration / timelineDuration) * 100 : 0;
     element.classList.add("media-drag-target");
     element.style.setProperty("--media-drag-left", `${left}%`);
-    element.style.setProperty(
-      "--media-drag-width",
-      `${Math.max(0.6, width)}%`,
-    );
+    element.style.setProperty("--media-drag-width", `${Math.max(0.6, width)}%`);
   };
 
   const startMediaPointerDrag = (
     event: ReactMouseEvent<HTMLButtonElement>,
     asset: ProjectMediaAsset,
   ) => {
-    if (event.button !== 0 || asset.duration <= 0) {
-      return;
-    }
-
+    if (event.button !== 0 || asset.duration <= 0) return;
     const startX = event.clientX;
     const startY = event.clientY;
     let dragging = false;
-
     didDragRef.current = false;
 
     const ensureGhost = () => {
-      if (dragGhostRef.current) {
-        return dragGhostRef.current;
-      }
-
+      if (dragGhostRef.current) return dragGhostRef.current;
       const ghost = document.createElement("div");
       ghost.className = "media-browser-drag-ghost";
-      ghost.textContent = asset.name;
+      ghost.textContent = `${asset.kind === "audio" ? "♫" : "▶"} ${asset.name}`;
       document.body.appendChild(ghost);
       dragGhostRef.current = ghost;
       return ghost;
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const distance = Math.hypot(
-        moveEvent.clientX - startX,
-        moveEvent.clientY - startY,
-      );
-
-      if (!dragging && distance < 5) {
-        return;
-      }
-
+      const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (!dragging && distance < 5) return;
       dragging = true;
       didDragRef.current = true;
       moveEvent.preventDefault();
@@ -164,18 +121,9 @@ function MediaBrowser({
       const ghost = ensureGhost();
       ghost.style.left = `${moveEvent.clientX + 14}px`;
       ghost.style.top = `${moveEvent.clientY + 14}px`;
-
-      const target = getTimelineDropTarget(
-        moveEvent.clientX,
-        moveEvent.clientY,
-      );
-
+      const target = getTimelineDropTarget(asset, moveEvent.clientX, moveEvent.clientY);
       if (target) {
-        setTrackPreview(
-          target.element,
-          target.timelineTime,
-          asset.duration,
-        );
+        setTrackPreview(target.element, target.timelineTime, asset.duration);
         ghost.classList.add("can-drop");
       } else {
         clearTrackPreview();
@@ -186,23 +134,11 @@ function MediaBrowser({
     const handleMouseUp = (upEvent: MouseEvent) => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
-
-      const target = dragging
-        ? getTimelineDropTarget(upEvent.clientX, upEvent.clientY)
-        : null;
-
-      if (target) {
-        onDropMedia(asset.id, target.trackId, target.timelineTime);
-      }
-
+      const target = dragging ? getTimelineDropTarget(asset, upEvent.clientX, upEvent.clientY) : null;
+      if (target) onDropMedia(asset.id, target.trackId, target.timelineTime);
       clearTrackPreview();
       removeDragGhost();
-
-      if (dragging) {
-        window.setTimeout(() => {
-          didDragRef.current = false;
-        }, 0);
-      }
+      if (dragging) window.setTimeout(() => { didDragRef.current = false; }, 0);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -216,15 +152,10 @@ function MediaBrowser({
           <span className="media-browser-eyebrow">Browser</span>
           <h2>Media</h2>
         </div>
-
         <span className="media-browser-count">{assets.length}</span>
       </div>
 
-      <button
-        type="button"
-        className="media-import-button"
-        onClick={() => void onImportMedia()}
-      >
+      <button type="button" className="media-import-button" onClick={() => void onImportMedia()}>
         <span aria-hidden="true">＋</span>
         Import Media
       </button>
@@ -233,41 +164,31 @@ function MediaBrowser({
         {assets.length === 0 ? (
           <div className="media-browser-empty">
             <span className="media-browser-empty-icon" aria-hidden="true">▶</span>
-            <p>Import video files to add them to this project.</p>
+            <p>Import video or audio files to add them to this project.</p>
           </div>
         ) : (
           assets.map((asset) => {
             const selected = asset.id === selectedAssetId;
-            const isPrimary = asset.path === primaryVideoPath;
-
+            const isPrimary = asset.kind === "video" && asset.path === primaryVideoPath;
             return (
               <button
                 key={asset.id}
                 type="button"
-                className={["media-browser-item", selected ? "selected" : ""]
-                  .filter(Boolean)
-                  .join(" ")}
+                className={["media-browser-item", selected ? "selected" : ""].filter(Boolean).join(" ")}
                 onMouseDown={(event) => startMediaPointerDrag(event, asset)}
-                onClick={() => {
-                  if (!didDragRef.current) {
-                    setSelectedAssetId(asset.id);
-                  }
-                }}
-                onDoubleClick={() => {
-                  if (!didDragRef.current) {
-                    onInsertMedia(asset);
-                  }
-                }}
-                title={`${asset.path} — drag directly to V1 or V2 to insert`}
+                onClick={() => { if (!didDragRef.current) setSelectedAssetId(asset.id); }}
+                onDoubleClick={() => { if (!didDragRef.current) onInsertMedia(asset); }}
+                title={asset.kind === "audio"
+                  ? `${asset.path} — drag to an independent audio track`
+                  : `${asset.path} — drag to video, or to an audio track to use its sound only`}
               >
                 <span className="media-browser-thumbnail" aria-hidden="true">
-                  ▶
+                  {asset.kind === "audio" ? "♫" : "▶"}
                 </span>
-
                 <span className="media-browser-item-copy">
                   <span className="media-browser-item-name">{asset.name}</span>
                   <span className="media-browser-item-meta">
-                    {formatDuration(asset.duration)}
+                    {asset.kind === "audio" ? "Audio · " : "Video · "}{formatDuration(asset.duration)}
                     {isPrimary ? " · Primary" : ""}
                   </span>
                 </span>
@@ -281,17 +202,13 @@ function MediaBrowser({
         type="button"
         className="media-insert-button"
         disabled={!selectedAsset || selectedAsset.duration <= 0}
-        onClick={() => {
-          if (selectedAsset) {
-            onInsertMedia(selectedAsset);
-          }
-        }}
+        onClick={() => { if (selectedAsset) onInsertMedia(selectedAsset); }}
       >
         Insert at Playhead
       </button>
 
       <p className="media-browser-hint">
-        Drag a media card directly onto V1/V2, or double-click to insert at the playhead.
+        Drag video to V tracks, or drag audio/video sound to independent A tracks.
       </p>
     </aside>
   );

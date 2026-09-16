@@ -308,7 +308,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
         MenuItemBuilder::with_id("edit.extract-range", "Extract Range").build(app)?;
 
     let split_subtitle =
-        MenuItemBuilder::with_id("edit.split-subtitle", "Split Subtitle at Playhead")
+        MenuItemBuilder::with_id("edit.split-subtitle", "Split at Playhead")
             .accelerator("CmdOrCtrl+B")
             .build(app)?;
 

@@ -13,6 +13,7 @@ import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
 type BuildTimelineModelOptions = {
   duration: number;
   videoClips: VideoTimelineClip[];
+  audioClips?: AudioTimelineClip[];
   subtitles: Subtitle[];
   trackSettings?: TimelineTrackSettings;
 };
@@ -38,6 +39,7 @@ export function nextTimelineTrackId(
   kind: TimelineTrackKind,
   trackSettings: TimelineTrackSettings,
   videoClips: VideoTimelineClip[] = [],
+  audioClips: AudioTimelineClip[] = [],
 ) {
   const activeIds = new Set<string>();
 
@@ -55,34 +57,32 @@ export function nextTimelineTrackId(
 
   if (kind === "video") {
     for (const clip of videoClips) {
-      if (trackSettings[clip.trackId]?.deleted !== true) {
-        activeIds.add(clip.trackId);
-      }
+      if (trackSettings[clip.trackId]?.deleted !== true) activeIds.add(clip.trackId);
     }
   }
 
-  // Reuse the lowest deleted/missing index instead of permanently leaving
-  // holes such as V1, V3 after V2 has been removed.
-  let index = 1;
-  while (activeIds.has(timelineTrackId(kind, index))) {
-    index += 1;
+  if (kind === "audio") {
+    for (const clip of audioClips) {
+      if (trackSettings[clip.trackId]?.deleted !== true) activeIds.add(clip.trackId);
+    }
   }
 
+  let index = 1;
+  while (activeIds.has(timelineTrackId(kind, index))) index += 1;
   return timelineTrackId(kind, index);
 }
 
 export function defaultTrackControlState(kind: TimelineTrackKind): TimelineTrackControlState {
   if (kind === "audio") {
-    return { locked: true, muted: false };
+    // Standalone audio tracks are directly editable. Linked audio tracks are
+    // created explicitly with locked=true by App.
+    return { locked: false, muted: false, solo: false };
   }
 
   return { locked: false, hidden: false };
 }
 
-function getTrackSettings(
-  trackId: string,
-  trackSettings?: TimelineTrackSettings,
-) {
+function getTrackSettings(trackId: string, trackSettings?: TimelineTrackSettings) {
   const kind = timelineTrackKindFromId(trackId) ?? "video";
   return {
     ...(DEFAULT_TIMELINE_TRACK_SETTINGS[trackId] ?? defaultTrackControlState(kind)),
@@ -117,40 +117,37 @@ function linkedAudioClip(
 function collectTrackIds(
   trackSettings: TimelineTrackSettings | undefined,
   videoClips: VideoTimelineClip[],
+  audioClips: AudioTimelineClip[],
 ) {
   const ids = new Set<string>();
 
   for (const id of Object.keys(DEFAULT_TIMELINE_TRACK_SETTINGS)) {
-    if (trackSettings?.[id]?.deleted !== true) {
-      ids.add(id);
-    }
+    if (trackSettings?.[id]?.deleted !== true) ids.add(id);
   }
 
   for (const [id, settings] of Object.entries(trackSettings ?? {})) {
-    if (timelineTrackKindFromId(id) && settings.deleted !== true) {
-      ids.add(id);
-    }
+    if (timelineTrackKindFromId(id) && settings.deleted !== true) ids.add(id);
   }
 
   for (const clip of videoClips) {
-    if (
-      timelineTrackKindFromId(clip.trackId) === "video" &&
-      trackSettings?.[clip.trackId]?.deleted !== true
-    ) {
+    if (timelineTrackKindFromId(clip.trackId) === "video" && trackSettings?.[clip.trackId]?.deleted !== true) {
       ids.add(clip.trackId);
     }
   }
 
-  // Every active video track owns a linked audio partner with the same index.
-  // A deleted video track tombstones both halves of the pair, while older
-  // projects with V3+ still reconstruct their missing A3+ automatically.
-  for (const id of [...ids]) {
-    if (timelineTrackKindFromId(id) === "video") {
-      const index = timelineTrackIndexFromId(id);
-      const audioId = timelineTrackId("audio", index);
-      if (trackSettings?.[audioId]?.deleted !== true) {
-        ids.add(audioId);
-      }
+  for (const clip of audioClips) {
+    if (timelineTrackKindFromId(clip.trackId) === "audio" && trackSettings?.[clip.trackId]?.deleted !== true) {
+      ids.add(clip.trackId);
+    }
+  }
+
+  // Explicit pair links are authoritative. This replaces the old Vn -> An
+  // assumption and allows video-only and standalone-audio tracks.
+  for (const [id, settings] of Object.entries(trackSettings ?? {})) {
+    if (settings.deleted === true || !settings.linkedTrackId) continue;
+    if (trackSettings?.[settings.linkedTrackId]?.deleted !== true) {
+      ids.add(id);
+      ids.add(settings.linkedTrackId);
     }
   }
 
@@ -165,10 +162,11 @@ function sortedTrackIds(ids: Set<string>, kind: TimelineTrackKind) {
 
 export function buildTimelineModel({
   videoClips,
+  audioClips = [],
   subtitles,
   trackSettings,
 }: BuildTimelineModelOptions): TimelineTrack[] {
-  const ids = collectTrackIds(trackSettings, videoClips);
+  const ids = collectTrackIds(trackSettings, videoClips, audioClips);
   const videoTrackIds = sortedTrackIds(ids, "video");
   const subtitleTrackIds = sortedTrackIds(ids, "subtitle");
   const audioTrackIds = sortedTrackIds(ids, "audio");
@@ -217,23 +215,34 @@ export function buildTimelineModel({
   const audioTracks: TimelineTrack[] = audioTrackIds.map((id) => {
     const index = timelineTrackIndexFromId(id);
     const settings = getTrackSettings(id, trackSettings);
-    const matchingVideoTrackId = timelineTrackId("video", index);
-    const linked = videoClips
-      .filter((clip) => clip.trackId === matchingVideoTrackId)
-      .map((clip) => linkedAudioClip(clip, id));
+    const linkedVideoTrackId =
+      settings.linkedTrackId && timelineTrackKindFromId(settings.linkedTrackId) === "video"
+        ? settings.linkedTrackId
+        : undefined;
+
+    const linked = linkedVideoTrackId
+      ? videoClips
+          .filter((clip) => clip.trackId === linkedVideoTrackId)
+          .map((clip) => linkedAudioClip(clip, id))
+      : [];
+    const standalone = audioClips.filter((clip) => clip.trackId === id);
 
     return {
       id,
       kind: "audio",
       index,
-      name: index === 1 ? "Linked Audio" : `Audio ${index}`,
+      name: linkedVideoTrackId
+        ? `Linked Audio · V${timelineTrackIndexFromId(linkedVideoTrackId)}`
+        : index === 1
+          ? "Audio"
+          : `Audio ${index}`,
       shortLabel: `A${index}`,
       locked: settings.locked,
       muted: settings.muted,
-      clips: linked,
+      solo: settings.solo,
+      clips: [...linked, ...standalone].sort((a, b) => a.timelineStart - b.timelineStart),
     };
   });
 
-  // Preserve the editor's established visual grouping: video, subtitles, audio.
   return [...videoTracks, ...subtitleTracks, ...audioTracks];
 }

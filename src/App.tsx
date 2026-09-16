@@ -19,6 +19,7 @@ import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationMo
 import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
 import { useVideoTimeline } from "./hooks/useVideoTimeline";
+import { useAudioTimeline } from "./hooks/useAudioTimeline";
 import { useTranscription } from "./hooks/useTranscription";
 import { useWaveform } from "./hooks/useWaveform";
 
@@ -52,6 +53,7 @@ import {
 import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
+  AudioTimelineClip,
   TimelineTrackId,
   TimelineTrackKind,
   TimelineTrackSettings,
@@ -69,7 +71,6 @@ import {
   nextTimelineTrackId,
   timelineTrackIndexFromId,
   timelineTrackKindFromId,
-  timelineTrackId,
 } from "./utils/timelineModel";
 import {
   applyTimelineRangeEdit,
@@ -86,6 +87,12 @@ type SeekRequest = {
 
 type VideoClipboardPayload = {
   clips: VideoTimelineClip[];
+  groupStart: number;
+  groupEnd: number;
+};
+
+type AudioClipboardPayload = {
+  clips: AudioTimelineClip[];
   groupStart: number;
   groupEnd: number;
 };
@@ -135,9 +142,16 @@ function transcriptionOptionsForPreset(preset: TranscriptionPreset) {
   }
 }
 
-function probeVideoDuration(path: string) {
+const AUDIO_MEDIA_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"]);
+
+function mediaKindFromPath(path: string): ProjectMediaAsset["kind"] {
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  return AUDIO_MEDIA_EXTENSIONS.has(extension) ? "audio" : "video";
+}
+
+function probeMediaDuration(path: string, kind: ProjectMediaAsset["kind"] = "video") {
   return new Promise<number>((resolve) => {
-    const probe = document.createElement("video");
+    const probe = document.createElement(kind === "audio" ? "audio" : "video");
     const cleanup = () => {
       probe.removeAttribute("src");
       probe.load();
@@ -475,6 +489,8 @@ function App() {
     videoPlayerRef.current?.setSkimPreviewTime(time);
   }, []);
   const videoClipboardRef = useRef<VideoClipboardPayload | null>(null);
+  const audioClipboardRef = useRef<AudioClipboardPayload | null>(null);
+  const activeClipboardKindRef = useRef<"video" | "audio" | null>(null);
   const timelinePasteTargetRef = useRef<{
     trackId: TimelineTrackId;
     time: number;
@@ -482,7 +498,7 @@ function App() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const lastSavedSnapshotRef = useRef<string>(
-    JSON.stringify({ subtitles: [], markers: [], videoClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
+    JSON.stringify({ subtitles: [], markers: [], videoClips: [], audioClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
   );
 
   // ==========================================================================
@@ -564,6 +580,28 @@ function App() {
     rippleMode,
   });
 
+  const {
+    audioClips,
+    selectedAudioClipId,
+    selectedAudioClipIds,
+    selectedAudioClip,
+    selectAudioClip,
+    selectAudioClips,
+    clearAudioClipSelection,
+    beginAudioClipMove,
+    endAudioClipMove,
+    moveAudioClip,
+    moveAudioClipToTrack,
+    resizeAudioClip,
+    splitAudioClip,
+    insertAudioClipFromMedia,
+    insertAudioClipCopies,
+    deleteAudioClips,
+    deleteAudioTrack,
+    updateAudioClip,
+    replaceAudioClips,
+  } = useAudioTimeline({ rippleMode });
+
   const latestSaveStateRef = useRef({
     activeProjectId,
     videoPath,
@@ -571,6 +609,7 @@ function App() {
     markers,
     projectMetadata,
     videoClips,
+    audioClips,
     mediaAssets,
     trackSettings,
     videoDuration,
@@ -584,6 +623,7 @@ function App() {
     markers,
     projectMetadata,
     videoClips,
+    audioClips,
     mediaAssets,
     trackSettings,
     videoDuration,
@@ -593,6 +633,7 @@ function App() {
   const editedContentEnd = Math.max(
     0,
     ...videoClips.map((clip) => clip.timelineEnd),
+    ...audioClips.map((clip) => clip.timelineEnd),
     ...subtitles.map((subtitle) => subtitle.endTime),
     ...markers.map((marker) => marker.time),
   );
@@ -618,6 +659,7 @@ function App() {
       subtitles,
       markers,
       videoClips,
+      audioClips,
       trackSettings,
     },
     enabled:
@@ -628,6 +670,7 @@ function App() {
       replaceSubtitles(snapshot.subtitles);
       setMarkers(snapshot.markers);
       replaceVideoClips(snapshot.videoClips);
+      replaceAudioClips(snapshot.audioClips);
       setTrackSettings(snapshot.trackSettings);
     },
   });
@@ -639,6 +682,18 @@ function App() {
   const selectedVideoClipsAreEditable =
     selectedVideoClips.length > 0 &&
     selectedVideoClips.every((clip) => !trackSettings[clip.trackId]?.locked);
+
+  const selectedAudioClips = audioClips.filter((clip) =>
+    selectedAudioClipIds.includes(clip.id),
+  );
+
+  const selectedAudioClipsAreEditable =
+    selectedAudioClips.length > 0 &&
+    selectedAudioClips.every(
+      (clip) =>
+        !trackSettings[clip.trackId]?.locked &&
+        !trackSettings[clip.trackId]?.linkedTrackId,
+    );
 
   const addSubtitleWithHistory = (time: number) => {
     markNextChangeImmediate();
@@ -704,6 +759,7 @@ function App() {
     const groupEnd = Math.max(...clips.map((clip) => clip.timelineEnd));
 
     videoClipboardRef.current = { clips, groupStart, groupEnd };
+    activeClipboardKindRef.current = "video";
 
     // Default multi-clip paste preserves track assignments and relative spacing,
     // placing the copied group immediately after the original group. If every
@@ -736,14 +792,12 @@ function App() {
     trackId: TimelineTrackId,
     time: number,
   ) => {
-    if (timelineTrackKindFromId(trackId) !== "video") {
-      return;
-    }
+    const kind = timelineTrackKindFromId(trackId);
+    if (kind !== "video" && kind !== "audio") return;
+    if (trackSettings[trackId]?.deleted || trackSettings[trackId]?.locked) return;
+    if (kind === "audio" && trackSettings[trackId]?.linkedTrackId) return;
 
-    timelinePasteTargetRef.current = {
-      trackId,
-      time: Math.max(0, time),
-    };
+    timelinePasteTargetRef.current = { trackId, time: Math.max(0, time) };
   };
 
   const pasteVideoClipAtTarget = () => {
@@ -796,12 +850,101 @@ function App() {
     return true;
   };
 
+  const deleteSelectedAudioClipsWithHistory = () => {
+    if (!selectedAudioClipsAreEditable) return false;
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    deleteAudioClips(selectedAudioClipIds);
+    return true;
+  };
+
+  const copySelectedAudioClips = () => {
+    if (selectedAudioClips.length === 0) return false;
+    const clips = selectedAudioClips
+      .map((clip) => ({ ...clip }))
+      .sort((a, b) => a.timelineStart - b.timelineStart || a.trackId.localeCompare(b.trackId));
+    const groupStart = Math.min(...clips.map((clip) => clip.timelineStart));
+    const groupEnd = Math.max(...clips.map((clip) => clip.timelineEnd));
+    audioClipboardRef.current = { clips, groupStart, groupEnd };
+    activeClipboardKindRef.current = "audio";
+    timelinePasteTargetRef.current = {
+      trackId: selectedAudioClip?.trackId ?? clips[0].trackId,
+      time: groupEnd,
+    };
+    return true;
+  };
+
+  const cutSelectedAudioClipsWithHistory = () => {
+    if (!selectedAudioClipsAreEditable || !copySelectedAudioClips()) return false;
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    deleteAudioClips(selectedAudioClipIds);
+    return true;
+  };
+
+  const pasteAudioClipsAtTarget = () => {
+    const clipboard = audioClipboardRef.current;
+    if (!clipboard || clipboard.clips.length === 0) return false;
+    const sourceTrackIds = [...new Set(clipboard.clips.map((clip) => clip.trackId))];
+    const fallbackTrack = sourceTrackIds[0];
+    const target = timelinePasteTargetRef.current ?? { trackId: fallbackTrack, time: clipboard.groupEnd };
+    const targetKind = timelineTrackKindFromId(target.trackId);
+    const canRetarget = sourceTrackIds.length === 1 && targetKind === "audio";
+    const targetTracks = canRetarget ? [target.trackId] : sourceTrackIds;
+    if (targetTracks.some((trackId) =>
+      timelineTrackKindFromId(trackId) !== "audio" ||
+      trackSettings[trackId]?.deleted ||
+      trackSettings[trackId]?.locked ||
+      !!trackSettings[trackId]?.linkedTrackId
+    )) return false;
+
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    clearVideoClipSelection();
+    insertAudioClipCopies(clipboard.clips, target.time, canRetarget ? target.trackId : undefined);
+    return true;
+  };
+
+  const duplicateSelectedAudioClipsWithHistory = () => {
+    if (!selectedAudioClipsAreEditable) return false;
+    const groupEnd = Math.max(...selectedAudioClips.map((clip) => clip.timelineEnd));
+    markNextChangeImmediate();
+    clearSubtitleSelection();
+    clearVideoClipSelection();
+    insertAudioClipCopies(selectedAudioClips, groupEnd);
+    return true;
+  };
+
+  const handleAudioClipSelect = (
+    id: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
+    selectAudioClip(id, mode);
+    clearVideoClipSelection();
+    clearSubtitleSelection();
+    setTimelineRange(null);
+  };
+
+  const handleAudioClipMoveStart = (id: string) => {
+    const hasMulti = selectedAudioClipIds.includes(id) && selectedAudioClipIds.length > 1;
+    if (hasMulti && !selectedAudioClipsAreEditable) return false;
+    beginHistoryTransaction();
+    beginAudioClipMove(id);
+    return true;
+  };
+
+  const handleAudioClipMoveEnd = () => {
+    endAudioClipMove();
+    window.requestAnimationFrame(() => endHistoryTransaction());
+  };
+
   const handleVideoClipSelect = (
     id: string,
     mode: "single" | "toggle" | "focus" = "single",
   ) => {
     selectVideoClip(id, mode);
     clearSubtitleSelection();
+    clearAudioClipSelection();
     setTimelineRange(null);
   };
 
@@ -811,6 +954,7 @@ function App() {
   ) => {
     selectVideoClips(ids, primaryId);
     clearSubtitleSelection();
+    clearAudioClipSelection();
     setTimelineRange(null);
   };
 
@@ -842,6 +986,16 @@ function App() {
     });
   };
 
+  const splitSelectedAudioClipAtPlayhead = () => {
+    if (!selectedAudioClipId) return false;
+    const clip = audioClips.find((item) => item.id === selectedAudioClipId);
+    if (!clip || trackSettings[clip.trackId]?.locked) return false;
+    if (currentTime <= clip.timelineStart + 0.05 || currentTime >= clip.timelineEnd - 0.05) return false;
+    markNextChangeImmediate();
+    splitAudioClip(clip.id, currentTime);
+    return true;
+  };
+
   const applySelectedTimelineRangeEdit = (mode: TimelineRangeEditMode) => {
     if (!timelineRange) {
       return false;
@@ -851,6 +1005,7 @@ function App() {
       range: timelineRange,
       mode,
       videoClips,
+      audioClips,
       subtitles,
       markers,
       trackSettings,
@@ -866,6 +1021,7 @@ function App() {
     clearSubtitleSelection();
     clearVideoClipSelection();
     replaceVideoClips(result.videoClips);
+    replaceAudioClips(result.audioClips);
     replaceSubtitles(result.subtitles);
     setMarkers(result.markers);
     setTimelineRange(null);
@@ -888,7 +1044,7 @@ function App() {
 
   const toggleTrackSetting = (
     trackId: TimelineTrackId,
-    setting: "locked" | "muted" | "hidden",
+    setting: "locked" | "muted" | "solo" | "hidden",
   ) => {
     setTrackSettings((current) => ({
       ...current,
@@ -899,98 +1055,114 @@ function App() {
     }));
   };
 
-  const handleAddTimelineTrack = (kind: TimelineTrackKind) => {
-    const id = nextTimelineTrackId(kind, trackSettings, videoClips);
+  const handleAddTimelineTrack = (kind: TimelineTrackKind | "video-audio") => {
+    markNextChangeImmediate();
 
-    setTrackSettings((current) => {
-      const next = {
+    if (kind === "video-audio") {
+      const videoId = nextTimelineTrackId("video", trackSettings, videoClips, audioClips);
+      const audioId = nextTimelineTrackId("audio", trackSettings, videoClips, audioClips);
+
+      setTrackSettings((current) => ({
         ...current,
-        [id]: defaultTrackControlState(kind),
-      };
+        [videoId]: {
+          ...defaultTrackControlState("video"),
+          linkedTrackId: audioId,
+          deleted: false,
+        },
+        [audioId]: {
+          ...defaultTrackControlState("audio"),
+          locked: true,
+          linkedTrackId: videoId,
+          deleted: false,
+        },
+      }));
+      return;
+    }
 
-      // Video tracks are always created with their linked audio partner.
-      // V3 -> A3, V4 -> A4, etc. Standalone audio tracks can still be
-      // created explicitly from the + menu when needed for music/SFX.
-      if (kind === "video") {
-        const match = /^video-(\d+)$/.exec(id);
-        if (match) {
-          const audioId = `audio-${match[1]}`;
-          if (!next[audioId] || next[audioId].deleted) {
-            next[audioId] = defaultTrackControlState("audio");
-          }
-        }
-      }
-
-      return next;
-    });
+    const id = nextTimelineTrackId(kind, trackSettings, videoClips, audioClips);
+    setTrackSettings((current) => ({
+      ...current,
+      [id]: {
+        ...defaultTrackControlState(kind),
+        linkedTrackId: null,
+        deleted: false,
+      },
+    }));
   };
 
   const handleDeleteTimelineTrack = (trackId: TimelineTrackId) => {
     const kind = timelineTrackKindFromId(trackId);
+    if (!kind) return;
 
-    if (!kind) {
+    if (kind === "subtitle" && trackId === "subtitle-1") return;
+
+    const linkedTrackId = trackSettings[trackId]?.linkedTrackId;
+
+    // The audio half of a Video + Audio pair is owned by the video track.
+    if (kind === "audio" && linkedTrackId && timelineTrackKindFromId(linkedTrackId) === "video") {
       return;
     }
 
-    // S1 is the canonical subtitle data track in the current subtitle model.
-    // Extra subtitle rows can be removed safely; S1 stays until subtitle
-    // routing is generalized to per-track subtitle data.
-    if (kind === "subtitle" && trackId === "subtitle-1") {
+    if (kind === "video") {
+      const clipCount = videoClips.filter((clip) => clip.trackId === trackId).length;
+      const hasLinkedAudio =
+        !!linkedTrackId &&
+        timelineTrackKindFromId(linkedTrackId) === "audio" &&
+        trackSettings[linkedTrackId]?.deleted !== true;
+      const label = `V${timelineTrackIndexFromId(trackId)}`;
+      const message = hasLinkedAudio
+        ? `Delete ${label} and its linked ${linkedTrackId?.replace("audio-", "A")} track?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}`
+        : `Delete ${label}?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}`;
+
+      if (!window.confirm(message)) return;
+
+      markNextChangeImmediate();
+      deleteVideoTrack(trackId);
+      setTrackSettings((current) => {
+        const next = {
+          ...current,
+          [trackId]: {
+            ...(current[trackId] ?? defaultTrackControlState("video")),
+            deleted: true,
+            linkedTrackId: null,
+          },
+        };
+
+        if (hasLinkedAudio && linkedTrackId) {
+          next[linkedTrackId] = {
+            ...(current[linkedTrackId] ?? defaultTrackControlState("audio")),
+            deleted: true,
+            linkedTrackId: null,
+          };
+        }
+        return next;
+      });
+
+      if (timelinePasteTargetRef.current?.trackId === trackId || timelinePasteTargetRef.current?.trackId === linkedTrackId) {
+        timelinePasteTargetRef.current = null;
+      }
       return;
     }
 
     if (kind === "audio") {
-      const index = timelineTrackIndexFromId(trackId);
-      const pairedVideoId = timelineTrackId("video", index);
-      const pairedVideoActive =
-        trackSettings[pairedVideoId]?.deleted !== true &&
-        (trackSettings[pairedVideoId] !== undefined ||
-          videoClips.some((clip) => clip.trackId === pairedVideoId));
-
-      // Linked A-tracks are owned by their V-track and are removed together.
-      if (pairedVideoActive) {
-        return;
-      }
-    }
-
-    if (kind === "video") {
-      const index = timelineTrackIndexFromId(trackId);
-      const pairedAudioId = timelineTrackId("audio", index);
-      const clipCount = videoClips.filter((clip) => clip.trackId === trackId).length;
-      const message =
-        clipCount > 0
-          ? `Delete V${index} and A${index}? This will remove ${clipCount} clip${clipCount === 1 ? "" : "s"} from the project.`
-          : `Delete V${index} and its linked A${index} track?`;
-
-      if (!window.confirm(message)) {
-        return;
-      }
-
+      const clipCount = audioClips.filter((clip) => clip.trackId === trackId).length;
+      const label = `A${timelineTrackIndexFromId(trackId)}`;
+      if (!window.confirm(`Delete ${label}?${clipCount ? ` This will remove ${clipCount} audio clip${clipCount === 1 ? "" : "s"}.` : ""}`)) return;
       markNextChangeImmediate();
-      deleteVideoTrack(trackId);
+      deleteAudioTrack(trackId);
       setTrackSettings((current) => ({
         ...current,
         [trackId]: {
-          ...(current[trackId] ?? defaultTrackControlState("video")),
+          ...(current[trackId] ?? defaultTrackControlState("audio")),
           deleted: true,
-        },
-        [pairedAudioId]: {
-          ...(current[pairedAudioId] ?? defaultTrackControlState("audio")),
-          deleted: true,
+          linkedTrackId: null,
         },
       }));
-
-      if (timelinePasteTargetRef.current?.trackId === trackId) {
-        timelinePasteTargetRef.current = null;
-      }
-
+      if (timelinePasteTargetRef.current?.trackId === trackId) timelinePasteTargetRef.current = null;
       return;
     }
 
-    if (!window.confirm(`Delete ${trackId.replace("-", " ")}?`)) {
-      return;
-    }
-
+    if (!window.confirm(`Delete ${trackId.replace("-", " ")}?`)) return;
     markNextChangeImmediate();
     setTrackSettings((current) => ({
       ...current,
@@ -1111,6 +1283,54 @@ function App() {
     updateVideoClipAudio(id, { volume });
   };
 
+  const handleAudioMuteChange = (id: string, muted: boolean) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    updateVideoClipAudio(id, { muted });
+  };
+
+  const handleStandaloneAudioFadeChange = (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => {
+    const clip = audioClips.find((item) => item.id === id);
+    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+      return;
+    }
+    updateAudioClip(
+      id,
+      edge === "in"
+        ? { fadeInDuration: duration }
+        : { fadeOutDuration: duration },
+    );
+  };
+
+  const handleStandaloneAudioVolumeChange = (
+    id: string,
+    volume: number,
+  ) => {
+    const clip = audioClips.find((item) => item.id === id);
+    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+      return;
+    }
+    updateAudioClip(id, { volume });
+  };
+
+  const handleStandaloneAudioMuteChange = (id: string, muted: boolean) => {
+    const clip = audioClips.find((item) => item.id === id);
+    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+      return;
+    }
+    markNextChangeImmediate();
+    updateAudioClip(id, { muted });
+  };
+
 
   const handleSubtitleTrackSelect = (
     id: string,
@@ -1120,6 +1340,7 @@ function App() {
       | "range" = "single",
   ) => {
     clearVideoClipSelection();
+    clearAudioClipSelection();
     selectSubtitle(id, mode);
   };
 
@@ -1252,6 +1473,7 @@ function App() {
     subtitles: typeof subtitles;
     markers: TimelineMarker[];
     videoClips: VideoTimelineClip[];
+    audioClips: AudioTimelineClip[];
     mediaAssets: ProjectMediaAsset[];
     trackSettings: TimelineTrackSettings;
   }) =>
@@ -1259,6 +1481,7 @@ function App() {
       subtitles: state.subtitles,
       markers: state.markers,
       videoClips: state.videoClips,
+      audioClips: state.audioClips,
       mediaAssets: state.mediaAssets,
       trackSettings: state.trackSettings,
     });
@@ -1270,6 +1493,7 @@ function App() {
     markers: TimelineMarker[];
     projectMetadata: ProjectMetadata | null;
     videoClips: VideoTimelineClip[];
+    audioClips: AudioTimelineClip[];
     mediaAssets: ProjectMediaAsset[];
     trackSettings: TimelineTrackSettings;
   }) => {
@@ -1285,6 +1509,7 @@ function App() {
           state.markers,
           state.projectMetadata ?? undefined,
           state.videoClips,
+          state.audioClips,
           state.mediaAssets,
           state.trackSettings,
         );
@@ -1323,13 +1548,14 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, mediaAssets, trackSettings });
+    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, audioClips, mediaAssets, trackSettings });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
   }, [
     subtitles,
     markers,
     videoClips,
+    audioClips,
     mediaAssets,
     trackSettings,
     videoPath,
@@ -1360,6 +1586,7 @@ function App() {
           markers,
           projectMetadata,
           videoClips,
+          audioClips,
           mediaAssets,
           trackSettings,
         });
@@ -1380,6 +1607,7 @@ function App() {
     markers,
     projectMetadata,
     videoClips,
+    audioClips,
     mediaAssets,
     trackSettings,
     hasUnsavedChanges,
@@ -1519,6 +1747,7 @@ function App() {
 
     replaceSubtitles([]);
     replaceVideoClips([]);
+    replaceAudioClips([]);
     setMarkers([]);
     setSubtitleSearch("");
     setTimelineZoom(1);
@@ -1532,6 +1761,7 @@ function App() {
       subtitles: [] as typeof subtitles,
       markers: [] as TimelineMarker[],
       videoClips: [] as VideoTimelineClip[],
+      audioClips: [] as AudioTimelineClip[],
       mediaAssets: [] as ProjectMediaAsset[],
       trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS } as TimelineTrackSettings,
     };
@@ -1547,6 +1777,7 @@ function App() {
         const loadedMarkers = matchingProject.markers;
         const loadedVideoClips =
           matchingProject.videoClips;
+        const loadedAudioClips = matchingProject.audioClips;
         const loadedMediaAssets = matchingProject.mediaAssets;
 
         resolvedMetadata = {
@@ -1561,6 +1792,7 @@ function App() {
         replaceVideoClips(loadedVideoClips, {
           markSourceInitializedFor: path,
         });
+        replaceAudioClips(loadedAudioClips);
         setMarkers(loadedMarkers);
         setMediaAssets(loadedMediaAssets);
         setTrackSettings(matchingProject.trackSettings);
@@ -1570,6 +1802,7 @@ function App() {
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
+          audioClips: loadedAudioClips,
           mediaAssets: loadedMediaAssets,
           trackSettings: matchingProject.trackSettings,
         };
@@ -1578,6 +1811,7 @@ function App() {
           subtitles: loadedSubtitles,
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
+          audioClips: loadedAudioClips,
           mediaAssets: loadedMediaAssets,
           trackSettings: matchingProject.trackSettings,
         });
@@ -1593,6 +1827,7 @@ function App() {
             subtitles: matchingSubtitles,
             markers: [],
             videoClips: [],
+            audioClips: [],
             mediaAssets: [],
             trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
           };
@@ -1601,6 +1836,7 @@ function App() {
             subtitles: matchingSubtitles,
             markers: [],
             videoClips: [],
+            audioClips: [],
             mediaAssets: [],
             trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
@@ -1609,6 +1845,7 @@ function App() {
             subtitles: [],
             markers: [],
             videoClips: [],
+            audioClips: [],
             mediaAssets: [],
             trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
@@ -1623,6 +1860,7 @@ function App() {
         subtitles: [],
         markers: [],
         videoClips: [],
+        audioClips: [],
         mediaAssets: [],
         trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
       };
@@ -1631,6 +1869,7 @@ function App() {
         subtitles: [],
         markers: [],
         videoClips: [],
+        audioClips: [],
         mediaAssets: [],
         trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
       });
@@ -1681,8 +1920,8 @@ function App() {
       directory: false,
       filters: [
         {
-          name: "Video",
-          extensions: ["mp4", "mov", "webm", "mkv"],
+          name: "Media",
+          extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"],
         },
       ],
     });
@@ -1700,11 +1939,12 @@ function App() {
         continue;
       }
 
-      const duration = await probeVideoDuration(path);
+      const kind = mediaKindFromPath(path);
+      const duration = await probeMediaDuration(path, kind);
 
       additions.push({
         id: crypto.randomUUID(),
-        kind: "video",
+        kind,
         path,
         name: getFileName(path),
         duration,
@@ -1718,21 +1958,70 @@ function App() {
     }
   };
 
+  const firstEditableStandaloneAudioTrack = () =>
+    Object.keys(trackSettings)
+      .filter((id) =>
+        timelineTrackKindFromId(id) === "audio" &&
+        trackSettings[id]?.deleted !== true &&
+        !trackSettings[id]?.locked &&
+        !trackSettings[id]?.linkedTrackId,
+      )
+      .sort((a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b))[0] ?? null;
+
+  const ensureStandaloneAudioTrack = () => {
+    const existing = firstEditableStandaloneAudioTrack();
+    if (existing) return existing;
+
+    const id = nextTimelineTrackId("audio", trackSettings, videoClips, audioClips);
+    setTrackSettings((current) => ({
+      ...current,
+      [id]: { ...defaultTrackControlState("audio"), deleted: false },
+    }));
+    return id;
+  };
+
   const insertMediaAssetOnTimeline = (
     asset: ProjectMediaAsset,
     timelineTime: number,
     trackId: TimelineTrackId,
   ) => {
-    if (asset.duration <= 0) {
+    if (asset.duration <= 0) return;
+
+    const trackKind = timelineTrackKindFromId(trackId);
+
+    if (trackKind === "video") {
+      if (asset.kind !== "video" || trackSettings[trackId]?.locked) return;
+      markNextChangeImmediate();
+      clearSubtitleSelection();
+      clearAudioClipSelection();
+      insertVideoClipFromMedia(asset, timelineTime, trackId);
       return;
     }
 
-    markNextChangeImmediate();
-    clearSubtitleSelection();
-    insertVideoClipFromMedia(asset, timelineTime, trackId);
+    if (trackKind === "audio") {
+      // A linked audio row mirrors its owning video track and does not accept
+      // independent media. Standalone audio rows accept audio files and the
+      // audio stream of imported video files.
+      if (trackSettings[trackId]?.linkedTrackId || trackSettings[trackId]?.locked) return;
+      markNextChangeImmediate();
+      clearSubtitleSelection();
+      clearVideoClipSelection();
+      insertAudioClipFromMedia(asset, timelineTime, trackId);
+    }
   };
 
   const handleInsertMediaAtPlayhead = (asset: ProjectMediaAsset) => {
+    if (asset.kind === "audio") {
+      const target =
+        (selectedAudioClip && !trackSettings[selectedAudioClip.trackId]?.linkedTrackId
+          ? selectedAudioClip.trackId
+          : null) ??
+        firstEditableStandaloneAudioTrack() ??
+        ensureStandaloneAudioTrack();
+      insertMediaAssetOnTimeline(asset, currentTime, target);
+      return;
+    }
+
     insertMediaAssetOnTimeline(
       asset,
       currentTime,
@@ -1746,11 +2035,7 @@ function App() {
     timelineTime: number,
   ) => {
     const asset = mediaAssets.find((item) => item.id === assetId);
-
-    if (!asset) {
-      return;
-    }
-
+    if (!asset) return;
     insertMediaAssetOnTimeline(asset, timelineTime, trackId);
   };
 
@@ -1795,6 +2080,7 @@ function App() {
         [],
         [],
         metadata,
+        [],
         [],
         [],
         DEFAULT_TIMELINE_TRACK_SETTINGS,
@@ -1849,6 +2135,7 @@ function App() {
                 : project.languages,
           },
           matchingProject.videoClips,
+          matchingProject.audioClips,
           matchingProject.mediaAssets,
           matchingProject.trackSettings,
         );
@@ -1905,6 +2192,7 @@ function App() {
                 : project.languages,
           },
           oldProject.videoClips,
+          oldProject.audioClips,
           oldProject.mediaAssets,
           oldProject.trackSettings,
         );
@@ -2059,6 +2347,7 @@ function App() {
         markers,
         projectMetadata,
         videoClips,
+        audioClips,
         mediaAssets,
         trackSettings,
       });
@@ -2072,7 +2361,6 @@ function App() {
         );
       }
 
-      console.log("Project saved.");
     } catch (error) {
       console.error("Failed to save project:", error);
     } finally {
@@ -2090,6 +2378,7 @@ function App() {
     mode: "single" | "toggle" | "range" = "single",
   ) => {
     clearVideoClipSelection();
+    clearAudioClipSelection();
     selectSubtitle(id, mode);
 
     if (mode === "single") {
@@ -2130,6 +2419,7 @@ function App() {
       const outputPath = await exportStyledVideo(videoPath, subtitles, {
         timelineDuration,
         videoClips,
+        audioClips,
         trackSettings,
         range,
 
@@ -2153,12 +2443,6 @@ function App() {
         setExportProgress(100);
         setExportStatus("Export complete.");
 
-        console.log(
-          isRangeExport
-            ? "Selected timeline range exported:"
-            : "Edited timeline exported:",
-          outputPath,
-        );
       }
     } catch (error) {
       console.error(
@@ -2204,20 +2488,33 @@ function App() {
         return true;
 
       case "cut":
-        return cutSelectedVideoClipWithHistory();
+        return selectedAudioClipIds.length > 0
+          ? cutSelectedAudioClipsWithHistory()
+          : cutSelectedVideoClipWithHistory();
 
       case "copy":
-        return copySelectedVideoClip();
+        return selectedAudioClipIds.length > 0
+          ? copySelectedAudioClips()
+          : copySelectedVideoClip();
 
       case "paste":
-        return pasteVideoClipAtTarget();
+        return activeClipboardKindRef.current === "audio"
+          ? pasteAudioClipsAtTarget()
+          : pasteVideoClipAtTarget();
 
       case "duplicate":
-        return duplicateSelectedVideoClipWithHistory();
+        return selectedAudioClipIds.length > 0
+          ? duplicateSelectedAudioClipsWithHistory()
+          : duplicateSelectedVideoClipWithHistory();
 
       case "select-all":
-        if (selectedVideoClipIds.length > 0) {
+        if (selectedAudioClipIds.length > 0) {
+          selectAudioClips(audioClips.map((clip) => clip.id), selectedAudioClipId);
+          clearVideoClipSelection();
+          clearSubtitleSelection();
+        } else if (selectedVideoClipIds.length > 0) {
           selectVideoClips(videoClips.map((clip) => clip.id), selectedVideoClipId);
+          clearAudioClipSelection();
           clearSubtitleSelection();
         } else {
           selectAllSubtitles();
@@ -2348,7 +2645,7 @@ function App() {
 
       case "edit.split-subtitle":
         if (screen === "editor") {
-          if (!splitSelectedVideoClipAtPlayhead()) {
+          if (!splitSelectedAudioClipAtPlayhead() && !splitSelectedVideoClipAtPlayhead()) {
             splitSelectedSubtitleAtPlayhead();
           }
         }
@@ -2374,7 +2671,7 @@ function App() {
 
       case "edit.delete-subtitle":
         if (screen === "editor") {
-          if (!deleteSelectedVideoClipWithHistory()) {
+          if (!deleteSelectedAudioClipsWithHistory() && !deleteSelectedVideoClipWithHistory()) {
             deleteSelectionWithHistory();
           }
         }
@@ -2611,6 +2908,12 @@ function App() {
           return;
         }
 
+        if (selectedAudioClipIds.length > 0) {
+          event.preventDefault();
+          deleteSelectedAudioClipsWithHistory();
+          return;
+        }
+
         if (selectedVideoClipIds.length > 0) {
           event.preventDefault();
           deleteSelectedVideoClipWithHistory();
@@ -2652,7 +2955,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0) {
+        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("cut", event.target);
         }
@@ -2665,7 +2968,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0) {
+        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("copy", event.target);
         }
@@ -2678,7 +2981,7 @@ function App() {
           return;
         }
 
-        if (videoClipboardRef.current) {
+        if (videoClipboardRef.current || audioClipboardRef.current) {
           event.preventDefault();
           void executeEditorEditCommand("paste", event.target);
         }
@@ -2691,7 +2994,7 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0) {
+        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
           event.preventDefault();
           void executeEditorEditCommand("duplicate", event.target);
         }
@@ -2729,7 +3032,7 @@ function App() {
 
         event.preventDefault();
 
-        if (!splitSelectedVideoClipAtPlayhead()) {
+        if (!splitSelectedAudioClipAtPlayhead() && !splitSelectedVideoClipAtPlayhead()) {
           splitSelectedSubtitleAtPlayhead();
         }
       }
@@ -2873,6 +3176,7 @@ function App() {
             onTimeChange={setCurrentTime}
             seekRequest={seekRequest}
             videoClips={videoClips}
+            audioClips={audioClips}
             timelineDuration={timelineDuration}
             trackSettings={trackSettings}
             selectedVideoClipId={selectedVideoClipId}
@@ -2913,6 +3217,7 @@ function App() {
         currentTime={currentTime}
         waveformsBySource={waveformsBySource}
         videoClips={videoClips}
+        audioClips={audioClips}
         subtitles={subtitles}
         markers={markers}
         zoom={timelineZoom}
@@ -2923,6 +3228,8 @@ function App() {
         selectedSubtitleIds={selectedSubtitleIds}
         selectedVideoClipId={selectedVideoClipId}
         selectedVideoClipIds={selectedVideoClipIds}
+        selectedAudioClipId={selectedAudioClipId}
+        selectedAudioClipIds={selectedAudioClipIds}
         onAddTrack={handleAddTimelineTrack}
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
@@ -2941,6 +3248,7 @@ function App() {
         onClearSubtitleSelection={() => {
           clearSubtitleSelection();
           clearVideoClipSelection();
+          clearAudioClipSelection();
         }}
         onVideoClipSelect={handleVideoClipSelect}
         onVideoClipSelectionChange={handleVideoClipSelectionChange}
@@ -2948,13 +3256,22 @@ function App() {
         onVideoClipMoveEnd={handleVideoClipMoveEnd}
         onVideoClipMove={moveVideoClip}
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
-        onMediaDrop={handleMediaDropOnTimeline}
         onVideoClipResize={resizeVideoClip}
         onVideoTransitionChange={handleVideoTransitionChange}
         onVideoFadeChange={handleVideoFadeChange}
         onAudioFadeChange={handleAudioFadeChange}
         onAudioVolumeChange={handleAudioVolumeChange}
+        onAudioMuteChange={handleAudioMuteChange}
         onCopyVideoClip={copySelectedVideoClip}
+        onAudioClipSelect={handleAudioClipSelect}
+        onAudioClipMoveStart={handleAudioClipMoveStart}
+        onAudioClipMoveEnd={handleAudioClipMoveEnd}
+        onAudioClipMove={moveAudioClip}
+        onAudioClipMoveToTrack={moveAudioClipToTrack}
+        onAudioClipResize={resizeAudioClip}
+        onStandaloneAudioFadeChange={handleStandaloneAudioFadeChange}
+        onStandaloneAudioVolumeChange={handleStandaloneAudioVolumeChange}
+        onStandaloneAudioMuteChange={handleStandaloneAudioMuteChange}
         onSubtitleSelect={handleSubtitleTrackSelect}
         onSubtitleMove={moveSubtitle}
         onSubtitleGroupMove={moveSubtitleGroup}
@@ -2963,6 +3280,7 @@ function App() {
         onZoomChange={setTimelineZoom}
         onToggleTrackLock={(trackId) => toggleTrackSetting(trackId, "locked")}
         onToggleTrackMute={(trackId) => toggleTrackSetting(trackId, "muted")}
+        onToggleTrackSolo={(trackId) => toggleTrackSetting(trackId, "solo")}
         onToggleTrackHidden={(trackId) => toggleTrackSetting(trackId, "hidden")}
         onSkimPreviewChange={handleSkimPreviewChange}
         onSeek={requestSeek}

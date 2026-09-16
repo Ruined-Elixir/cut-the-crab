@@ -1,6 +1,5 @@
 import {
   useState,
-  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -11,7 +10,6 @@ import type {
   VideoTransitionType,
 } from "../../types/timelineModel";
 import type { VideoClipFrames } from "../../hooks/useVideoClipFrames";
-import { getActiveMediaDrag } from "../../utils/mediaDrag";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -42,11 +40,6 @@ type VideoTrackProps = {
     id: string,
     targetTrackId: TimelineTrackId,
     newTimelineStart: number,
-  ) => void;
-  onMediaDrop?: (
-    assetId: string,
-    targetTrackId: TimelineTrackId,
-    timelineTime: number,
   ) => void;
   onResize?: (
     id: string,
@@ -110,7 +103,6 @@ function VideoTrack({
   onMoveEnd,
   onMove,
   onMoveToTrack,
-  onMediaDrop,
   onResize,
   onToggleLock,
   onToggleHidden,
@@ -123,10 +115,6 @@ function VideoTrack({
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
     useState<string | null>(null);
-  const [mediaDropPreview, setMediaDropPreview] = useState<{
-    timelineStart: number;
-    duration: number;
-  } | null>(null);
   const [fadeDrag, setFadeDrag] = useState<{
     clipId: string;
     edge: "in" | "out";
@@ -469,60 +457,6 @@ function VideoTrack({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  const handleMediaDragOver = (
-    event: ReactDragEvent<HTMLDivElement>,
-  ) => {
-    const payload = getActiveMediaDrag();
-
-    if (!payload || payload.duration <= 0 || track.locked) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-
-    setMediaDropPreview({
-      timelineStart: timeFromClientX(event.clientX, event.currentTarget),
-      duration: payload.duration,
-    });
-  };
-
-  const handleMediaDragLeave = (
-    event: ReactDragEvent<HTMLDivElement>,
-  ) => {
-    const related = event.relatedTarget;
-
-    if (
-      related instanceof Node &&
-      event.currentTarget.contains(related)
-    ) {
-      return;
-    }
-
-    setMediaDropPreview(null);
-  };
-
-  const handleMediaDrop = (
-    event: ReactDragEvent<HTMLDivElement>,
-  ) => {
-    const payload = getActiveMediaDrag();
-
-    if (!payload || track.locked) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const timelineTime = timeFromClientX(
-      event.clientX,
-      event.currentTarget,
-    );
-
-    setMediaDropPreview(null);
-    onMediaDrop?.(payload.assetId, track.id, timelineTime);
-  };
-
   const startTransitionResize = (
     event: ReactMouseEvent<HTMLButtonElement>,
     clip: VideoTimelineClip,
@@ -604,31 +538,13 @@ function VideoTrack({
           "video-track",
           track.locked ? "locked" : "",
           track.hidden ? "track-hidden" : "",
-          mediaDropPreview ? "media-drag-target" : "",
         ]
           .filter(Boolean)
           .join(" ")}
         data-video-track-id={track.id}
         data-track-locked={track.locked ? "true" : "false"}
         onClick={handleTrackClick}
-        onDragOver={handleMediaDragOver}
-        onDragLeave={handleMediaDragLeave}
-        onDrop={handleMediaDrop}
       >
-        {mediaDropPreview && duration > 0 && (
-          <div
-            className="timeline-drop-preview"
-            style={{
-              left: `${(mediaDropPreview.timelineStart / duration) * 100}%`,
-              width: `${Math.max(
-                0.6,
-                (mediaDropPreview.duration / duration) * 100,
-              )}%`,
-            }}
-            aria-hidden="true"
-          />
-        )}
-
         {videoClips.map((clip) => {
           const left =
             duration > 0

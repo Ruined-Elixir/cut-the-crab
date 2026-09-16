@@ -3,11 +3,14 @@ type TimelineTrackLabelProps = {
   name: string;
   locked?: boolean;
   muted?: boolean;
+  solo?: boolean;
   hidden?: boolean;
   canMute?: boolean;
+  canSolo?: boolean;
   canHide?: boolean;
   onToggleLock?: () => void;
   onToggleMute?: () => void;
+  onToggleSolo?: () => void;
   onToggleHidden?: () => void;
   onDelete?: () => void;
 };
@@ -17,11 +20,14 @@ function TimelineTrackLabel({
   name,
   locked = false,
   muted = false,
+  solo = false,
   hidden = false,
   canMute = false,
+  canSolo = false,
   canHide = false,
   onToggleLock,
   onToggleMute,
+  onToggleSolo,
   onToggleHidden,
   onDelete,
 }: TimelineTrackLabelProps) {
@@ -57,7 +63,21 @@ function TimelineTrackLabel({
             aria-label={muted ? `Unmute ${shortLabel}` : `Mute ${shortLabel}`}
             title={muted ? "Unmute track" : "Mute track"}
           >
-            {muted ? "M" : "S"}
+            M
+          </button>
+        )}
+
+        {canSolo && (
+          <button
+            type="button"
+            className={["timeline-track-control", solo ? "active" : ""]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={onToggleSolo}
+            aria-label={solo ? `Unsolo ${shortLabel}` : `Solo ${shortLabel}`}
+            title={solo ? "Unsolo track" : "Solo track"}
+          >
+            S
           </button>
         )}
 

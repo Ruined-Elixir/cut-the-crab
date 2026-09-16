@@ -95,13 +95,17 @@ export type TimelineTrack = {
   shortLabel: string;
   locked: boolean;
   muted?: boolean;
+  solo?: boolean;
   hidden?: boolean;
   clips: TimelineClip[];
 };
 
 export type TimelineTrackControlState = {
   locked: boolean;
+  /** Explicit link between a video track and its paired audio track. */
+  linkedTrackId?: TimelineTrackId | null;
   muted?: boolean;
+  solo?: boolean;
   hidden?: boolean;
   /** Persisted tombstone used when the user deletes a timeline track. */
   deleted?: boolean;
@@ -110,9 +114,9 @@ export type TimelineTrackControlState = {
 export type TimelineTrackSettings = Record<string, TimelineTrackControlState>;
 
 export const DEFAULT_TIMELINE_TRACK_SETTINGS: TimelineTrackSettings = {
-  "video-2": { locked: false, hidden: false },
-  "video-1": { locked: false, hidden: false },
+  "video-2": { locked: false, hidden: false, linkedTrackId: "audio-2" },
+  "video-1": { locked: false, hidden: false, linkedTrackId: "audio-1" },
   "subtitle-1": { locked: false, hidden: false },
-  "audio-1": { locked: true, muted: false },
-  "audio-2": { locked: true, muted: false },
+  "audio-1": { locked: true, muted: false, solo: false, linkedTrackId: "video-1" },
+  "audio-2": { locked: true, muted: false, solo: false, linkedTrackId: "video-2" },
 };

@@ -9,6 +9,7 @@ import {
 import type { Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
 import type {
+  AudioTimelineClip,
   TimelineTrack as TimelineTrackModel,
   TimelineTrackId,
   TimelineTrackKind,
@@ -35,6 +36,7 @@ type TimelineProps = {
   currentTime: number;
   waveformsBySource: Record<string, number[]>;
   videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   zoom: number;
@@ -46,10 +48,12 @@ type TimelineProps = {
   selectedSubtitleIds: string[];
   selectedVideoClipId: string | null;
   selectedVideoClipIds: string[];
+  selectedAudioClipId: string | null;
+  selectedAudioClipIds: string[];
 
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
-  onAddTrack?: (kind: TimelineTrackKind) => void;
+  onAddTrack?: (kind: TimelineTrackKind | "video-audio") => void;
   onDeleteTrack?: (trackId: TimelineTrackId) => void;
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   onClearSubtitleSelection?: () => void;
@@ -78,12 +82,21 @@ type TimelineProps = {
     targetTrackId: TimelineTrackId,
     newTimelineStart: number,
   ) => void;
-  onMediaDrop?: (
-    assetId: string,
-    targetTrackId: TimelineTrackId,
-    timelineTime: number,
-  ) => void;
   onCopyVideoClip?: () => void;
+
+  onAudioClipSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
+  onAudioClipMoveStart?: (id: string) => boolean | void;
+  onAudioClipMoveEnd?: () => void;
+  onAudioClipMove?: (id: string, newTimelineStart: number) => void;
+  onAudioClipMoveToTrack?: (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    newTimelineStart: number,
+  ) => void;
+  onAudioClipResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
+  onStandaloneAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onStandaloneAudioVolumeChange?: (id: string, volume: number) => void;
+  onStandaloneAudioMuteChange?: (id: string, muted: boolean) => void;
 
   onSubtitleSelect?: (
     id: string,
@@ -104,6 +117,7 @@ type TimelineProps = {
   onZoomChange?: (zoom: number) => void;
   onToggleTrackLock?: (trackId: TimelineTrackId) => void;
   onToggleTrackMute?: (trackId: TimelineTrackId) => void;
+  onToggleTrackSolo?: (trackId: TimelineTrackId) => void;
   onToggleTrackHidden?: (trackId: TimelineTrackId) => void;
   onVideoTransitionChange?: (
     id: string,
@@ -113,6 +127,7 @@ type TimelineProps = {
   onVideoFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
   onAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
   onAudioVolumeChange?: (id: string, volume: number) => void;
+  onAudioMuteChange?: (id: string, muted: boolean) => void;
 };
 
 export const MIN_TIMELINE_ZOOM = 0.05;
@@ -149,6 +164,7 @@ function Timeline({
   currentTime,
   waveformsBySource,
   videoClips,
+  audioClips,
   subtitles,
   markers,
   zoom,
@@ -159,6 +175,8 @@ function Timeline({
   selectedSubtitleIds,
   selectedVideoClipId,
   selectedVideoClipIds,
+  selectedAudioClipId,
+  selectedAudioClipIds,
   onSeek,
   onSkimPreviewChange,
   onAddTrack,
@@ -178,8 +196,16 @@ function Timeline({
   onVideoClipMove,
   onVideoClipResize,
   onVideoClipMoveToTrack,
-  onMediaDrop,
   onCopyVideoClip,
+  onAudioClipSelect,
+  onAudioClipMoveStart,
+  onAudioClipMoveEnd,
+  onAudioClipMove,
+  onAudioClipMoveToTrack,
+  onAudioClipResize,
+  onStandaloneAudioFadeChange,
+  onStandaloneAudioVolumeChange,
+  onStandaloneAudioMuteChange,
   onSubtitleSelect,
   onSubtitleMove,
   onSubtitleGroupMove,
@@ -188,11 +214,13 @@ function Timeline({
   onZoomChange,
   onToggleTrackLock,
   onToggleTrackMute,
+  onToggleTrackSolo,
   onToggleTrackHidden,
   onVideoTransitionChange,
   onVideoFadeChange,
   onAudioFadeChange,
   onAudioVolumeChange,
+  onAudioMuteChange,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const skimmerRef = useRef<HTMLDivElement | null>(null);
@@ -338,12 +366,14 @@ function Timeline({
       buildTimelineModel({
         duration: workspaceDuration,
         videoClips,
+        audioClips,
         subtitles,
         trackSettings,
       }),
     [
       workspaceDuration,
       videoClips,
+      audioClips,
       subtitles,
       trackSettings,
     ],
@@ -930,7 +960,6 @@ function Timeline({
             onMoveEnd={onVideoClipMoveEnd}
             onMove={onVideoClipMove}
             onMoveToTrack={onVideoClipMoveToTrack}
-            onMediaDrop={onMediaDrop}
             onResize={onVideoClipResize}
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
@@ -972,11 +1001,25 @@ function Timeline({
             track={track}
             waveformsBySource={waveformsBySource}
             selectedVideoClipIds={selectedVideoClipIds}
+            selectedAudioClipId={selectedAudioClipId}
+            selectedAudioClipIds={selectedAudioClipIds}
+            linkedTrackId={trackSettings[track.id]?.linkedTrackId}
             showLabel={false}
             onSeek={onSeek}
+            onPasteTargetChange={onPasteTargetChange}
             onToggleMute={onToggleTrackMute}
-            onFadeChange={onAudioFadeChange}
-            onVolumeChange={onAudioVolumeChange}
+            onSelect={onAudioClipSelect}
+            onMoveStart={onAudioClipMoveStart}
+            onMoveEnd={onAudioClipMoveEnd}
+            onMove={onAudioClipMove}
+            onMoveToTrack={onAudioClipMoveToTrack}
+            onResize={onAudioClipResize}
+            onLinkedFadeChange={onAudioFadeChange}
+            onLinkedVolumeChange={onAudioVolumeChange}
+            onLinkedMuteChange={onAudioMuteChange}
+            onStandaloneFadeChange={onStandaloneAudioFadeChange}
+            onStandaloneVolumeChange={onStandaloneAudioVolumeChange}
+            onStandaloneMuteChange={onStandaloneAudioMuteChange}
           />
         );
 
@@ -1008,16 +1051,12 @@ function Timeline({
         : track.kind === "subtitle"
           ? "timeline-subtitle-row"
           : "timeline-waveform-row";
-    const hasPairedVideoTrack =
-      track.kind === "audio" &&
-      timelineTracks.some(
-        (candidate) =>
-          candidate.kind === "video" && candidate.index === track.index,
-      );
+    const linkedTrackId = trackSettings[track.id]?.linkedTrackId;
+    const isLinkedAudioTrack = track.kind === "audio" && !!linkedTrackId;
     const canDeleteTrack =
       track.kind === "video" ||
       (track.kind === "subtitle" && track.index > 1) ||
-      (track.kind === "audio" && !hasPairedVideoTrack);
+      (track.kind === "audio" && !isLinkedAudioTrack);
 
     return (
       <div key={`label-${track.id}`} className={`timeline-fixed-label-row ${rowClass}`}>
@@ -1026,17 +1065,24 @@ function Timeline({
           name={track.name}
           locked={track.locked}
           muted={track.muted}
+          solo={track.solo}
           hidden={track.hidden}
           canMute={track.kind === "audio"}
+          canSolo={track.kind === "audio"}
           canHide={track.kind !== "audio"}
           onToggleLock={
-            track.kind !== "audio"
+            track.kind !== "audio" || !isLinkedAudioTrack
               ? () => onToggleTrackLock?.(track.id)
               : undefined
           }
           onToggleMute={
             track.kind === "audio"
               ? () => onToggleTrackMute?.(track.id)
+              : undefined
+          }
+          onToggleSolo={
+            track.kind === "audio"
+              ? () => onToggleTrackSolo?.(track.id)
               : undefined
           }
           onToggleHidden={
@@ -1081,21 +1127,25 @@ function Timeline({
               {addTrackMenuOpen && (
                 <div className="timeline-add-track-menu" role="menu">
                   {[
-                    ["video", "Add Video Track", "V"],
-                    ["audio", "Add Audio Track", "A"],
-                    ["subtitle", "Add Subtitle Track", "S"],
-                  ].map(([kind, label, badge]) => (
+                    ["video-audio", "Video + Audio", "Linked picture and sound", "V+A"],
+                    ["video", "Video", "Visual-only track", "V"],
+                    ["audio", "Audio", "Independent audio track", "A"],
+                    ["subtitle", "Subtitle", "Text / caption track", "S"],
+                  ].map(([kind, label, description, badge]) => (
                     <button
                       key={kind}
                       type="button"
                       role="menuitem"
                       onClick={() => {
-                        onAddTrack?.(kind as TimelineTrackKind);
+                        onAddTrack?.(kind as TimelineTrackKind | "video-audio");
                         setAddTrackMenuOpen(false);
                       }}
                     >
                       <span className={`timeline-add-track-badge ${kind}`}>{badge}</span>
-                      <span>{label}</span>
+                      <span className="timeline-add-track-copy">
+                        <strong>{label}</strong>
+                        <small>{description}</small>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1103,7 +1153,7 @@ function Timeline({
             </div>
           </div>
           <span className="timeline-help">
-            Dynamic video, subtitle, and audio tracks · drag media or clips between video tracks · R toggles Ripple
+            Video + Audio, video-only, independent audio, and subtitle tracks · R toggles Ripple
           </span>
         </div>
 
