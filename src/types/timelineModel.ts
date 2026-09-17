@@ -85,6 +85,13 @@ export type VideoTimelineClip = TimelineClipBase & {
    */
   rippleAutoHealInBoundaryId?: string;
   rippleAutoHealOutBoundaryId?: string;
+  /** Compound-clip membership. The anchor video is the collapsed timeline proxy. */
+  compoundId?: string;
+  compoundName?: string;
+  compoundAnchor?: boolean;
+  /** Runtime-only collapsed timeline representation. Never persisted. */
+  compoundDisplay?: boolean;
+  compoundMemberCount?: number;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {
@@ -107,6 +114,7 @@ export type AudioTimelineClip = TimelineClipBase & {
   muted?: boolean;
   fadeInDuration?: number;
   fadeOutDuration?: number;
+  compoundId?: string;
 };
 
 export type TimelineClip =

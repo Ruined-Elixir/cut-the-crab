@@ -231,7 +231,7 @@ export function buildTimelineModel({
 
     const linked = linkedVideoTrackId
       ? videoClips
-          .filter((clip) => clip.trackId === linkedVideoTrackId)
+          .filter((clip) => clip.trackId === linkedVideoTrackId && !clip.compoundDisplay)
           .map((clip) => linkedAudioClip(clip, id))
       : [];
     const standalone = audioClips.filter((clip) => clip.trackId === id);

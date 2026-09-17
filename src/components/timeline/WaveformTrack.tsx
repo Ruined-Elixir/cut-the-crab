@@ -16,6 +16,7 @@ import {
   showNativeContextMenu,
 } from "../../services/nativeContextMenu";
 import { videoPlaybackRate } from "../../utils/videoRetime";
+import type { CompoundTrackRegion } from "../../utils/compoundClips";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -47,6 +48,14 @@ type WaveformTrackProps = {
   onStandaloneVolumeChange?: (id: string, volume: number) => void;
   onStandaloneMuteChange?: (id: string, muted: boolean) => void;
   onRevealClip?: (clip: AudioTimelineClip) => void;
+  compoundRegions?: CompoundTrackRegion[];
+  selectedCompoundIds?: string[];
+  onCompoundSelect?: (compoundId: string, mode?: "single" | "toggle" | "focus") => void;
+  onCompoundOpen?: (compoundId: string) => void;
+  onCompoundMoveStart?: (compoundId: string) => boolean | void;
+  onCompoundMove?: (compoundId: string, newTimelineStart: number) => void;
+  onCompoundMoveEnd?: () => void;
+  expandedCompoundId?: string | null;
   showLabel?: boolean;
 };
 
@@ -197,10 +206,19 @@ function WaveformTrack({
   onStandaloneVolumeChange,
   onStandaloneMuteChange,
   onRevealClip,
+  compoundRegions = [],
+  selectedCompoundIds = [],
+  onCompoundSelect,
+  onCompoundOpen,
+  onCompoundMoveStart,
+  onCompoundMove,
+  onCompoundMoveEnd,
+  expandedCompoundId = null,
   showLabel = true,
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
+  const [draggingCompoundId, setDraggingCompoundId] = useState<string | null>(null);
   const [fadeDrag, setFadeDrag] = useState<{
     clipId: string;
     edge: "in" | "out";
@@ -260,7 +278,10 @@ function WaveformTrack({
   };
 
   const handleTrackClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (duration <= 0 || (event.target as HTMLElement).closest(".audio-clip-label")) return;
+    if (
+      duration <= 0 ||
+      (event.target as HTMLElement).closest(".audio-clip-label, .timeline-compound-track-region")
+    ) return;
     const time = timeFromClientX(event.clientX, event.currentTarget);
     onPasteTargetChange?.(track.id, time);
     onSeek?.(time);
@@ -280,7 +301,7 @@ function WaveformTrack({
 
     event.preventDefault();
     event.stopPropagation();
-    if (event.shiftKey) {
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
       onSelect?.(clip.id, "toggle");
       return;
     }
@@ -337,6 +358,60 @@ function WaveformTrack({
       }
       clearExternalAudioTrackPreview();
       onMoveEnd?.();
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const startCompoundMove = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    region: CompoundTrackRegion,
+  ) => {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      onCompoundSelect?.(region.compoundId, "toggle");
+      return;
+    }
+
+    if (selectedCompoundIds.includes(region.compoundId)) {
+      onCompoundSelect?.(region.compoundId, "focus");
+    } else {
+      onCompoundSelect?.(region.compoundId, "single");
+    }
+
+    const trackElement = event.currentTarget.parentElement;
+    if (
+      !trackElement ||
+      duration <= 0 ||
+      onCompoundMoveStart?.(region.compoundId) === false
+    ) {
+      return;
+    }
+
+    setDraggingCompoundId(region.compoundId);
+    const startX = event.clientX;
+    const originalStart = region.start;
+    const width = trackElement.getBoundingClientRect().width;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaTime =
+        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      onCompoundMove?.(
+        region.compoundId,
+        Math.max(0, originalStart + deltaTime),
+      );
+    };
+
+    const handleMouseUp = () => {
+      setDraggingCompoundId(null);
+      onCompoundMoveEnd?.();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -486,6 +561,52 @@ function WaveformTrack({
       >
         <canvas ref={canvasRef} className="waveform-canvas" />
 
+        {compoundRegions.map((region) => {
+          const selected = selectedCompoundIds.includes(region.compoundId);
+          const dragging = draggingCompoundId === region.compoundId;
+          return (
+            <div
+              key={`${region.compoundId}:${track.id}:audio-region`}
+              className={[
+                "timeline-compound-track-region",
+                "audio",
+                selected ? "selected" : "",
+                dragging ? "dragging" : "",
+              ].filter(Boolean).join(" ")}
+              style={{
+                left: `${duration > 0 ? (region.start / duration) * 100 : 0}%`,
+                width: `${duration > 0 ? ((region.end - region.start) / duration) * 100 : 0}%`,
+              }}
+              data-compound-id={region.compoundId}
+              title={`${region.name} · Compound Audio · ${region.memberCount} ${region.memberCount === 1 ? "item" : "items"} · double-click to open`}
+              onMouseDown={(event) => startCompoundMove(event, region)}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onCompoundOpen?.(region.compoundId);
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onPasteTargetChange?.(track.id, region.start);
+              }}
+            >
+              <span className="timeline-compound-track-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path d="M4.5 7.2 10 4l5.5 3.2L10 10.4 4.5 7.2Z" />
+                  <path d="m4.5 10.1 5.5 3.2 5.5-3.2" />
+                  <path d="m4.5 13 5.5 3.2 5.5-3.2" />
+                </svg>
+              </span>
+              <span className="timeline-compound-track-copy">
+                <strong>{region.name}</strong>
+                <small>Compound Audio · {region.memberCount}</small>
+              </span>
+              <span className="timeline-compound-track-badge">CMPD</span>
+            </div>
+          );
+        })}
+
         {audioClips.map((clip) => {
           const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
           const fadeInDuration = Math.max(0, Math.min(clipDuration, clip.fadeInDuration ?? 0));
@@ -504,6 +625,8 @@ function WaveformTrack({
             : !!(onStandaloneVolumeChange || onStandaloneFadeChange);
           const activeFadeDrag = fadeDrag?.clipId === clip.id ? fadeDrag : null;
           const activeVolumeDrag = volumeDrag?.clipId === clip.id ? volumeDrag : null;
+          const isExpandedCompoundMember =
+            !!expandedCompoundId && clip.compoundId === expandedCompoundId;
 
           return (
             <span
@@ -514,6 +637,7 @@ function WaveformTrack({
                 linkedSelected || standaloneSelected ? "selected" : "",
                 primarySelected ? "primary-selected" : "",
                 dragging ? "dragging" : "",
+                isExpandedCompoundMember ? "compound-member" : "",
               ].filter(Boolean).join(" ")}
               style={{
                 left: `${duration > 0 ? (clip.timelineStart / duration) * 100 : 0}%`,
@@ -563,7 +687,12 @@ function WaveformTrack({
               onMouseDown={(event) => startMove(event, clip)}
               onClick={(event) => {
                 event.stopPropagation();
-                if (!clip.linkedVideoClipId && !event.shiftKey) onSelect?.(clip.id, "focus");
+                if (
+                  !clip.linkedVideoClipId &&
+                  !event.shiftKey &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) onSelect?.(clip.id, "focus");
                 onPasteTargetChange?.(track.id, clip.timelineStart);
                 onSeek?.(Math.max(clip.timelineStart, Math.min(clip.timelineEnd, timeFromClientX(event.clientX, event.currentTarget.parentElement ?? event.currentTarget))));
               }}

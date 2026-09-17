@@ -23,7 +23,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 19;
+export const CURRENT_PROJECT_VERSION = 20;
 
 export type SubtitleProject = {
   version: number;
@@ -204,6 +204,7 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
     text,
     positionX: asOptionalNumber(value.positionX),
     positionY: asOptionalNumber(value.positionY),
+    compoundId: asOptionalString(value.compoundId),
     fontSize: asOptionalNumber(value.fontSize),
     fontFamily: asOptionalString(value.fontFamily),
     color: asOptionalString(value.color),
@@ -344,6 +345,9 @@ function normalizeVideoClip(
     ),
     rippleAutoHealInBoundaryId: asOptionalString(value.rippleAutoHealInBoundaryId),
     rippleAutoHealOutBoundaryId: asOptionalString(value.rippleAutoHealOutBoundaryId),
+    compoundId: asOptionalString(value.compoundId),
+    compoundName: asOptionalString(value.compoundName),
+    compoundAnchor: asOptionalBoolean(value.compoundAnchor),
     timelineStart,
     timelineEnd,
   };
@@ -380,6 +384,7 @@ function normalizeAudioClip(
     muted: value.muted === true,
     fadeInDuration: Math.max(0, Math.min(duration, asNumber(value.fadeInDuration, 0))),
     fadeOutDuration: Math.max(0, Math.min(duration, asNumber(value.fadeOutDuration, 0))),
+    compoundId: asOptionalString(value.compoundId),
     timelineStart,
     timelineEnd,
   };

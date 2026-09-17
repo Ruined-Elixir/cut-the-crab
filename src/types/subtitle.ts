@@ -31,6 +31,9 @@ export type Subtitle = SubtitleStyle & {
 
   positionX?: number;
   positionY?: number;
+
+  /** Optional compound-clip membership. */
+  compoundId?: string;
 };
 
 export function getSubtitleTrackId(subtitle: Pick<Subtitle, "trackId">) {

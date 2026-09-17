@@ -24,6 +24,10 @@ import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
 import { buildTimelineModel } from "../../utils/timelineModel";
 import type { TimelineRange } from "../../utils/timelineRangeEdits";
 import { videoPlaybackRate } from "../../utils/videoRetime";
+import {
+  collapsedCompoundTrackRegions,
+  collapsedTimelineMedia,
+} from "../../utils/compoundClips";
 
 import SubtitleTrack from "./SubtitleTrack";
 import TimelineRuler from "./TimelineRuler";
@@ -90,11 +94,13 @@ type TimelineProps = {
     id: string,
     newTimelineStart: number,
   ) => void;
+  onVideoClipResizeStart?: (id: string) => boolean | void;
   onVideoClipResize?: (
     id: string,
     newTimelineStart: number,
     newTimelineEnd: number,
   ) => void;
+  onVideoClipResizeEnd?: () => void;
   onVideoPlaybackRateChange?: (id: string, playbackRate: number) => void;
   onToggleVideoReverse?: (id: string) => void;
   onInsertFreezeFrame?: (id: string) => void;
@@ -155,6 +161,12 @@ type TimelineProps = {
   onAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
   onAudioVolumeChange?: (id: string, volume: number) => void;
   onAudioMuteChange?: (id: string, muted: boolean) => void;
+
+  expandedCompoundId?: string | null;
+  onCreateCompound?: () => void;
+  onBreakApartCompound?: (compoundId: string) => void;
+  onOpenCompound?: (compoundId: string) => void;
+  onCloseCompound?: () => void;
 };
 
 export const MIN_TIMELINE_ZOOM = 0.05;
@@ -222,7 +234,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   onVideoClipMoveStart,
   onVideoClipMoveEnd,
   onVideoClipMove,
+  onVideoClipResizeStart,
   onVideoClipResize,
+  onVideoClipResizeEnd,
   onVideoPlaybackRateChange,
   onToggleVideoReverse,
   onInsertFreezeFrame,
@@ -254,6 +268,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   onAudioFadeChange,
   onAudioVolumeChange,
   onAudioMuteChange,
+  expandedCompoundId = null,
+  onCreateCompound,
+  onBreakApartCompound,
+  onOpenCompound,
+  onCloseCompound,
 }: TimelineProps, ref) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -365,8 +384,46 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       ? (timelineScrollLeft + timelineViewportWidth) / pixelsPerSecond
       : workspaceDuration;
 
+  const compoundDisplay = useMemo(
+    () => collapsedTimelineMedia(videoClips, audioClips, subtitles, expandedCompoundId),
+    [audioClips, expandedCompoundId, subtitles, videoClips],
+  );
+  const displayVideoClips = compoundDisplay.videoClips;
+  const displayAudioClips = compoundDisplay.audioClips;
+  const displaySubtitles = compoundDisplay.subtitles;
+  const expandedCompoundGroup = expandedCompoundId
+    ? compoundDisplay.groups.get(expandedCompoundId) ?? null
+    : null;
+  const compoundTrackRegions = useMemo(
+    () =>
+      collapsedCompoundTrackRegions(
+        videoClips,
+        audioClips,
+        subtitles,
+        trackSettings,
+        expandedCompoundId,
+      ),
+    [audioClips, expandedCompoundId, subtitles, trackSettings, videoClips],
+  );
+  const selectedCollapsedCompoundIds = useMemo(
+    () =>
+      [...compoundDisplay.groups.values()]
+        .filter(
+          (group) =>
+            group.id !== expandedCompoundId &&
+            selectedVideoClipIds.includes(group.anchorVideoId),
+        )
+        .map((group) => group.id),
+    [compoundDisplay.groups, expandedCompoundId, selectedVideoClipIds],
+  );
+
+  const filmstripVideoClips = useMemo(
+    () => displayVideoClips.filter((clip) => !clip.compoundDisplay),
+    [displayVideoClips],
+  );
+
   const framesByClipId = useVideoClipFrames(
-    videoClips,
+    filmstripVideoClips,
     pixelsPerSecond,
     visibleTimelineStart,
     visibleTimelineEnd,
@@ -378,7 +435,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   );
 
   const videoMoveSnapTargets = useMemo<VideoMoveSnapTarget[]>(() => {
-    const clipTargets = videoClips.flatMap((clip) => [
+    const clipTargets = displayVideoClips.flatMap((clip) => [
       { time: clip.timelineStart, kind: "clip" as const, clipId: clip.id },
       { time: clip.timelineEnd, kind: "clip" as const, clipId: clip.id },
     ]);
@@ -394,22 +451,22 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       ...markerTargets,
       { time: currentTime, kind: "playhead" as const },
     ];
-  }, [currentTime, markers, videoClips]);
+  }, [currentTime, displayVideoClips, markers]);
 
   const timelineTracks = useMemo(
     () =>
       buildTimelineModel({
         duration: workspaceDuration,
-        videoClips,
-        audioClips,
-        subtitles,
+        videoClips: displayVideoClips,
+        audioClips: displayAudioClips,
+        subtitles: displaySubtitles,
         trackSettings,
       }),
     [
       workspaceDuration,
-      videoClips,
-      audioClips,
-      subtitles,
+      displayVideoClips,
+      displayAudioClips,
+      displaySubtitles,
       trackSettings,
     ],
   );
@@ -433,6 +490,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       if (selected.length > 0) {
         const primary =
           selected.find((clip) => clip.id === selectedVideoClipId) ?? selected[0];
+        if (primary.compoundId && primary.compoundId !== expandedCompoundId) {
+          const group = compoundDisplay.groups.get(primary.compoundId);
+          if (group?.anchorVideoId === primary.id) {
+            return { start: group.start, end: group.end, trackId: group.trackId };
+          }
+        }
         return {
           start: Math.min(...selected.map((clip) => clip.timelineStart)),
           end: Math.max(...selected.map((clip) => clip.timelineEnd)),
@@ -457,6 +520,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     return null;
   }, [
     audioClips,
+    compoundDisplay.groups,
+    expandedCompoundId,
     selectedAudioClipId,
     selectedAudioClipIds,
     selectedSubtitleId,
@@ -1183,6 +1248,30 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     };
   }, [onSkimPreviewChange]);
 
+  const selectCollapsedCompoundRegion = (
+    compoundId: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
+    const group = compoundDisplay.groups.get(compoundId);
+    if (!group) return;
+    onVideoClipSelect?.(group.anchorVideoId, mode);
+  };
+
+  const startCollapsedCompoundRegionMove = (compoundId: string) => {
+    const group = compoundDisplay.groups.get(compoundId);
+    if (!group) return false;
+    return onVideoClipMoveStart?.(group.anchorVideoId);
+  };
+
+  const moveCollapsedCompoundRegion = (
+    compoundId: string,
+    newTimelineStart: number,
+  ) => {
+    const group = compoundDisplay.groups.get(compoundId);
+    if (!group) return;
+    onVideoClipMove?.(group.anchorVideoId, newTimelineStart);
+  };
+
   const renderTimelineTrack = (
     track: TimelineTrackModel,
   ) => {
@@ -1204,7 +1293,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             onMoveEnd={onVideoClipMoveEnd}
             onMove={onVideoClipMove}
             onMoveToTrack={onVideoClipMoveToTrack}
+            onResizeStart={onVideoClipResizeStart}
             onResize={onVideoClipResize}
+            onResizeEnd={onVideoClipResizeEnd}
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
@@ -1215,6 +1306,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             onRevealClip={(clip) =>
               revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
             }
+            onOpenCompound={onOpenCompound}
+            expandedCompoundId={expandedCompoundId}
           />
         );
 
@@ -1224,7 +1317,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             key={track.id}
             duration={workspaceDuration}
             track={track}
-            subtitles={subtitles.filter(
+            subtitles={displaySubtitles.filter(
               (subtitle) => getSubtitleTrackId(subtitle) === track.id,
             )}
             selectedSubtitleId={selectedSubtitleId}
@@ -1281,6 +1374,16 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             onRevealClip={(clip) =>
               revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: track.id })
             }
+            compoundRegions={compoundTrackRegions.audio.filter(
+              (region) => region.trackId === track.id,
+            )}
+            selectedCompoundIds={selectedCollapsedCompoundIds}
+            onCompoundSelect={selectCollapsedCompoundRegion}
+            onCompoundOpen={onOpenCompound}
+            onCompoundMoveStart={startCollapsedCompoundRegionMove}
+            onCompoundMove={moveCollapsedCompoundRegion}
+            onCompoundMoveEnd={onVideoClipMoveEnd}
+            expandedCompoundId={expandedCompoundId}
           />
         );
 
@@ -1411,6 +1514,18 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     selectedVideoClipIds.length === 1
       ? videoClips.find((clip) => clip.id === selectedVideoClipIds[0]) ?? null
       : null;
+  const selectedCompoundId = (() => {
+    const compoundId = singleSelectedVideoClip?.compoundId;
+    if (!compoundId || compoundId === expandedCompoundId || !singleSelectedVideoClip) {
+      return null;
+    }
+    return compoundDisplay.groups.get(compoundId)?.anchorVideoId === singleSelectedVideoClip.id
+      ? compoundId
+      : null;
+  })();
+  const mixedSelectionCount =
+    selectedVideoClipIds.length + selectedAudioClipIds.length + selectedSubtitleIds.length;
+  const canCreateCompound = mixedSelectionCount >= 2 && selectedVideoClipIds.length > 0;
 
   return (
     <section className="timeline-panel">
@@ -1463,7 +1578,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             </div>
           </div>
           <span className="timeline-help">
-            Video + Audio, video-only, independent audio, and subtitle tracks · R toggles Ripple
+            Cmd/Ctrl-click clips across tracks to build a mixed selection · Compound groups them · R toggles Ripple
           </span>
         </div>
 
@@ -1540,7 +1655,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             Ripple
           </button>
 
-          {singleSelectedVideoClip && (
+          {singleSelectedVideoClip && !selectedCompoundId && (
             <label
               className="timeline-speed-control"
               title={
@@ -1573,7 +1688,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             </label>
           )}
 
-          {singleSelectedVideoClip && (
+          {singleSelectedVideoClip && !selectedCompoundId && (
             <div className="timeline-retime-actions" aria-label="Retime clip actions">
               <button
                 type="button"
@@ -1599,6 +1714,68 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
               >
                 Freeze
               </button>
+            </div>
+          )}
+
+          {expandedCompoundId && (
+            <div
+              className="timeline-compound-editing"
+              title="Editing compound contents in place"
+            >
+              <span className="timeline-compound-editing-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path d="M4.5 7.2 10 4l5.5 3.2L10 10.4 4.5 7.2Z" />
+                  <path d="m4.5 10.1 5.5 3.2 5.5-3.2" />
+                  <path d="m4.5 13 5.5 3.2 5.5-3.2" />
+                </svg>
+              </span>
+              <span className="timeline-compound-editing-copy">
+                <strong>{expandedCompoundGroup?.name ?? "Compound Clip"}</strong>
+                <small>
+                  {expandedCompoundGroup?.memberCount ?? 0} items · editing contents
+                </small>
+              </span>
+              <button
+                type="button"
+                className="timeline-action-button active"
+                onClick={onCloseCompound}
+              >
+                Done
+              </button>
+            </div>
+          )}
+
+          {!expandedCompoundId && (
+            <div className="timeline-compound-actions" aria-label="Compound clip actions">
+              <button
+                type="button"
+                className="timeline-action-button"
+                onClick={onCreateCompound}
+                disabled={!canCreateCompound}
+                title="Collapse the mixed selection into a compound clip"
+              >
+                Compound
+              </button>
+              {selectedCompoundId && (
+                <>
+                  <button
+                    type="button"
+                    className="timeline-action-button"
+                    onClick={() => onOpenCompound?.(selectedCompoundId)}
+                    title="Open compound contents"
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    className="timeline-action-button"
+                    onClick={() => onBreakApartCompound?.(selectedCompoundId)}
+                    title="Return compound members to normal timeline clips"
+                  >
+                    Break Apart
+                  </button>
+                </>
+              )}
             </div>
           )}
 

@@ -2093,3 +2093,373 @@
   color:var(--system-blue);
   background:color-mix(in srgb, var(--system-blue) 14%, var(--control-fill));
 }
+
+/* --------------------------------------------------------------------------
+ * Compound clips
+ * -------------------------------------------------------------------------- */
+.timeline-video-clip.compound-clip {
+  --compound-accent: rgba(126, 154, 255, 0.92);
+  --compound-accent-soft: rgba(126, 154, 255, 0.14);
+  border: 1px solid rgba(126, 154, 255, 0.42);
+  background:
+    linear-gradient(180deg, rgba(126, 154, 255, 0.12), rgba(126, 154, 255, 0.035)),
+    rgba(36, 41, 52, 0.98);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.timeline-video-clip.compound-clip::before,
+.timeline-video-clip.compound-clip::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 6px;
+  right: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(126, 154, 255, 0.22);
+  pointer-events: none;
+}
+
+.timeline-video-clip.compound-clip::before {
+  bottom: 6px;
+}
+
+.timeline-video-clip.compound-clip::after {
+  bottom: 11px;
+  left: 10px;
+  right: 10px;
+  opacity: 0.58;
+}
+
+.timeline-video-clip.compound-clip:hover {
+  border-color: rgba(126, 154, 255, 0.62);
+  filter: brightness(1.05);
+}
+
+.timeline-video-clip.compound-clip.selected {
+  border-color: var(--compound-accent);
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 154, 255, 0.76),
+    0 0 0 1px rgba(126, 154, 255, 0.16);
+}
+
+.timeline-video-clip.compound-clip .timeline-video-clip-header {
+  height: 20px;
+  padding: 0 18px 0 7px;
+  background: rgba(20, 24, 32, 0.94);
+  border-bottom-color: rgba(126, 154, 255, 0.18);
+}
+
+.timeline-compound-header {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.timeline-compound-stack-icon,
+.timeline-compound-editing-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: rgba(174, 191, 255, 0.94);
+}
+
+.timeline-compound-stack-icon svg,
+.timeline-compound-editing-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.timeline-compound-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+
+.timeline-video-speed-badge.compound-badge {
+  margin-left: auto;
+  background: rgba(126, 154, 255, 0.15);
+  color: rgba(194, 205, 255, 0.9);
+}
+
+.timeline-compound-summary {
+  position: absolute;
+  top: 20px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0 10px 8px;
+  color: rgba(229, 233, 244, 0.76);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.timeline-compound-member-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.timeline-compound-separator {
+  color: rgba(194, 205, 255, 0.45);
+  font-size: 8px;
+}
+
+.timeline-compound-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(229, 233, 244, 0.46);
+  font-size: 8.5px;
+}
+
+/* While a compound is open, keep all of its members visually related even
+   though they remain normal editable clips on their original tracks. */
+.timeline-video-clip.compound-member,
+.audio-clip-label.compound-member,
+.subtitle-clip.compound-member {
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 154, 255, 0.46),
+    inset 3px 0 0 rgba(126, 154, 255, 0.78);
+}
+
+.timeline-video-clip.compound-member::after,
+.audio-clip-label.compound-member::after,
+.subtitle-clip.compound-member::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 12;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(174, 191, 255, 0.88);
+  box-shadow: 0 0 0 1px rgba(18, 20, 26, 0.65);
+  pointer-events: none;
+}
+
+.timeline-video-clip.compound-member.selected,
+.audio-clip-label.compound-member.selected,
+.subtitle-clip.compound-member.selected {
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 154, 255, 0.88),
+    inset 3px 0 0 rgba(174, 191, 255, 0.96),
+    0 0 0 1px rgba(126, 154, 255, 0.12);
+}
+
+.timeline-compound-actions,
+.timeline-compound-editing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-compound-editing {
+  min-width: 0;
+  padding: 3px 4px 3px 7px;
+  border: 1px solid rgba(126, 154, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(126, 154, 255, 0.07);
+  white-space: nowrap;
+}
+
+.timeline-compound-editing-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-right: 2px;
+  line-height: 1.05;
+}
+
+.timeline-compound-editing-copy strong {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.timeline-compound-editing-copy small {
+  color: var(--tertiary-label);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+/* ========================================================================== 
+   Collapsed compound regions on audio + subtitle tracks
+   ========================================================================== */
+
+.timeline-compound-track-region {
+  --compound-region-accent: rgba(126, 154, 255, 0.86);
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 10px;
+  padding: 0 7px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(126, 154, 255, 0.42);
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(126, 154, 255, 0.16), rgba(126, 154, 255, 0.07)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.018) 0,
+      rgba(255, 255, 255, 0.018) 5px,
+      transparent 5px,
+      transparent 10px
+    );
+  color: rgba(239, 242, 252, 0.86);
+  box-shadow:
+    inset 3px 0 0 rgba(126, 154, 255, 0.76),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.timeline-compound-track-region::after {
+  content: "";
+  position: absolute;
+  inset: 2px -3px -3px 3px;
+  z-index: -1;
+  border: 1px solid rgba(126, 154, 255, 0.14);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.timeline-compound-track-region:hover {
+  border-color: rgba(150, 174, 255, 0.62);
+  background:
+    linear-gradient(90deg, rgba(126, 154, 255, 0.21), rgba(126, 154, 255, 0.1)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.022) 0,
+      rgba(255, 255, 255, 0.022) 5px,
+      transparent 5px,
+      transparent 10px
+    );
+}
+
+.timeline-compound-track-region.selected {
+  border-color: var(--compound-region-accent);
+  box-shadow:
+    inset 3px 0 0 rgba(174, 191, 255, 0.96),
+    inset 0 0 0 1px rgba(126, 154, 255, 0.2),
+    0 0 0 1px rgba(126, 154, 255, 0.1);
+}
+
+.timeline-compound-track-region.dragging {
+  cursor: grabbing;
+  opacity: 0.82;
+}
+
+.timeline-compound-track-region.audio {
+  top: 6px;
+  bottom: 6px;
+}
+
+.timeline-compound-track-region.subtitle {
+  top: 5px;
+  bottom: 5px;
+}
+
+.timeline-compound-track-icon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: rgba(184, 198, 255, 0.9);
+  pointer-events: none;
+}
+
+.timeline-compound-track-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.timeline-compound-track-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.05;
+  pointer-events: none;
+}
+
+.timeline-compound-track-copy strong,
+.timeline-compound-track-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-compound-track-copy strong {
+  color: rgba(245, 247, 255, 0.88);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.timeline-compound-track-copy small {
+  color: rgba(211, 218, 244, 0.58);
+  font-size: 7.5px;
+  font-weight: 520;
+}
+
+.timeline-compound-track-badge {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid rgba(165, 183, 255, 0.24);
+  border-radius: 4px;
+  background: rgba(126, 154, 255, 0.1);
+  color: rgba(220, 227, 255, 0.74);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Real clips remain above the derived compound region if unrelated material
+   happens to share part of the same visible span. */
+.audio-clip-label,
+.subtitle-clip {
+  z-index: 2;
+}

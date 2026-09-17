@@ -52,7 +52,7 @@ import {
   type TranscriptionPreset,
 } from "./services/appMenu";
 
-import { DEFAULT_SUBTITLE_TRACK_ID, getSubtitleTrackId } from "./types/subtitle";
+import { DEFAULT_SUBTITLE_TRACK_ID, getSubtitleTrackId, type Subtitle } from "./types/subtitle";
 import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
@@ -80,6 +80,19 @@ import {
   sourceTimeToTimelineTime,
 } from "./utils/videoRetime";
 import {
+  assignCompoundMembership,
+  breakApartCompound as breakApartCompoundMembers,
+  buildCompoundGroups,
+  canShiftCompound,
+  deleteCompound as deleteCompoundMembers,
+  duplicateCompound,
+  insertCompoundCopy,
+  nextCompoundClipName,
+  shiftCompound,
+  trimCompound,
+  type CompoundTimelineState,
+} from "./utils/compoundClips";
+import {
   applyTimelineRangeEdit,
   type TimelineRange,
   type TimelineRangeEditMode,
@@ -100,6 +113,15 @@ type VideoClipboardPayload = {
 
 type AudioClipboardPayload = {
   clips: AudioTimelineClip[];
+  groupStart: number;
+  groupEnd: number;
+};
+
+type CompoundClipboardPayload = {
+  videoClips: VideoTimelineClip[];
+  audioClips: AudioTimelineClip[];
+  subtitles: Subtitle[];
+  compoundId: string;
   groupStart: number;
   groupEnd: number;
 };
@@ -476,6 +498,7 @@ function App() {
   }));
   const [activeSubtitleTrackId, setActiveSubtitleTrackId] =
     useState<TimelineTrackId>(DEFAULT_SUBTITLE_TRACK_ID);
+  const [expandedCompoundId, setExpandedCompoundId] = useState<string | null>(null);
 
   // ==========================================================================
   // Video export UI
@@ -500,7 +523,8 @@ function App() {
   }, []);
   const videoClipboardRef = useRef<VideoClipboardPayload | null>(null);
   const audioClipboardRef = useRef<AudioClipboardPayload | null>(null);
-  const activeClipboardKindRef = useRef<"video" | "audio" | null>(null);
+  const compoundClipboardRef = useRef<CompoundClipboardPayload | null>(null);
+  const activeClipboardKindRef = useRef<"video" | "audio" | "compound" | null>(null);
   const timelinePasteTargetRef = useRef<{
     trackId: TimelineTrackId;
     time: number;
@@ -536,6 +560,7 @@ function App() {
 
     setSubtitleSearch,
     selectSubtitle,
+    selectSubtitles,
     selectAllSubtitles,
     focusSelectedSubtitle,
     clearSubtitleSelection,
@@ -742,6 +767,379 @@ function App() {
       return !!subtitle && !trackSettings[getSubtitleTrackId(subtitle)]?.locked;
     });
 
+  const compoundGroups = useMemo(
+    () => buildCompoundGroups(videoClips, audioClips, subtitles),
+    [audioClips, subtitles, videoClips],
+  );
+
+  const collapsedCompoundIds = useMemo(
+    () =>
+      new Set(
+        [...compoundGroups.keys()].filter((id) => id !== expandedCompoundId),
+      ),
+    [compoundGroups, expandedCompoundId],
+  );
+
+  const timelineSelectableVideoClipIds = useMemo(
+    () =>
+      videoClips
+        .filter((clip) => {
+          if (!clip.compoundId || !collapsedCompoundIds.has(clip.compoundId)) {
+            return true;
+          }
+          return compoundGroups.get(clip.compoundId)?.anchorVideoId === clip.id;
+        })
+        .map((clip) => clip.id),
+    [collapsedCompoundIds, compoundGroups, videoClips],
+  );
+
+  const timelineSelectableAudioClipIds = useMemo(
+    () =>
+      audioClips
+        .filter(
+          (clip) =>
+            !clip.compoundId || !collapsedCompoundIds.has(clip.compoundId),
+        )
+        .map((clip) => clip.id),
+    [audioClips, collapsedCompoundIds],
+  );
+
+  const timelineSelectableSubtitleIds = useMemo(
+    () => subtitles.map((subtitle) => subtitle.id),
+    [subtitles],
+  );
+
+  const timelineSelectableSubtitleIdSet = useMemo(
+    () => new Set(timelineSelectableSubtitleIds),
+    [timelineSelectableSubtitleIds],
+  );
+
+  const programInteractiveVideoClipIds = useMemo(
+    () =>
+      videoClips
+        .filter(
+          (clip) =>
+            !clip.compoundId || !collapsedCompoundIds.has(clip.compoundId),
+        )
+        .map((clip) => clip.id),
+    [collapsedCompoundIds, videoClips],
+  );
+
+  const programInteractiveSubtitleIds = timelineSelectableSubtitleIds;
+
+  useEffect(() => {
+    if (expandedCompoundId && !compoundGroups.has(expandedCompoundId)) {
+      setExpandedCompoundId(null);
+    }
+  }, [compoundGroups, expandedCompoundId]);
+
+  useEffect(() => {
+    const sameIds = (a: string[], b: string[]) =>
+      a.length === b.length && a.every((id, index) => id === b[index]);
+
+    const selectableVideoIds = new Set(timelineSelectableVideoClipIds);
+    const normalizedVideoIds = [
+      ...new Set(
+        selectedVideoClipIds
+          .map((id) => {
+            const clip = videoClips.find((item) => item.id === id);
+            if (!clip?.compoundId || !collapsedCompoundIds.has(clip.compoundId)) {
+              return id;
+            }
+            return compoundGroups.get(clip.compoundId)?.anchorVideoId ?? id;
+          })
+          .filter((id) => selectableVideoIds.has(id)),
+      ),
+    ];
+    const selectedVideoClip = selectedVideoClipId
+      ? videoClips.find((clip) => clip.id === selectedVideoClipId)
+      : null;
+    const normalizedVideoPrimaryCandidate = selectedVideoClip?.compoundId &&
+      collapsedCompoundIds.has(selectedVideoClip.compoundId)
+      ? compoundGroups.get(selectedVideoClip.compoundId)?.anchorVideoId ?? null
+      : selectedVideoClipId;
+    const normalizedVideoPrimary =
+      normalizedVideoPrimaryCandidate &&
+      normalizedVideoIds.includes(normalizedVideoPrimaryCandidate)
+        ? normalizedVideoPrimaryCandidate
+        : normalizedVideoIds[0] ?? null;
+
+    if (
+      !sameIds(selectedVideoClipIds, normalizedVideoIds) ||
+      normalizedVideoPrimary !== selectedVideoClipId
+    ) {
+      selectVideoClips(normalizedVideoIds, normalizedVideoPrimary);
+    }
+
+    const selectableAudioIds = new Set(timelineSelectableAudioClipIds);
+    const normalizedAudioIds = selectedAudioClipIds.filter((id) =>
+      selectableAudioIds.has(id),
+    );
+    const normalizedAudioPrimary =
+      selectedAudioClipId && selectableAudioIds.has(selectedAudioClipId)
+        ? selectedAudioClipId
+        : normalizedAudioIds[0] ?? null;
+    if (
+      !sameIds(selectedAudioClipIds, normalizedAudioIds) ||
+      normalizedAudioPrimary !== selectedAudioClipId
+    ) {
+      selectAudioClips(normalizedAudioIds, normalizedAudioPrimary);
+    }
+
+    const normalizedSubtitleIds = selectedSubtitleIds.filter((id) =>
+      timelineSelectableSubtitleIdSet.has(id),
+    );
+    const normalizedSubtitlePrimary =
+      selectedSubtitleId && timelineSelectableSubtitleIdSet.has(selectedSubtitleId)
+        ? selectedSubtitleId
+        : normalizedSubtitleIds[0] ?? null;
+    if (
+      !sameIds(selectedSubtitleIds, normalizedSubtitleIds) ||
+      normalizedSubtitlePrimary !== selectedSubtitleId
+    ) {
+      selectSubtitles(normalizedSubtitleIds, normalizedSubtitlePrimary);
+    }
+  }, [
+    collapsedCompoundIds,
+    compoundGroups,
+    selectedAudioClipId,
+    selectedAudioClipIds,
+    selectedSubtitleId,
+    selectedSubtitleIds,
+    selectedVideoClipId,
+    selectedVideoClipIds,
+    selectAudioClips,
+    selectSubtitles,
+    selectVideoClips,
+    timelineSelectableAudioClipIds,
+    timelineSelectableSubtitleIdSet,
+    timelineSelectableVideoClipIds,
+    videoClips,
+  ]);
+
+  const selectedCollapsedCompound = useMemo(() => {
+    if (!selectedVideoClipId) return null;
+    const clip = videoClips.find((item) => item.id === selectedVideoClipId);
+    if (!clip?.compoundId || clip.compoundId === expandedCompoundId) {
+      return null;
+    }
+    const group = compoundGroups.get(clip.compoundId) ?? null;
+    return group?.anchorVideoId === clip.id ? group : null;
+  }, [compoundGroups, expandedCompoundId, selectedVideoClipId, videoClips]);
+
+  const compoundGroupIsEditable = (group: { videoIds: string[]; audioIds: string[]; subtitleIds: string[] }) => {
+    const videoLocked = group.videoIds.some((id) => {
+      const clip = videoClips.find((item) => item.id === id);
+      return !!clip && !!trackSettings[clip.trackId]?.locked;
+    });
+    const audioLocked = group.audioIds.some((id) => {
+      const clip = audioClips.find((item) => item.id === id);
+      return !!clip && !!trackSettings[clip.trackId]?.locked;
+    });
+    const subtitleLocked = group.subtitleIds.some((id) => {
+      const subtitle = subtitles.find((item) => item.id === id);
+      return !!subtitle && !!trackSettings[getSubtitleTrackId(subtitle)]?.locked;
+    });
+    return !videoLocked && !audioLocked && !subtitleLocked;
+  };
+
+  const compoundMoveOriginRef = useRef<{
+    compoundId: string;
+    groupStart: number;
+    state: CompoundTimelineState;
+  } | null>(null);
+  const compoundResizeOriginRef = useRef<{
+    compoundId: string;
+    state: CompoundTimelineState;
+  } | null>(null);
+
+  const applyCompoundTimelineState = (next: CompoundTimelineState) => {
+    replaceVideoClips(next.videoClips);
+    replaceAudioClips(next.audioClips);
+    replaceSubtitles(next.subtitles);
+  };
+
+  const currentCompoundTimelineState = (): CompoundTimelineState => ({
+    videoClips,
+    audioClips,
+    subtitles,
+  });
+
+  const createCompoundFromSelection = () => {
+    const totalSelected =
+      selectedVideoClipIds.length + selectedAudioClipIds.length + selectedSubtitleIds.length;
+    if (totalSelected < 2 || selectedVideoClipIds.length === 0) {
+      return false;
+    }
+
+    const selectedVideos = videoClips.filter((clip) => selectedVideoClipIds.includes(clip.id));
+    const selectedAudios = audioClips.filter((clip) => selectedAudioClipIds.includes(clip.id));
+    const selectedSubs = subtitles.filter((subtitle) => selectedSubtitleIds.includes(subtitle.id));
+
+    if (
+      selectedVideos.some((clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId)) ||
+      selectedAudios.some((clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId)) ||
+      selectedSubs.some(
+        (subtitle) => !!subtitle.compoundId && compoundGroups.has(subtitle.compoundId),
+      )
+    ) {
+      window.alert("Open or break apart the existing compound before creating a nested compound.");
+      return false;
+    }
+
+    const locked =
+      selectedVideos.some((clip) => trackSettings[clip.trackId]?.locked) ||
+      selectedAudios.some((clip) => trackSettings[clip.trackId]?.locked) ||
+      selectedSubs.some((subtitle) => trackSettings[getSubtitleTrackId(subtitle)]?.locked);
+    if (locked) return false;
+
+    const anchor =
+      selectedVideos.find((clip) => clip.id === selectedVideoClipId) ??
+      [...selectedVideos].sort((a, b) => a.timelineStart - b.timelineStart)[0];
+    if (!anchor) return false;
+
+    const compoundId = crypto.randomUUID();
+    const name = nextCompoundClipName(compoundGroups.values());
+    const next = assignCompoundMembership(
+      currentCompoundTimelineState(),
+      {
+        videoIds: selectedVideos.map((clip) => clip.id),
+        audioIds: selectedAudios.map((clip) => clip.id),
+        subtitleIds: selectedSubs.map((subtitle) => subtitle.id),
+      },
+      { compoundId, name, anchorVideoId: anchor.id },
+    );
+
+    markNextChangeImmediate();
+    applyCompoundTimelineState(next);
+    setExpandedCompoundId(null);
+    selectVideoClips([anchor.id], anchor.id);
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+    return true;
+  };
+
+  const openCompound = (compoundId: string) => {
+    const group = compoundGroups.get(compoundId);
+    if (!group) return;
+    setExpandedCompoundId(compoundId);
+    selectVideoClips([group.anchorVideoId], group.anchorVideoId);
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+  };
+
+  const closeCompound = () => {
+    const group = expandedCompoundId ? compoundGroups.get(expandedCompoundId) : null;
+    setExpandedCompoundId(null);
+    if (group) {
+      selectVideoClips([group.anchorVideoId], group.anchorVideoId);
+      clearAudioClipSelection();
+      clearSubtitleSelection();
+    }
+  };
+
+  const breakApartCompoundWithHistory = (compoundId: string) => {
+    const group = compoundGroups.get(compoundId);
+    if (!group || !compoundGroupIsEditable(group)) return false;
+    markNextChangeImmediate();
+    applyCompoundTimelineState(
+      breakApartCompoundMembers(currentCompoundTimelineState(), compoundId),
+    );
+    setExpandedCompoundId(null);
+    selectVideoClips(group.videoIds, group.anchorVideoId);
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+    return true;
+  };
+
+  const handleCompoundAwareVideoMoveStart = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+    const candidateGroup =
+      clip?.compoundId && clip.compoundId !== expandedCompoundId
+        ? compoundGroups.get(clip.compoundId)
+        : null;
+    const group = candidateGroup?.anchorVideoId === id ? candidateGroup : null;
+    if (group) {
+      if (!compoundGroupIsEditable(group)) return false;
+      beginHistoryTransaction();
+      compoundMoveOriginRef.current = {
+        compoundId: group.id,
+        groupStart: group.start,
+        state: currentCompoundTimelineState(),
+      };
+      return true;
+    }
+    return handleVideoClipMoveStart(id);
+  };
+
+  const handleCompoundAwareVideoMove = (id: string, requestedStart: number) => {
+    const origin = compoundMoveOriginRef.current;
+    if (origin) {
+      const groups = buildCompoundGroups(
+        origin.state.videoClips,
+        origin.state.audioClips,
+        origin.state.subtitles,
+      );
+      const group = groups.get(origin.compoundId);
+      if (!group) return;
+      const delta = requestedStart - origin.groupStart;
+      if (!canShiftCompound(origin.state, group, delta)) return;
+      applyCompoundTimelineState(shiftCompound(origin.state, origin.compoundId, delta));
+      return;
+    }
+    moveVideoClip(id, requestedStart);
+  };
+
+  const handleCompoundAwareVideoMoveEnd = () => {
+    if (compoundMoveOriginRef.current) {
+      compoundMoveOriginRef.current = null;
+      window.requestAnimationFrame(() => endHistoryTransaction());
+      return;
+    }
+    handleVideoClipMoveEnd();
+  };
+
+  const handleCompoundAwareResizeStart = (id: string) => {
+    const clip = videoClips.find((item) => item.id === id);
+    const candidateGroup =
+      clip?.compoundId && clip.compoundId !== expandedCompoundId
+        ? compoundGroups.get(clip.compoundId)
+        : null;
+    const group = candidateGroup?.anchorVideoId === id ? candidateGroup : null;
+    if (group && !compoundGroupIsEditable(group)) return false;
+    beginHistoryTransaction();
+    if (group) {
+      compoundResizeOriginRef.current = {
+        compoundId: group.id,
+        state: currentCompoundTimelineState(),
+      };
+    }
+    return true;
+  };
+
+  const handleCompoundAwareResize = (id: string, start: number, end: number) => {
+    const origin = compoundResizeOriginRef.current;
+    if (origin) {
+      const next = trimCompound(origin.state, origin.compoundId, start, end);
+      applyCompoundTimelineState(next);
+      const group = buildCompoundGroups(
+        next.videoClips,
+        next.audioClips,
+        next.subtitles,
+      ).get(origin.compoundId);
+      if (group) {
+        selectVideoClips([group.anchorVideoId], group.anchorVideoId);
+      }
+      return;
+    }
+    resizeVideoClip(id, start, end);
+  };
+
+  const handleCompoundAwareResizeEnd = () => {
+    compoundResizeOriginRef.current = null;
+    window.requestAnimationFrame(() => endHistoryTransaction());
+  };
+
   const addSubtitleWithHistory = (
     time: number,
     trackId: TimelineTrackId = activeSubtitleTrackId,
@@ -767,6 +1165,10 @@ function App() {
   };
 
   const splitSelectedVideoClipAtPlayhead = () => {
+    if (selectedCollapsedCompound) {
+      window.alert("Open the compound before splitting clips inside it.");
+      return true;
+    }
     if (!selectedVideoClipId) {
       return false;
     }
@@ -797,6 +1199,18 @@ function App() {
   };
 
   const deleteSelectedVideoClipWithHistory = () => {
+    if (selectedCollapsedCompound) {
+      if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
+      markNextChangeImmediate();
+      applyCompoundTimelineState(
+        deleteCompoundMembers(currentCompoundTimelineState(), selectedCollapsedCompound.id),
+      );
+      clearVideoClipSelection();
+      clearAudioClipSelection();
+      clearSubtitleSelection();
+      return true;
+    }
+
     if (!selectedVideoClipsAreEditable) {
       return false;
     }
@@ -809,6 +1223,23 @@ function App() {
   };
 
   const copySelectedVideoClip = () => {
+    if (selectedCollapsedCompound) {
+      compoundClipboardRef.current = {
+        videoClips: videoClips.filter((clip) => clip.compoundId === selectedCollapsedCompound.id).map((clip) => ({ ...clip })),
+        audioClips: audioClips.filter((clip) => clip.compoundId === selectedCollapsedCompound.id).map((clip) => ({ ...clip })),
+        subtitles: subtitles.filter((subtitle) => subtitle.compoundId === selectedCollapsedCompound.id).map((subtitle) => ({ ...subtitle })),
+        compoundId: selectedCollapsedCompound.id,
+        groupStart: selectedCollapsedCompound.start,
+        groupEnd: selectedCollapsedCompound.end,
+      };
+      activeClipboardKindRef.current = "compound";
+      timelinePasteTargetRef.current = {
+        trackId: selectedCollapsedCompound.trackId,
+        time: selectedCollapsedCompound.end,
+      };
+      return true;
+    }
+
     if (selectedVideoClips.length === 0) {
       return false;
     }
@@ -840,6 +1271,19 @@ function App() {
   };
 
   const cutSelectedVideoClipWithHistory = () => {
+    if (selectedCollapsedCompound) {
+      if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
+      if (!copySelectedVideoClip()) return false;
+      markNextChangeImmediate();
+      applyCompoundTimelineState(
+        deleteCompoundMembers(currentCompoundTimelineState(), selectedCollapsedCompound.id),
+      );
+      clearVideoClipSelection();
+      clearAudioClipSelection();
+      clearSubtitleSelection();
+      return true;
+    }
+
     if (!selectedVideoClipsAreEditable) {
       return false;
     }
@@ -903,7 +1347,67 @@ function App() {
     return true;
   };
 
+  const pasteCompoundAtTarget = () => {
+    const clipboard = compoundClipboardRef.current;
+    if (!clipboard) return false;
+    const target = timelinePasteTargetRef.current ?? {
+      trackId: clipboard.videoClips.find((clip) => clip.compoundAnchor)?.trackId ?? "video-1",
+      time: clipboard.groupEnd,
+    };
+    if (timelineTrackKindFromId(target.trackId) !== "video") return false;
+
+    const sourceTrackIds = new Set<string>([
+      ...clipboard.videoClips.map((clip) => clip.trackId),
+      ...clipboard.audioClips.map((clip) => clip.trackId),
+      ...clipboard.subtitles.map((subtitle) => getSubtitleTrackId(subtitle)),
+    ]);
+    if (
+      [...sourceTrackIds].some(
+        (trackId) => trackSettings[trackId]?.deleted === true || trackSettings[trackId]?.locked,
+      )
+    ) {
+      return false;
+    }
+
+    const sourceState: CompoundTimelineState = {
+      videoClips: clipboard.videoClips,
+      audioClips: clipboard.audioClips,
+      subtitles: clipboard.subtitles,
+    };
+    const result = insertCompoundCopy(
+      currentCompoundTimelineState(),
+      sourceState,
+      clipboard.compoundId,
+      target.time,
+    );
+    if (!result) return false;
+
+    markNextChangeImmediate();
+    applyCompoundTimelineState(result.state);
+    setExpandedCompoundId(null);
+    selectVideoClips([result.anchorVideoId], result.anchorVideoId);
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+    return true;
+  };
+
   const duplicateSelectedVideoClipWithHistory = () => {
+    if (selectedCollapsedCompound) {
+      if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
+      const result = duplicateCompound(
+        currentCompoundTimelineState(),
+        selectedCollapsedCompound.id,
+        selectedCollapsedCompound.end,
+      );
+      if (!result) return false;
+      markNextChangeImmediate();
+      applyCompoundTimelineState(result.state);
+      selectVideoClips([result.anchorVideoId], result.anchorVideoId);
+      clearAudioClipSelection();
+      clearSubtitleSelection();
+      return true;
+    }
+
     if (!selectedVideoClipsAreEditable) {
       return false;
     }
@@ -985,9 +1489,14 @@ function App() {
     id: string,
     mode: "single" | "toggle" | "focus" = "single",
   ) => {
+    if (!timelineSelectableAudioClipIds.includes(id)) {
+      return;
+    }
     selectAudioClip(id, mode);
-    clearVideoClipSelection();
-    clearSubtitleSelection();
+    if (mode !== "toggle") {
+      clearVideoClipSelection();
+      clearSubtitleSelection();
+    }
     setTimelineRange(null);
   };
 
@@ -1004,13 +1513,44 @@ function App() {
     window.requestAnimationFrame(() => endHistoryTransaction());
   };
 
+  const handleProgramVideoClipSelect = (
+    id: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+    if (clip?.compoundId && clip.compoundId !== expandedCompoundId) {
+      const group = compoundGroups.get(clip.compoundId);
+      if (group) {
+        selectVideoClips([group.anchorVideoId], group.anchorVideoId);
+        clearAudioClipSelection();
+        clearSubtitleSelection();
+        setTimelineRange(null);
+        return;
+      }
+    }
+    handleVideoClipSelect(id, mode);
+  };
+
+  const handleProgramSubtitleSelect = (id: string) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (!subtitle) return;
+
+    setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
+    clearVideoClipSelection();
+    clearAudioClipSelection();
+    selectSubtitle(id, "single", timelineSelectableSubtitleIdSet);
+    setTimelineRange(null);
+  };
+
   const handleVideoClipSelect = (
     id: string,
     mode: "single" | "toggle" | "focus" = "single",
   ) => {
     selectVideoClip(id, mode);
-    clearSubtitleSelection();
-    clearAudioClipSelection();
+    if (mode !== "toggle") {
+      clearSubtitleSelection();
+      clearAudioClipSelection();
+    }
     setTimelineRange(null);
   };
 
@@ -1064,6 +1604,17 @@ function App() {
 
   const applySelectedTimelineRangeEdit = (mode: TimelineRangeEditMode) => {
     if (!timelineRange) {
+      return false;
+    }
+
+    const intersectsCollapsedCompound = [...compoundGroups.values()].some(
+      (group) =>
+        group.id !== expandedCompoundId &&
+        timelineRange.end > group.start + 0.000001 &&
+        timelineRange.start < group.end - 0.000001,
+    );
+    if (intersectsCollapsedCompound) {
+      window.alert("Open the compound before applying a range edit through it.");
       return false;
     }
 
@@ -1534,13 +2085,15 @@ function App() {
       | "toggle"
       | "range" = "single",
   ) => {
-    clearVideoClipSelection();
-    clearAudioClipSelection();
+    if (mode !== "toggle") {
+      clearVideoClipSelection();
+      clearAudioClipSelection();
+    }
     const subtitle = subtitles.find((item) => item.id === id);
     if (subtitle) {
       setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
     }
-    selectSubtitle(id, mode);
+    selectSubtitle(id, mode, timelineSelectableSubtitleIdSet);
   };
 
   const splitSelectedSubtitleAtPlayhead = () => {
@@ -1581,7 +2134,10 @@ function App() {
   const editableSubtitleIds = (ids: string[]) =>
     ids.filter((id) => {
       const subtitle = subtitles.find((item) => item.id === id);
-      return !!subtitle && !trackSettings[getSubtitleTrackId(subtitle)]?.locked;
+      return (
+        !!subtitle &&
+        !trackSettings[getSubtitleTrackId(subtitle)]?.locked
+      );
     });
 
   const deleteSubtitleWithHistory = (id: string) => {
@@ -1613,7 +2169,10 @@ function App() {
 
   const updateSubtitleTextIfEditable = (id: string, text: string) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+    if (
+      !subtitle ||
+      trackSettings[getSubtitleTrackId(subtitle)]?.locked
+    ) {
       return;
     }
     updateSubtitleText(id, text);
@@ -1625,7 +2184,10 @@ function App() {
     positionY: number,
   ) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+    if (
+      !subtitle ||
+      trackSettings[getSubtitleTrackId(subtitle)]?.locked
+    ) {
       return;
     }
     updateSubtitlePosition(id, positionX, positionY);
@@ -1636,7 +2198,10 @@ function App() {
     style: Parameters<typeof updateSubtitleStyle>[1],
   ) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
+    if (
+      !subtitle ||
+      trackSettings[getSubtitleTrackId(subtitle)]?.locked
+    ) {
       return;
     }
 
@@ -2663,13 +3228,16 @@ function App() {
     startTime: number,
     mode: "single" | "toggle" | "range" = "single",
   ) => {
+    if (!timelineSelectableSubtitleIdSet.has(id)) {
+      return;
+    }
     clearVideoClipSelection();
     clearAudioClipSelection();
     const subtitle = subtitles.find((item) => item.id === id);
     if (subtitle) {
       setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
     }
-    selectSubtitle(id, mode);
+    selectSubtitle(id, mode, timelineSelectableSubtitleIdSet);
 
     if (mode === "single") {
       requestSeek(startTime);
@@ -2797,6 +3365,9 @@ function App() {
           : copySelectedVideoClip();
 
       case "paste":
+        if (activeClipboardKindRef.current === "compound") {
+          return pasteCompoundAtTarget();
+        }
         return activeClipboardKindRef.current === "audio"
           ? pasteAudioClipsAtTarget()
           : pasteVideoClipAtTarget();
@@ -2808,15 +3379,25 @@ function App() {
 
       case "select-all":
         if (selectedAudioClipIds.length > 0) {
-          selectAudioClips(audioClips.map((clip) => clip.id), selectedAudioClipId);
+          selectAudioClips(
+            timelineSelectableAudioClipIds,
+            timelineSelectableAudioClipIds.includes(selectedAudioClipId ?? "")
+              ? selectedAudioClipId
+              : timelineSelectableAudioClipIds[0] ?? null,
+          );
           clearVideoClipSelection();
           clearSubtitleSelection();
         } else if (selectedVideoClipIds.length > 0) {
-          selectVideoClips(videoClips.map((clip) => clip.id), selectedVideoClipId);
+          selectVideoClips(
+            timelineSelectableVideoClipIds,
+            timelineSelectableVideoClipIds.includes(selectedVideoClipId ?? "")
+              ? selectedVideoClipId
+              : timelineSelectableVideoClipIds[0] ?? null,
+          );
           clearAudioClipSelection();
           clearSubtitleSelection();
         } else {
-          selectAllSubtitles(activeSubtitleTrackId);
+          selectAllSubtitles(activeSubtitleTrackId, timelineSelectableSubtitleIdSet);
         }
         return true;
     }
@@ -2952,7 +3533,7 @@ function App() {
 
       case "edit.select-all-subtitles":
         if (screen === "editor") {
-          selectAllSubtitles(activeSubtitleTrackId);
+          selectAllSubtitles(activeSubtitleTrackId, timelineSelectableSubtitleIdSet);
         }
         return;
 
@@ -3280,7 +3861,7 @@ function App() {
           return;
         }
 
-        if (videoClipboardRef.current || audioClipboardRef.current) {
+        if (videoClipboardRef.current || audioClipboardRef.current || compoundClipboardRef.current) {
           event.preventDefault();
           void executeEditorEditCommand("paste", event.target);
         }
@@ -3382,9 +3963,17 @@ function App() {
       (subtitle) => subtitle.id === selectedSubtitleId,
     ) ?? null;
 
+  const selectedProgramVideoClipId =
+    selectedVideoClip &&
+    (!selectedVideoClip.compoundId ||
+      !collapsedCompoundIds.has(selectedVideoClip.compoundId))
+      ? selectedVideoClipId
+      : null;
+
+  const selectedProgramSubtitleId = selectedSubtitle ? selectedSubtitleId : null;
+
   const selectedSubtitleForActiveTrack =
-    selectedSubtitle &&
-    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+    selectedSubtitle && getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
       ? selectedSubtitle
       : null;
 
@@ -3398,8 +3987,7 @@ function App() {
   });
 
   const selectedSubtitleIdForActiveTrack =
-    selectedSubtitle &&
-    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+    selectedSubtitle && getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
       ? selectedSubtitle.id
       : null;
 
@@ -3508,21 +4096,17 @@ function App() {
             audioClips={audioClips}
             timelineDuration={timelineDuration}
             trackSettings={trackSettings}
-            selectedVideoClipId={selectedVideoClipId}
-            onVideoClipSelect={handleVideoClipSelect}
+            selectedVideoClipId={selectedProgramVideoClipId}
+            interactiveVideoClipIds={programInteractiveVideoClipIds}
+            onVideoClipSelect={handleProgramVideoClipSelect}
             onVideoTransformChange={handleVideoTransformChange}
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
             currentTime={currentTime}
-            selectedSubtitleId={selectedSubtitleId}
-            onSubtitleSelect={(id) => {
-              const subtitle = subtitles.find((item) => item.id === id);
-              if (subtitle) {
-                setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
-              }
-              selectSubtitle(id);
-            }}
+            selectedSubtitleId={selectedProgramSubtitleId}
+            interactiveSubtitleIds={programInteractiveSubtitleIds}
+            onSubtitleSelect={handleProgramSubtitleSelect}
             onSubtitlePositionChange={updateSubtitlePositionIfEditable}
             onSubtitleTextChange={updateSubtitleTextIfEditable}
             onSubtitleStyleChange={updateSubtitleStyleWithSelection}
@@ -3549,7 +4133,7 @@ function App() {
             const subtitle = subtitles.find((item) => item.id === id);
             if (subtitle) {
               setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
-              selectSubtitle(id, "single");
+              selectSubtitle(id, "single", timelineSelectableSubtitleIdSet);
               requestSeek(subtitle.startTime);
             }
             window.requestAnimationFrame(() => {
@@ -3602,11 +4186,13 @@ function App() {
         }}
         onVideoClipSelect={handleVideoClipSelect}
         onVideoClipSelectionChange={handleVideoClipSelectionChange}
-        onVideoClipMoveStart={handleVideoClipMoveStart}
-        onVideoClipMoveEnd={handleVideoClipMoveEnd}
-        onVideoClipMove={moveVideoClip}
+        onVideoClipMoveStart={handleCompoundAwareVideoMoveStart}
+        onVideoClipMoveEnd={handleCompoundAwareVideoMoveEnd}
+        onVideoClipMove={handleCompoundAwareVideoMove}
         onVideoClipMoveToTrack={handleMoveVideoClipToTrack}
-        onVideoClipResize={resizeVideoClip}
+        onVideoClipResizeStart={handleCompoundAwareResizeStart}
+        onVideoClipResize={handleCompoundAwareResize}
+        onVideoClipResizeEnd={handleCompoundAwareResizeEnd}
         onVideoPlaybackRateChange={handleVideoPlaybackRateChange}
         onToggleVideoReverse={handleToggleVideoReverse}
         onInsertFreezeFrame={handleInsertFreezeFrame}
@@ -3637,6 +4223,11 @@ function App() {
         onToggleTrackMute={(trackId) => toggleTrackSetting(trackId, "muted")}
         onToggleTrackSolo={(trackId) => toggleTrackSetting(trackId, "solo")}
         onToggleTrackHidden={(trackId) => toggleTrackSetting(trackId, "hidden")}
+        expandedCompoundId={expandedCompoundId}
+        onCreateCompound={createCompoundFromSelection}
+        onBreakApartCompound={breakApartCompoundWithHistory}
+        onOpenCompound={openCompound}
+        onCloseCompound={closeCompound}
         onSkimPreviewChange={handleSkimPreviewChange}
         onSeek={requestSeek}
       />

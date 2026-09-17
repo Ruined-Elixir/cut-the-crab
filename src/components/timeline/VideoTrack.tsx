@@ -47,11 +47,13 @@ type VideoTrackProps = {
     targetTrackId: TimelineTrackId,
     newTimelineStart: number,
   ) => void;
+  onResizeStart?: (id: string) => boolean | void;
   onResize?: (
     id: string,
     newTimelineStart: number,
     newTimelineEnd: number,
   ) => void;
+  onResizeEnd?: () => void;
   onToggleLock?: (trackId: TimelineTrackId) => void;
   onToggleHidden?: (trackId: TimelineTrackId) => void;
   onTransitionChange?: (
@@ -64,6 +66,8 @@ type VideoTrackProps = {
   snapTargets?: VideoMoveSnapTarget[];
   onSnapGuideChange?: (time: number | null) => void;
   onRevealClip?: (clip: VideoTimelineClip) => void;
+  onOpenCompound?: (compoundId: string) => void;
+  expandedCompoundId?: string | null;
 };
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
@@ -110,7 +114,9 @@ function VideoTrack({
   onMoveEnd,
   onMove,
   onMoveToTrack,
+  onResizeStart,
   onResize,
+  onResizeEnd,
   onToggleLock,
   onToggleHidden,
   onTransitionChange,
@@ -119,6 +125,8 @@ function VideoTrack({
   snapTargets = [],
   onSnapGuideChange,
   onRevealClip,
+  onOpenCompound,
+  expandedCompoundId = null,
   showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
@@ -178,7 +186,7 @@ function VideoTrack({
     event.preventDefault();
     event.stopPropagation();
 
-    if (event.shiftKey) {
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
       onSelect?.(clip.id, "toggle");
       return;
     }
@@ -274,6 +282,7 @@ function VideoTrack({
       );
 
       if (
+        !clip.compoundDisplay &&
         selectedVideoClipIds.length <= 1 &&
         targetTrackElement instanceof HTMLElement &&
         targetTrackElement.dataset.trackLocked !== "true" &&
@@ -310,6 +319,7 @@ function VideoTrack({
           targetTrackElement.dataset.trackLocked === "true";
 
         if (
+          !clip.compoundDisplay &&
           selectedVideoClipIds.length <= 1 &&
           targetTrackId &&
           targetTrackId !== track.id &&
@@ -353,6 +363,9 @@ function VideoTrack({
     }
 
     onSelect?.(clip.id, "single");
+    if (onResizeStart?.(clip.id) === false) {
+      return;
+    }
     setDraggingClipId(clip.id);
 
     const startX = event.clientX;
@@ -393,6 +406,7 @@ function VideoTrack({
 
     const handleMouseUp = () => {
       setDraggingClipId(null);
+      onResizeEnd?.();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -595,7 +609,9 @@ function VideoTrack({
           );
           const videoFadeInWidth = (videoFadeInDuration / clipDuration) * 100;
           const videoFadeOutWidth = (videoFadeOutDuration / clipDuration) * 100;
-          const transformKeyframeTimes = isSelected
+          const isExpandedCompoundMember =
+            !!expandedCompoundId && clip.compoundId === expandedCompoundId;
+          const transformKeyframeTimes = isSelected && !clip.compoundDisplay
             ? allVideoTransformKeyframeTimes(clip)
             : [];
 
@@ -608,6 +624,8 @@ function VideoTrack({
                 isPrimarySelected ? "primary-selected" : "",
                 isDragging ? "dragging" : "",
                 isGroupDragging && !isDragging ? "group-dragging" : "",
+                clip.compoundDisplay ? "compound-clip" : "",
+                isExpandedCompoundMember ? "compound-member" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -616,6 +634,13 @@ function VideoTrack({
                 width: `${width}%`,
               }}
               data-video-clip-id={clip.id}
+              data-compound-id={clip.compoundDisplay ? clip.compoundId : undefined}
+              onDoubleClick={(event) => {
+                if (!clip.compoundDisplay || !clip.compoundId) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenCompound?.(clip.compoundId);
+              }}
               onContextMenu={(event) => {
                 if (!onRevealClip || !canShowNativeContextMenu()) return;
                 event.preventDefault();
@@ -631,9 +656,10 @@ function VideoTrack({
                   console.error("Failed to show native video clip context menu:", error);
                 });
               }}
-              title={`${clip.sourceName} · ${clip.sourceIn.toFixed(
-                2,
-              )}–${clip.sourceOut.toFixed(2)} s · ${videoPlaybackRate(clip)}× · ${track.shortLabel}`}
+              title={clip.compoundDisplay
+                ? `${clip.sourceName} · ${clip.compoundMemberCount ?? 0} members · double-click to open`
+                : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${videoPlaybackRate(clip)}× · ${track.shortLabel}`
+              }
               onMouseDown={(event) => startMove(event, clip)}
               onClick={(event) => {
                 event.stopPropagation();
@@ -669,11 +695,25 @@ function VideoTrack({
               />
 
               <div className="timeline-video-clip-header">
-                <span className="timeline-video-clip-name">
-                  {clip.sourceName}
-                </span>
+                {clip.compoundDisplay ? (
+                  <div className="timeline-compound-header">
+                    <span className="timeline-compound-stack-icon" aria-hidden="true">
+                      <svg viewBox="0 0 20 20">
+                        <path d="M4.5 7.2 10 4l5.5 3.2L10 10.4 4.5 7.2Z" />
+                        <path d="m4.5 10.1 5.5 3.2 5.5-3.2" />
+                        <path d="m4.5 13 5.5 3.2 5.5-3.2" />
+                      </svg>
+                    </span>
+                    <span className="timeline-compound-title">{clip.sourceName}</span>
+                    <span className="timeline-video-speed-badge compound-badge">CMPD</span>
+                  </div>
+                ) : (
+                  <span className="timeline-video-clip-name">
+                    {clip.sourceName}
+                  </span>
+                )}
 
-                {clip.freezeFrameSourceTime !== undefined ? (
+                {!clip.compoundDisplay && (clip.freezeFrameSourceTime !== undefined ? (
                   <span className="timeline-video-speed-badge">HOLD</span>
                 ) : (
                   <>
@@ -686,7 +726,7 @@ function VideoTrack({
                       </span>
                     )}
                   </>
-                )}
+                ))}
 
                 {currentTime >= clip.timelineStart &&
                   currentTime <= clip.timelineEnd && (
@@ -695,7 +735,7 @@ function VideoTrack({
               </div>
 
               <div className="timeline-video-fade-layer" aria-hidden="true">
-                {videoFadeInDuration > 0 && (
+                {!clip.compoundDisplay && videoFadeInDuration > 0 && (
                   <div
                     className="clip-fade-region video in"
                     style={{ width: `${videoFadeInWidth}%` }}
@@ -705,7 +745,7 @@ function VideoTrack({
                     </svg>
                   </div>
                 )}
-                {videoFadeOutDuration > 0 && (
+                {!clip.compoundDisplay && videoFadeOutDuration > 0 && (
                   <div
                     className="clip-fade-region video out"
                     style={{ width: `${videoFadeOutWidth}%` }}
@@ -717,7 +757,7 @@ function VideoTrack({
                 )}
               </div>
 
-              {!track.locked && onFadeChange && (
+              {!clip.compoundDisplay && !track.locked && onFadeChange && (
                 <>
                   <button
                     type="button"
@@ -758,7 +798,7 @@ function VideoTrack({
                 </>
               )}
 
-              {fadeDrag?.clipId === clip.id && (
+              {!clip.compoundDisplay && fadeDrag?.clipId === clip.id && (
                 <span
                   className={`clip-fade-duration-label ${fadeDrag.edge}`}
                   style={
@@ -771,7 +811,7 @@ function VideoTrack({
                 </span>
               )}
 
-              {(clip.transitionInType ?? "none") !== "none" && (
+              {!clip.compoundDisplay && (clip.transitionInType ?? "none") !== "none" && (
                 <div
                   className={`timeline-video-transition-region in ${clip.transitionInType}`}
                   style={{ width: `${transitionInWidth}%` }}
@@ -792,7 +832,7 @@ function VideoTrack({
                 </div>
               )}
 
-              {(clip.transitionOutType ?? "none") !== "none" && (
+              {!clip.compoundDisplay && (clip.transitionOutType ?? "none") !== "none" && (
                 <div
                   className={`timeline-video-transition-region out ${clip.transitionOutType}`}
                   style={{ width: `${transitionOutWidth}%` }}
@@ -814,7 +854,15 @@ function VideoTrack({
               )}
 
               <div className="timeline-video-clip-frame-area">
-                {frames.length > 0 ? (
+                {clip.compoundDisplay ? (
+                  <div className="timeline-compound-summary" aria-hidden="true">
+                    <span className="timeline-compound-member-count">
+                      {clip.compoundMemberCount ?? 0} items
+                    </span>
+                    <span className="timeline-compound-separator">•</span>
+                    <small>Double-click to open</small>
+                  </div>
+                ) : frames.length > 0 ? (
                   <div
                     className="timeline-video-frame-strip"
                     aria-hidden="true"

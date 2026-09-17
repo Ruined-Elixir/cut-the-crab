@@ -118,7 +118,15 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
   type SelectionMode = "single" | "toggle" | "range";
 
-  const selectSubtitle = (id: string, mode: SelectionMode = "single") => {
+  const selectSubtitle = (
+    id: string,
+    mode: SelectionMode = "single",
+    eligibleIds?: ReadonlySet<string>,
+  ) => {
+    if (eligibleIds && !eligibleIds.has(id)) {
+      return;
+    }
+
     if (mode === "toggle") {
       setSelectedSubtitleIds((current) => {
         const isSelected = current.includes(id);
@@ -144,7 +152,9 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
         : DEFAULT_SUBTITLE_TRACK_ID;
       const orderedIds = sortSubtitles(
         subtitles.filter(
-          (subtitle) => getSubtitleTrackId(subtitle) === targetTrackId,
+          (subtitle) =>
+            getSubtitleTrackId(subtitle) === targetTrackId &&
+            (!eligibleIds || eligibleIds.has(subtitle.id)),
         ),
       ).map((subtitle) => subtitle.id);
 
@@ -178,18 +188,35 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     selectionAnchorIdRef.current = id;
   };
 
-  const selectAllSubtitles = (trackId?: string) => {
+  const selectAllSubtitles = (
+    trackId?: string,
+    eligibleIds?: ReadonlySet<string>,
+  ) => {
     const orderedIds = sortSubtitles(
-      trackId
-        ? subtitles.filter(
-            (subtitle) => getSubtitleTrackId(subtitle) === trackId,
-          )
-        : subtitles,
+      subtitles.filter(
+        (subtitle) =>
+          (!trackId || getSubtitleTrackId(subtitle) === trackId) &&
+          (!eligibleIds || eligibleIds.has(subtitle.id)),
+      ),
     ).map((subtitle) => subtitle.id);
 
     setSelectedSubtitleIds(orderedIds);
     setSelectedSubtitleId(orderedIds[0] ?? null);
     selectionAnchorIdRef.current = orderedIds[0] ?? null;
+  };
+
+  const selectSubtitles = (ids: string[], primaryId?: string | null) => {
+    const uniqueIds = [...new Set(ids)].filter((id) =>
+      subtitles.some((subtitle) => subtitle.id === id),
+    );
+    const nextPrimaryId =
+      primaryId && uniqueIds.includes(primaryId)
+        ? primaryId
+        : uniqueIds[0] ?? null;
+
+    setSelectedSubtitleIds(uniqueIds);
+    setSelectedSubtitleId(nextPrimaryId);
+    selectionAnchorIdRef.current = nextPrimaryId;
   };
 
   const focusSelectedSubtitle = (id: string) => {
@@ -581,6 +608,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
 
     setSubtitleSearch,
     selectSubtitle,
+    selectSubtitles,
     selectAllSubtitles,
     focusSelectedSubtitle,
     clearSubtitleSelection,

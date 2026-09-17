@@ -39,6 +39,7 @@ type VideoSubtitleOverlayProps = {
   videoSourceKey?: string;
 
   selectedSubtitleId?: string | null;
+  interactiveSubtitleIds?: string[];
   shellRef: React.RefObject<HTMLDivElement | null>;
 
   onSubtitleSelect?: (id: string) => void;
@@ -102,6 +103,7 @@ function VideoSubtitleOverlay({
   videoTimeOffset = 0,
   videoSourceKey = "",
   selectedSubtitleId,
+  interactiveSubtitleIds,
   shellRef,
   onSubtitleSelect,
   onSubtitlePositionChange,
@@ -160,6 +162,14 @@ function VideoSubtitleOverlay({
 
   const draftPositionRef = useRef<DraftPosition | null>(null);
 
+  const interactiveSubtitleIdSet = useMemo(
+    () =>
+      interactiveSubtitleIds
+        ? new Set(interactiveSubtitleIds)
+        : null,
+    [interactiveSubtitleIds],
+  );
+
   useEffect(() => {
     currentTimeRef.current = currentTime;
     videoTimeOffsetRef.current = videoTimeOffset;
@@ -177,7 +187,10 @@ function VideoSubtitleOverlay({
   const activeSubtitle = useMemo(() => {
     const active = subtitles.filter(
       (subtitle) =>
-        currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
+        currentTime >= subtitle.startTime &&
+        currentTime <= subtitle.endTime &&
+        (!interactiveSubtitleIdSet ||
+          interactiveSubtitleIdSet.has(subtitle.id)),
     );
 
     const selectedActive = selectedSubtitleId
@@ -193,7 +206,12 @@ function VideoSubtitleOverlay({
       const bIndex = Number(getSubtitleTrackId(b).split("-")[1] ?? 1);
       return bIndex - aIndex;
     })[0];
-  }, [subtitles, currentTime, selectedSubtitleId]);
+  }, [
+    currentTime,
+    interactiveSubtitleIdSet,
+    selectedSubtitleId,
+    subtitles,
+  ]);
 
   const isEditing = !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
 
@@ -363,6 +381,13 @@ function VideoSubtitleOverlay({
   useEffect(() => {
     if (editingSubtitleId && !activeSubtitle) {
       setEditingSubtitleId(null);
+    }
+
+    if (!activeSubtitle) {
+      setStyleMenu(null);
+      setDraftPosition(null);
+      draftPositionRef.current = null;
+      setSubtitleSnapGuides([]);
     }
   }, [activeSubtitle, editingSubtitleId]);
 

@@ -67,6 +67,7 @@ type VideoPlayerProps = {
   timelineDuration: number;
   trackSettings: TimelineTrackSettings;
   selectedVideoClipId?: string | null;
+  interactiveVideoClipIds?: string[];
   onVideoClipSelect?: (id: string) => void;
   onVideoTransformChange?: (
     id: string,
@@ -90,6 +91,7 @@ type VideoPlayerProps = {
   currentTime: number;
 
   selectedSubtitleId?: string | null;
+  interactiveSubtitleIds?: string[];
   onSubtitleSelect?: (id: string) => void;
 
   onSubtitlePositionChange?: (
@@ -586,6 +588,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   timelineDuration,
   trackSettings,
   selectedVideoClipId,
+  interactiveVideoClipIds,
   onVideoClipSelect,
   onVideoTransformChange,
   onApplyVideoCropToTrack,
@@ -593,6 +596,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   subtitles,
   currentTime,
   selectedSubtitleId,
+  interactiveSubtitleIds,
   onSubtitleSelect,
   onSubtitlePositionChange,
   onSubtitleTextChange,
@@ -641,6 +645,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
   const audioTrackIdsRef = useRef<AudioTrackId[]>([]);
   const displayTimeRef = useRef(currentTime);
+
+  const interactiveVideoClipIdSet = useMemo(
+    () =>
+      interactiveVideoClipIds
+        ? new Set(interactiveVideoClipIds)
+        : null,
+    [interactiveVideoClipIds],
+  );
+
+  const isProgramVideoClipInteractive = (clip: VideoTimelineClip) =>
+    !interactiveVideoClipIdSet || interactiveVideoClipIdSet.has(clip.id);
 
   useImperativeHandle(ref, () => ({
     setSkimPreviewTime: (time: number | null) => {
@@ -787,6 +802,29 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       current && current.clipId !== selectedVideoClipId ? null : current,
     );
   }, [selectedVideoClipId]);
+
+  useEffect(() => {
+    if (!interactiveVideoClipIdSet) {
+      return;
+    }
+
+    if (
+      programTransformClipId &&
+      !interactiveVideoClipIdSet.has(programTransformClipId)
+    ) {
+      setProgramTransformClipId(null);
+      setProgramSnapGuides([]);
+    }
+
+    if (cropModeClipId && !interactiveVideoClipIdSet.has(cropModeClipId)) {
+      cropStartRef.current = null;
+      setCropModeClipId(null);
+    }
+
+    setOpacityEditor((current) =>
+      current && !interactiveVideoClipIdSet.has(current.clipId) ? null : current,
+    );
+  }, [cropModeClipId, interactiveVideoClipIdSet, programTransformClipId]);
 
   useEffect(() => {
     if (!opacityEditor) return;
@@ -1961,10 +1999,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     }
 
     event.stopPropagation();
+    onVideoClipSelect?.(clip.id);
+
+    if (!isProgramVideoClipInteractive(clip)) {
+      setProgramTransformClipId(null);
+      setProgramSnapGuides([]);
+      cropStartRef.current = null;
+      setCropModeClipId(null);
+      setOpacityEditor(null);
+      return;
+    }
+
     if (cropModeClipId && cropModeClipId !== clip.id) {
       finishCropMode();
     }
-    onVideoClipSelect?.(clip.id);
     setProgramTransformClipId(clip.id);
   };
 
@@ -1985,11 +2033,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     event.preventDefault();
     event.stopPropagation();
 
+    onVideoClipSelect?.(clip.id);
+
+    if (!isProgramVideoClipInteractive(clip)) {
+      setProgramTransformClipId(null);
+      setProgramSnapGuides([]);
+      cropStartRef.current = null;
+      setCropModeClipId(null);
+      setOpacityEditor(null);
+      return;
+    }
+
     if (cropModeClipId && cropModeClipId !== clip.id) {
       finishCropMode();
     }
 
-    onVideoClipSelect?.(clip.id);
     setProgramTransformClipId(clip.id);
 
     const clientX = event.clientX;
@@ -2061,7 +2119,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
    * the discarded regions remain visible/dimmed and can be restored by dragging.
    */
   const opacityEditorClip = opacityEditor
-    ? videoClips.find((clip) => clip.id === opacityEditor.clipId) ?? null
+    ? videoClips.find(
+        (clip) =>
+          clip.id === opacityEditor.clipId &&
+          isProgramVideoClipInteractive(clip),
+      ) ?? null
     : null;
   const opacityEditorValue = opacityEditorClip
     ? evaluateVideoTransformProperty(opacityEditorClip, "opacity", displayTime)
@@ -2443,6 +2505,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               videoTimeOffset={subtitleVideoTimeOffset}
               videoSourceKey={subtitleVideoSourceKey}
               selectedSubtitleId={selectedSubtitleId}
+              interactiveSubtitleIds={interactiveSubtitleIds}
               shellRef={shellRef}
               onSubtitleSelect={onSubtitleSelect}
               onSubtitlePositionChange={onSubtitlePositionChange}
