@@ -4,6 +4,7 @@ import {
 } from "react";
 
 import type {
+  AdjustmentLayerClip,
   TimelineTrack,
   TimelineTrackId,
   VideoTimelineClip,
@@ -29,6 +30,14 @@ type VideoTrackProps = {
   duration: number;
   currentTime: number;
   track: TimelineTrack;
+  adjustmentLayers: AdjustmentLayerClip[];
+  selectedAdjustmentLayerId: string | null;
+  onAdjustmentLayerSelect?: (id: string) => void;
+  onAdjustmentLayerOpen?: (id: string) => void;
+  onAdjustmentLayerEditStart?: (id: string) => boolean | void;
+  onAdjustmentLayerEditEnd?: () => void;
+  onAdjustmentLayerMove?: (id: string, newTimelineStart: number) => void;
+  onAdjustmentLayerResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
   selectedVideoClipId: string | null;
   selectedVideoClipIds: string[];
   framesByClipId: VideoClipFrames;
@@ -105,6 +114,14 @@ function VideoTrack({
   duration,
   currentTime,
   track,
+  adjustmentLayers,
+  selectedAdjustmentLayerId,
+  onAdjustmentLayerSelect,
+  onAdjustmentLayerOpen,
+  onAdjustmentLayerEditStart,
+  onAdjustmentLayerEditEnd,
+  onAdjustmentLayerMove,
+  onAdjustmentLayerResize,
   selectedVideoClipId,
   selectedVideoClipIds,
   framesByClipId,
@@ -130,6 +147,8 @@ function VideoTrack({
   showLabel = true,
 }: VideoTrackProps) {
   const [draggingClipId, setDraggingClipId] =
+    useState<string | null>(null);
+  const [draggingAdjustmentId, setDraggingAdjustmentId] =
     useState<string | null>(null);
   const [fadeDrag, setFadeDrag] = useState<{
     clipId: string;
@@ -160,7 +179,7 @@ function VideoTrack({
   ) => {
     if (
       duration <= 0 ||
-      (event.target as HTMLElement).closest(".timeline-video-clip")
+      (event.target as HTMLElement).closest(".timeline-video-clip, .timeline-adjustment-layer")
     ) {
       return;
     }
@@ -543,6 +562,118 @@ function VideoTrack({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
+  const startAdjustmentMove = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    layer: AdjustmentLayerClip,
+  ) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest(".adjustment-resize-handle")) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onAdjustmentLayerSelect?.(layer.id);
+    if (track.locked || onAdjustmentLayerEditStart?.(layer.id) === false) return;
+
+    const trackElement = event.currentTarget.parentElement;
+    if (!trackElement || duration <= 0) return;
+
+    setDraggingAdjustmentId(layer.id);
+    const startX = event.clientX;
+    const originalStart = layer.timelineStart;
+    const layerDuration = Math.max(MIN_VIDEO_CLIP_DURATION, layer.timelineEnd - layer.timelineStart);
+    const width = trackElement.getBoundingClientRect().width;
+    const snapThresholdSeconds = (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const delta = ((moveEvent.clientX - startX) / width) * duration;
+      const rawStart = Math.max(0, originalStart + delta);
+      const rawEnd = rawStart + layerDuration;
+      let bestStart = rawStart;
+      let bestDistance = snapThresholdSeconds + Number.EPSILON;
+      let bestTarget: number | null = null;
+
+      for (const target of snapTargets) {
+        if (target.clipId === layer.id) continue;
+        for (const edge of [rawStart, rawEnd]) {
+          const distance = Math.abs(edge - target.time);
+          if (distance < bestDistance) {
+            const candidate = rawStart + (target.time - edge);
+            if (candidate >= 0) {
+              bestDistance = distance;
+              bestStart = candidate;
+              bestTarget = target.time;
+            }
+          }
+        }
+      }
+
+      if (bestDistance > snapThresholdSeconds) {
+        bestStart = rawStart;
+        bestTarget = null;
+      }
+
+      onSnapGuideChange?.(bestTarget);
+      onAdjustmentLayerMove?.(layer.id, bestStart);
+    };
+
+    const handleUp = () => {
+      setDraggingAdjustmentId(null);
+      onSnapGuideChange?.(null);
+      onAdjustmentLayerEditEnd?.();
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
+  const startAdjustmentResize = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    layer: AdjustmentLayerClip,
+    edge: "left" | "right",
+  ) => {
+    if (track.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onAdjustmentLayerSelect?.(layer.id);
+    if (onAdjustmentLayerEditStart?.(layer.id) === false) return;
+
+    const trackElement = event.currentTarget.parentElement?.parentElement;
+    if (!trackElement || duration <= 0) return;
+
+    const width = trackElement.getBoundingClientRect().width;
+    const startX = event.clientX;
+    const originalStart = layer.timelineStart;
+    const originalEnd = layer.timelineEnd;
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const delta = ((moveEvent.clientX - startX) / width) * duration;
+      if (edge === "left") {
+        onAdjustmentLayerResize?.(
+          layer.id,
+          Math.max(0, Math.min(originalEnd - MIN_VIDEO_CLIP_DURATION, originalStart + delta)),
+          originalEnd,
+        );
+      } else {
+        onAdjustmentLayerResize?.(
+          layer.id,
+          originalStart,
+          Math.max(originalStart + MIN_VIDEO_CLIP_DURATION, originalEnd + delta),
+        );
+      }
+    };
+
+    const handleUp = () => {
+      onAdjustmentLayerEditEnd?.();
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
   return (
     <div className={`timeline-row timeline-video-row ${showLabel ? "" : "track-only"}`.trim()}>
       {showLabel && (
@@ -569,6 +700,70 @@ function VideoTrack({
         data-track-locked={track.locked ? "true" : "false"}
         onClick={handleTrackClick}
       >
+        {adjustmentLayers.map((layer) => {
+          const left = duration > 0 ? (layer.timelineStart / duration) * 100 : 0;
+          const width = duration > 0 ? ((layer.timelineEnd - layer.timelineStart) / duration) * 100 : 0;
+          const selected = selectedAdjustmentLayerId === layer.id;
+          const dragging = draggingAdjustmentId === layer.id;
+
+          return (
+            <div
+              key={layer.id}
+              className={[
+                "timeline-adjustment-layer",
+                selected ? "selected" : "",
+                dragging ? "dragging" : "",
+              ].filter(Boolean).join(" ")}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              data-adjustment-layer-id={layer.id}
+              title={`${layer.name} · double-click for controls`}
+              onMouseDown={(event) => startAdjustmentMove(event, layer)}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAdjustmentLayerOpen?.(layer.id);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAdjustmentLayerSelect?.(layer.id);
+                if (!canShowNativeContextMenu()) {
+                  onAdjustmentLayerOpen?.(layer.id);
+                  return;
+                }
+                void showNativeContextMenu([
+                  {
+                    id: `adjustment.${layer.id}.controls`,
+                    text: "Open Adjustment Controls",
+                    action: () => onAdjustmentLayerOpen?.(layer.id),
+                  },
+                ]).catch((error) => {
+                  console.error("Failed to show adjustment layer context menu:", error);
+                });
+              }}
+            >
+              <div
+                className="adjustment-resize-handle left"
+                onMouseDown={(event) => startAdjustmentResize(event, layer, "left")}
+              />
+              <div className="timeline-adjustment-layer-header">
+                <span className="timeline-adjustment-icon" aria-hidden="true">◇</span>
+                <strong>{layer.name}</strong>
+                <span className="timeline-adjustment-badge">ADJ</span>
+              </div>
+              <div className="timeline-adjustment-summary">
+                <span>Opacity {Math.round(layer.opacity)}%</span>
+                <span>Exp {layer.exposure > 0 ? "+" : ""}{layer.exposure.toFixed(1)}</span>
+                <span>Sat {Math.round(layer.saturation)}%</span>
+              </div>
+              <div
+                className="adjustment-resize-handle right"
+                onMouseDown={(event) => startAdjustmentResize(event, layer, "right")}
+              />
+            </div>
+          );
+        })}
+
         {videoClips.map((clip) => {
           const left =
             duration > 0

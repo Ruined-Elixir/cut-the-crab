@@ -19,11 +19,14 @@ import {
 
 import { getSubtitleTrackId, type Subtitle, type SubtitleStyle } from "../../types/subtitle";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrackId,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "../../types/timelineModel";
+
+import { adjustmentCssFilter, adjustmentLayersAffectingVideoTrack } from "../../utils/adjustmentLayers";
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
@@ -64,6 +67,7 @@ type VideoPlayerProps = {
 
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   timelineDuration: number;
   trackSettings: TimelineTrackSettings;
   selectedVideoClipId?: string | null;
@@ -506,6 +510,28 @@ function videoTransitionStyle(
   };
 }
 
+function adjustedVideoTransitionStyle(
+  clip: VideoTimelineClip,
+  timelineTime: number,
+  adjustmentLayers: AdjustmentLayerClip[],
+  trackSettings: TimelineTrackSettings,
+): CSSProperties {
+  const baseStyle = videoTransitionStyle(clip, timelineTime);
+  const adjustmentFilter = adjustmentCssFilter(
+    adjustmentLayersAffectingVideoTrack(
+      adjustmentLayers,
+      timelineTime,
+      clip.trackId,
+      trackSettings,
+    ),
+  );
+
+  return {
+    ...baseStyle,
+    filter: [baseStyle.filter, adjustmentFilter].filter(Boolean).join(" ") || undefined,
+  };
+}
+
 function programBoundsForClip(
   clip: VideoTimelineClip,
   dimensions: VideoDimensions,
@@ -585,6 +611,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   seekRequest,
   videoClips,
   audioClips,
+  adjustmentLayers,
   timelineDuration,
   trackSettings,
   selectedVideoClipId,
@@ -1530,6 +1557,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   ]);
 
   const beginMoveTransform = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Transform gestures are primary-button only. A right-click fires
+    // pointerdown before contextmenu, so without this guard the native
+    // Opacity menu can leave a move gesture armed until the next click.
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+
     if (
       !selectedActiveClip ||
       selectedTrackLocked ||
@@ -1549,6 +1583,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const startPositionY = (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) {
+        return;
+      }
+
+      // If pointerup was swallowed by a native context menu/window transition,
+      // do not let a stale listener move the clip with the mouse button up.
+      if ((moveEvent.buttons & 1) === 0) {
+        handlePointerUp();
+        return;
+      }
+
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
 
@@ -1653,6 +1698,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   };
 
   const beginScaleTransform = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+
     setProgramSnapGuides([]);
     if (
       !selectedActiveClip ||
@@ -1782,6 +1831,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   };
 
   const beginRotateTransform = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+
     setProgramSnapGuides([]);
     if (
       !selectedActiveClip ||
@@ -1896,6 +1949,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     event: ReactPointerEvent<HTMLButtonElement>,
     edge: "top" | "right" | "bottom" | "left",
   ) => {
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+
     if (
       !selectedActiveClip ||
       selectedTrackLocked ||
@@ -1994,6 +2051,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     event: ReactPointerEvent<HTMLVideoElement>,
     clip: VideoTimelineClip | null,
   ) => {
+    // Selection/transform activation happens on the primary button only.
+    // Right-click selection is handled by handleProgramClipContextMenu.
+    if (event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+
     if (!clip) {
       return;
     }
@@ -2257,6 +2320,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         shellDimensions,
                         displayTime,
                       ),
+                      filter: adjustmentCssFilter(
+                        adjustmentLayersAffectingVideoTrack(
+                          adjustmentLayers, displayTime, trackId, trackSettings,
+                        ),
+                      ) || undefined,
                       opacity:
                         (1 - dissolve.progress) *
                         videoOpacityFadeFactor(dissolve.outgoing, displayTime) *
@@ -2290,6 +2358,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         shellDimensions,
                         displayTime,
                       ),
+                      filter: adjustmentCssFilter(
+                        adjustmentLayersAffectingVideoTrack(
+                          adjustmentLayers, displayTime, trackId, trackSettings,
+                        ),
+                      ) || undefined,
                       opacity:
                         dissolve.progress *
                         videoOpacityFadeFactor(dissolve.incoming, displayTime) *
@@ -2335,7 +2408,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       shellDimensions,
                       displayTime,
                     ),
-                    ...videoTransitionStyle(clip, displayTime),
+                    ...adjustedVideoTransitionStyle(
+                      clip,
+                      displayTime,
+                      adjustmentLayers,
+                      trackSettings,
+                    ),
                   }}
                   onLoadedMetadata={() => handleVideoLoadedMetadata(trackId)}
                   onPointerDown={(event) =>

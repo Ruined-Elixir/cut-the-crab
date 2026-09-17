@@ -26,6 +26,26 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+export type AdjustmentLayerClip = {
+  id: string;
+  kind: "adjustment";
+  trackId: TimelineTrackId;
+  name: string;
+  timelineStart: number;
+  timelineEnd: number;
+  /** Effect mix strength. 100 = fully applied, 0 = bypassed. */
+  opacity: number;
+  /** Exposure-style brightness adjustment in stops-ish UI units (-3..3). */
+  exposure: number;
+  /** Contrast delta (-100..100). */
+  contrast: number;
+  /** Saturation percentage (0..200, 100 = neutral). */
+  saturation: number;
+  /** Warm/cool balance (-100..100). */
+  temperature: number;
+};
+
+
 export type VideoTransformKeyframeProperty =
   | "positionX"
   | "positionY"

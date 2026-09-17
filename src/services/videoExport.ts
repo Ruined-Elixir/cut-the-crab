@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
@@ -11,6 +12,7 @@ import type {
 } from "../types/timelineModel";
 
 import { buildAssTrack } from "../utils/assSubtitles";
+import { adjustmentFilterParameters } from "../utils/adjustmentLayers";
 import { isFreezeFrameClip, isReverseVideoClip, videoPlaybackRate } from "../utils/videoRetime";
 import {
   baseVideoTransformValue,
@@ -32,6 +34,7 @@ type ExportTimelineVideoOptions = {
   timelineDuration: number;
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   trackSettings: TimelineTrackSettings;
   range?: ExportTimelineRange | null;
   onStart?: () => void;
@@ -313,6 +316,7 @@ function subtitlesForExportRange(
 function buildTimelineFilterGraph(
   videoClips: VideoTimelineClip[],
   audioClips: AudioTimelineClip[],
+  adjustmentLayers: AdjustmentLayerClip[],
   trackSettings: TimelineTrackSettings,
   timelineDuration: number,
   range?: ExportTimelineRange | null,
@@ -545,28 +549,77 @@ function buildTimelineFilterGraph(
   }
 
   let currentVideoLabel = "basev";
+  let compositeStage = 0;
+  const overlayLabelByClipId = new Map<string, string>();
+  orderedVideoClips.forEach((clip, index) => overlayLabelByClipId.set(clip.id, overlayLabels[index]));
 
-  for (let index = 0; index < orderedVideoClips.length; index += 1) {
-    const clip = orderedVideoClips[index];
-    const nextLabel = `vstack${index}`;
-    const overlayLocalTime = `(t-${n(clip.timelineStart, 6)})`;
-    const positionXExpression = ffmpegKeyframeExpression(
-      clip,
-      "positionX",
-      overlayLocalTime,
-    );
-    const positionYExpression = ffmpegKeyframeExpression(
-      clip,
-      "positionY",
-      overlayLocalTime,
-    );
-    const x = `(main_w-overlay_w)/2+((${positionXExpression})/100)*main_w`;
-    const y = `(main_h-overlay_h)/2+((${positionYExpression})/100)*main_h`;
+  const compositionTrackIds = [...new Set([
+    ...orderedVideoClips.map((clip) => clip.trackId),
+    ...adjustmentLayers
+      .filter((layer) =>
+        /^video-\d+$/.test(layer.trackId) &&
+        trackSettings[layer.trackId]?.deleted !== true &&
+        trackSettings[layer.trackId]?.hidden !== true
+      )
+      .map((layer) => layer.trackId),
+  ])].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
 
-    filterParts.push(
-      `[${currentVideoLabel}][${overlayLabels[index]}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
-    );
-    currentVideoLabel = nextLabel;
+  for (const trackId of compositionTrackIds) {
+    const trackAdjustments = adjustmentLayers
+      .filter((layer) =>
+        layer.trackId === trackId &&
+        trackSettings[layer.trackId]?.deleted !== true &&
+        trackSettings[layer.trackId]?.hidden !== true &&
+        layer.opacity > 0
+      )
+      .sort((a, b) => a.timelineStart - b.timelineStart);
+
+    // An adjustment layer lives on a video track and affects the composite of
+    // tracks below it. Apply it before media from its own track is overlaid.
+    for (const layer of trackAdjustments) {
+      const parameters = adjustmentFilterParameters([layer]);
+      const brightness = clamp(parameters.brightness - 1, -1, 1);
+      const contrast = clamp(parameters.contrast, 0.05, 2);
+      const saturation = clamp(parameters.saturation, 0, 3);
+      const temperature = clamp(parameters.temperature * 0.18, -0.25, 0.25);
+      const enable = `between(t,${n(layer.timelineStart, 6)},${n(layer.timelineEnd, 6)})`;
+      const nextLabel = `vadj${compositeStage++}`;
+      const filters = [
+        `eq=brightness=${n(brightness, 6)}:contrast=${n(contrast, 6)}:saturation=${n(saturation, 6)}:enable='${enable}'`,
+      ];
+      if (Math.abs(temperature) > 0.0001) {
+        filters.push(
+          `colorbalance=rs=${n(temperature, 6)}:bs=${n(-temperature, 6)}:enable='${enable}'`,
+        );
+      }
+      filterParts.push(`[${currentVideoLabel}]${filters.join(",")}[${nextLabel}]`);
+      currentVideoLabel = nextLabel;
+    }
+
+    const trackClips = orderedVideoClips.filter((clip) => clip.trackId === trackId);
+    for (const clip of trackClips) {
+      const overlayLabel = overlayLabelByClipId.get(clip.id);
+      if (!overlayLabel) continue;
+      const nextLabel = `vstack${compositeStage++}`;
+      const overlayLocalTime = `(t-${n(clip.timelineStart, 6)})`;
+      const positionXExpression = ffmpegKeyframeExpression(
+        clip,
+        "positionX",
+        overlayLocalTime,
+      );
+      const positionYExpression = ffmpegKeyframeExpression(
+        clip,
+        "positionY",
+        overlayLocalTime,
+      );
+      const x = `(main_w-overlay_w)/2+((${positionXExpression})/100)*main_w`;
+      const y = `(main_h-overlay_h)/2+((${positionYExpression})/100)*main_h`;
+
+      filterParts.push(
+        `[${currentVideoLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
+      );
+      currentVideoLabel = nextLabel;
+    }
   }
 
   if (exportRange) {
@@ -735,6 +788,7 @@ export async function exportStyledVideo(
     buildTimelineFilterGraph(
       options.videoClips,
       options.audioClips,
+      options.adjustmentLayers,
       options.trackSettings,
       options.timelineDuration,
       normalizedRange,

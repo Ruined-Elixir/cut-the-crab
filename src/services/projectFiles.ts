@@ -9,6 +9,7 @@ import {
 import type { TimelineMarker } from "../types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
@@ -23,7 +24,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 20;
+export const CURRENT_PROJECT_VERSION = 21;
 
 export type SubtitleProject = {
   version: number;
@@ -35,6 +36,7 @@ export type SubtitleProject = {
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   mediaAssets: ProjectMediaAsset[];
   trackSettings: TimelineTrackSettings;
   updatedAt: string;
@@ -390,6 +392,35 @@ function normalizeAudioClip(
   };
 }
 
+function normalizeAdjustmentLayer(
+  value: unknown,
+  index: number,
+): AdjustmentLayerClip | null {
+  if (!isRecord(value)) return null;
+
+  const timelineStart = Math.max(0, asNumber(value.timelineStart, 0));
+  const timelineEnd = asNumber(value.timelineEnd, timelineStart + 5);
+  const trackId = typeof value.trackId === "string" && /^video-\d+$/.test(value.trackId)
+    ? value.trackId
+    : "video-1";
+
+  if (timelineEnd - timelineStart < 0.1) return null;
+
+  return {
+    id: typeof value.id === "string" && value.id ? value.id : `adjustment-${index}-${crypto.randomUUID()}`,
+    kind: "adjustment",
+    trackId,
+    name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : `Adjustment Layer ${index + 1}`,
+    timelineStart,
+    timelineEnd,
+    opacity: Math.max(0, Math.min(100, asNumber(value.opacity, 100))),
+    exposure: Math.max(-3, Math.min(3, asNumber(value.exposure, 0))),
+    contrast: Math.max(-100, Math.min(100, asNumber(value.contrast, 0))),
+    saturation: Math.max(0, Math.min(200, asNumber(value.saturation, 100))),
+    temperature: Math.max(-100, Math.min(100, asNumber(value.temperature, 0))),
+  };
+}
+
 function normalizeMediaAsset(
   value: unknown,
   index: number,
@@ -492,7 +523,20 @@ function normalizeProject(
         .sort((a, b) => a.timelineStart - b.timelineStart)
     : [];
 
+  const adjustmentLayers = Array.isArray(value.adjustmentLayers)
+    ? value.adjustmentLayers
+        .map((layer, index) => normalizeAdjustmentLayer(layer, index))
+        .filter((layer): layer is AdjustmentLayerClip => layer !== null)
+        .sort((a, b) => a.timelineStart - b.timelineStart)
+    : [];
+
   const normalizedTrackSettings = normalizeTrackSettings(value.trackSettings);
+
+  for (const layer of adjustmentLayers) {
+    if (!normalizedTrackSettings[layer.trackId]) {
+      normalizedTrackSettings[layer.trackId] = { locked: false, hidden: false, linkedTrackId: null };
+    }
+  }
 
   // v16 persists subtitle ownership on each subtitle. Ensure every subtitle
   // track referenced by project data has a corresponding control state even
@@ -546,6 +590,7 @@ function normalizeProject(
     markers,
     videoClips,
     audioClips,
+    adjustmentLayers,
     mediaAssets,
     trackSettings: normalizedTrackSettings,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
@@ -600,6 +645,7 @@ export async function saveProjectFile(
   metadata?: ProjectMetadata,
   videoClips: VideoTimelineClip[] = [],
   audioClips: AudioTimelineClip[] = [],
+  adjustmentLayers: AdjustmentLayerClip[] = [],
   mediaAssets: ProjectMediaAsset[] = [],
   trackSettings: TimelineTrackSettings = DEFAULT_TIMELINE_TRACK_SETTINGS,
 ): Promise<void> {
@@ -615,6 +661,9 @@ export async function saveProjectFile(
       (a, b) => a.timelineStart - b.timelineStart,
     ),
     audioClips: [...audioClips].sort(
+      (a, b) => a.timelineStart - b.timelineStart,
+    ),
+    adjustmentLayers: [...adjustmentLayers].sort(
       (a, b) => a.timelineStart - b.timelineStart,
     ),
     mediaAssets,

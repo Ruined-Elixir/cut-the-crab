@@ -16,6 +16,7 @@ import Timeline, {
 } from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
+import AdjustmentLayerPanel from "./components/adjustments/AdjustmentLayerPanel";
 
 import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
@@ -56,6 +57,7 @@ import { DEFAULT_SUBTITLE_TRACK_ID, getSubtitleTrackId, type Subtitle } from "./
 import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrackId,
   TimelineTrackKind,
@@ -92,6 +94,12 @@ import {
   trimCompound,
   type CompoundTimelineState,
 } from "./utils/compoundClips";
+import {
+  DEFAULT_ADJUSTMENT_LAYER_DURATION,
+  DEFAULT_ADJUSTMENT_LAYER_VALUES,
+  MIN_ADJUSTMENT_LAYER_DURATION,
+  normalizedAdjustmentLayer,
+} from "./utils/adjustmentLayers";
 import {
   applyTimelineRangeEdit,
   type TimelineRange,
@@ -499,6 +507,9 @@ function App() {
   const [activeSubtitleTrackId, setActiveSubtitleTrackId] =
     useState<TimelineTrackId>(DEFAULT_SUBTITLE_TRACK_ID);
   const [expandedCompoundId, setExpandedCompoundId] = useState<string | null>(null);
+  const [adjustmentLayers, setAdjustmentLayers] = useState<AdjustmentLayerClip[]>([]);
+  const [selectedAdjustmentLayerId, setSelectedAdjustmentLayerId] = useState<string | null>(null);
+  const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
 
   // ==========================================================================
   // Video export UI
@@ -532,7 +543,7 @@ function App() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const lastSavedSnapshotRef = useRef<string>(
-    JSON.stringify({ subtitles: [], markers: [], videoClips: [], audioClips: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
+    JSON.stringify({ subtitles: [], markers: [], videoClips: [], audioClips: [], adjustmentLayers: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
   );
 
   // ==========================================================================
@@ -675,6 +686,7 @@ function App() {
     projectMetadata,
     videoClips,
     audioClips,
+    adjustmentLayers,
     mediaAssets,
     trackSettings,
     videoDuration,
@@ -689,6 +701,7 @@ function App() {
     projectMetadata,
     videoClips,
     audioClips,
+    adjustmentLayers,
     mediaAssets,
     trackSettings,
     videoDuration,
@@ -699,6 +712,7 @@ function App() {
     0,
     ...videoClips.map((clip) => clip.timelineEnd),
     ...audioClips.map((clip) => clip.timelineEnd),
+    ...adjustmentLayers.map((layer) => layer.timelineEnd),
     ...subtitles.map((subtitle) => subtitle.endTime),
     ...markers.map((marker) => marker.time),
   );
@@ -725,6 +739,7 @@ function App() {
       markers,
       videoClips,
       audioClips,
+      adjustmentLayers,
       trackSettings,
     },
     enabled:
@@ -736,9 +751,158 @@ function App() {
       setMarkers(snapshot.markers);
       replaceVideoClips(snapshot.videoClips);
       replaceAudioClips(snapshot.audioClips);
+      setAdjustmentLayers(snapshot.adjustmentLayers);
       setTrackSettings(snapshot.trackSettings);
     },
   });
+
+  const selectedAdjustmentLayer = selectedAdjustmentLayerId
+    ? adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null
+    : null;
+
+  useEffect(() => {
+    if (selectedAdjustmentLayerId && !adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
+      setSelectedAdjustmentLayerId(null);
+      setAdjustmentPanelOpen(false);
+    }
+  }, [adjustmentLayers, selectedAdjustmentLayerId]);
+
+  const clearAdjustmentLayerSelection = () => {
+    setSelectedAdjustmentLayerId(null);
+    setAdjustmentPanelOpen(false);
+  };
+
+  const selectAdjustmentLayer = (id: string, openControls = false) => {
+    const layer = adjustmentLayers.find((item) => item.id === id);
+    if (!layer) return;
+
+    clearVideoClipSelection();
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+    setTimelineRange(null);
+    setSelectedAdjustmentLayerId(id);
+    if (openControls) setAdjustmentPanelOpen(true);
+  };
+
+  const updateAdjustmentLayer = (
+    id: string,
+    patch: Partial<AdjustmentLayerClip>,
+  ) => {
+    setAdjustmentLayers((current) =>
+      current.map((layer) =>
+        layer.id === id
+          ? normalizedAdjustmentLayer({ ...layer, ...patch })
+          : layer,
+      ),
+    );
+  };
+
+  const createAdjustmentLayer = () => {
+    const rangeStart = timelineRange ? Math.min(timelineRange.start, timelineRange.end) : currentTime;
+    const rangeEnd = timelineRange ? Math.max(timelineRange.start, timelineRange.end) : rangeStart + DEFAULT_ADJUSTMENT_LAYER_DURATION;
+    const start = Math.max(0, rangeStart);
+    const end = Math.max(start + MIN_ADJUSTMENT_LAYER_DURATION, rangeEnd);
+
+    const activeVideoTrackIds = new Set<string>();
+    for (const [trackId, settings] of Object.entries(trackSettings) as [string, TimelineTrackSettings[string]][]) {
+      if (/^video-\d+$/.test(trackId) && settings.deleted !== true) activeVideoTrackIds.add(trackId);
+    }
+    for (const clip of videoClips) {
+      if (trackSettings[clip.trackId]?.deleted !== true) activeVideoTrackIds.add(clip.trackId);
+    }
+    for (const layer of adjustmentLayers) {
+      if (trackSettings[layer.trackId]?.deleted !== true) activeVideoTrackIds.add(layer.trackId);
+    }
+
+    const topIndex = Math.max(0, ...[...activeVideoTrackIds].map(timelineTrackIndexFromId));
+    let targetTrackId = topIndex > 0 ? `video-${topIndex}` : "video-1";
+    const topSettings = trackSettings[targetTrackId];
+    const topHasOverlap =
+      videoClips.some((clip) => clip.trackId === targetTrackId && clip.timelineStart < end && clip.timelineEnd > start) ||
+      adjustmentLayers.some((layer) => layer.trackId === targetTrackId && layer.timelineStart < end && layer.timelineEnd > start);
+    const topIsSuitable =
+      topIndex > 0 &&
+      topSettings?.deleted !== true &&
+      topSettings?.locked !== true &&
+      !topSettings?.linkedTrackId &&
+      !topHasOverlap;
+
+    markNextChangeImmediate();
+
+    if (!topIsSuitable) {
+      targetTrackId = `video-${Math.max(1, topIndex + 1)}`;
+      setTrackSettings((current) => ({
+        ...current,
+        [targetTrackId]: {
+          ...defaultTrackControlState("video"),
+          linkedTrackId: null,
+          deleted: false,
+        },
+      }));
+    }
+
+    const id = `adjustment-${crypto.randomUUID()}`;
+    const layer: AdjustmentLayerClip = {
+      id,
+      kind: "adjustment",
+      trackId: targetTrackId,
+      name: `Adjustment Layer ${adjustmentLayers.length + 1}`,
+      timelineStart: start,
+      timelineEnd: end,
+      ...DEFAULT_ADJUSTMENT_LAYER_VALUES,
+    };
+
+    setAdjustmentLayers((current) => [...current, layer]);
+    clearVideoClipSelection();
+    clearAudioClipSelection();
+    clearSubtitleSelection();
+    setTimelineRange(null);
+    setSelectedAdjustmentLayerId(id);
+    setAdjustmentPanelOpen(true);
+    requestSeek(start);
+  };
+
+  const beginAdjustmentLayerEdit = (id: string) => {
+    const layer = adjustmentLayers.find((item) => item.id === id);
+    if (!layer || trackSettings[layer.trackId]?.locked) return false;
+    beginHistoryTransaction();
+    return true;
+  };
+
+  const endAdjustmentLayerEdit = () => {
+    window.requestAnimationFrame(() => endHistoryTransaction());
+  };
+
+  const moveAdjustmentLayer = (id: string, newTimelineStart: number) => {
+    setAdjustmentLayers((current) =>
+      current.map((layer) => {
+        if (layer.id !== id || trackSettings[layer.trackId]?.locked) return layer;
+        const duration = Math.max(MIN_ADJUSTMENT_LAYER_DURATION, layer.timelineEnd - layer.timelineStart);
+        const start = Math.max(0, newTimelineStart);
+        return { ...layer, timelineStart: start, timelineEnd: start + duration };
+      }),
+    );
+  };
+
+  const resizeAdjustmentLayer = (id: string, newStart: number, newEnd: number) => {
+    setAdjustmentLayers((current) =>
+      current.map((layer) => {
+        if (layer.id !== id || trackSettings[layer.trackId]?.locked) return layer;
+        const start = Math.max(0, Math.min(newStart, newEnd - MIN_ADJUSTMENT_LAYER_DURATION));
+        const end = Math.max(start + MIN_ADJUSTMENT_LAYER_DURATION, newEnd);
+        return { ...layer, timelineStart: start, timelineEnd: end };
+      }),
+    );
+  };
+
+  const deleteSelectedAdjustmentLayerWithHistory = () => {
+    if (!selectedAdjustmentLayer || trackSettings[selectedAdjustmentLayer.trackId]?.locked) return false;
+    markNextChangeImmediate();
+    setAdjustmentLayers((current) => current.filter((layer) => layer.id !== selectedAdjustmentLayer.id));
+    setSelectedAdjustmentLayerId(null);
+    setAdjustmentPanelOpen(false);
+    return true;
+  };
 
   const selectedVideoClips = videoClips.filter((clip) =>
     selectedVideoClipIds.includes(clip.id),
@@ -1496,6 +1660,7 @@ function App() {
     if (mode !== "toggle") {
       clearVideoClipSelection();
       clearSubtitleSelection();
+      clearAdjustmentLayerSelection();
     }
     setTimelineRange(null);
   };
@@ -1524,6 +1689,7 @@ function App() {
         selectVideoClips([group.anchorVideoId], group.anchorVideoId);
         clearAudioClipSelection();
         clearSubtitleSelection();
+        clearAdjustmentLayerSelection();
         setTimelineRange(null);
         return;
       }
@@ -1538,6 +1704,7 @@ function App() {
     setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
     clearVideoClipSelection();
     clearAudioClipSelection();
+    clearAdjustmentLayerSelection();
     selectSubtitle(id, "single", timelineSelectableSubtitleIdSet);
     setTimelineRange(null);
   };
@@ -1550,6 +1717,7 @@ function App() {
     if (mode !== "toggle") {
       clearSubtitleSelection();
       clearAudioClipSelection();
+      clearAdjustmentLayerSelection();
     }
     setTimelineRange(null);
   };
@@ -1561,6 +1729,7 @@ function App() {
     selectVideoClips(ids, primaryId);
     clearSubtitleSelection();
     clearAudioClipSelection();
+    clearAdjustmentLayerSelection();
     setTimelineRange(null);
   };
 
@@ -1726,19 +1895,25 @@ function App() {
 
     if (kind === "video") {
       const clipCount = videoClips.filter((clip) => clip.trackId === trackId).length;
+      const adjustmentCount = adjustmentLayers.filter((layer) => layer.trackId === trackId).length;
       const hasLinkedAudio =
         !!linkedTrackId &&
         timelineTrackKindFromId(linkedTrackId) === "audio" &&
         trackSettings[linkedTrackId]?.deleted !== true;
       const label = `V${timelineTrackIndexFromId(trackId)}`;
       const message = hasLinkedAudio
-        ? `Delete ${label} and its linked ${linkedTrackId?.replace("audio-", "A")} track?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}`
-        : `Delete ${label}?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}`;
+        ? `Delete ${label} and its linked ${linkedTrackId?.replace("audio-", "A")} track?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}${adjustmentCount ? ` This will also remove ${adjustmentCount} adjustment layer${adjustmentCount === 1 ? "" : "s"}.` : ""}`
+        : `Delete ${label}?${clipCount ? ` This will remove ${clipCount} video clip${clipCount === 1 ? "" : "s"}.` : ""}${adjustmentCount ? ` This will also remove ${adjustmentCount} adjustment layer${adjustmentCount === 1 ? "" : "s"}.` : ""}`;
 
       if (!window.confirm(message)) return;
 
       markNextChangeImmediate();
       deleteVideoTrack(trackId);
+      setAdjustmentLayers((current) => current.filter((layer) => layer.trackId !== trackId));
+      if (selectedAdjustmentLayer?.trackId === trackId) {
+        setSelectedAdjustmentLayerId(null);
+        setAdjustmentPanelOpen(false);
+      }
       setTrackSettings((current) => {
         const next = {
           ...current,
@@ -2321,6 +2496,7 @@ function App() {
     markers: TimelineMarker[];
     videoClips: VideoTimelineClip[];
     audioClips: AudioTimelineClip[];
+    adjustmentLayers: AdjustmentLayerClip[];
     mediaAssets: ProjectMediaAsset[];
     trackSettings: TimelineTrackSettings;
   }) =>
@@ -2329,6 +2505,7 @@ function App() {
       markers: state.markers,
       videoClips: state.videoClips,
       audioClips: state.audioClips,
+      adjustmentLayers: state.adjustmentLayers,
       mediaAssets: state.mediaAssets,
       trackSettings: state.trackSettings,
     });
@@ -2341,6 +2518,7 @@ function App() {
     projectMetadata: ProjectMetadata | null;
     videoClips: VideoTimelineClip[];
     audioClips: AudioTimelineClip[];
+    adjustmentLayers: AdjustmentLayerClip[];
     mediaAssets: ProjectMediaAsset[];
     trackSettings: TimelineTrackSettings;
   }) => {
@@ -2357,6 +2535,7 @@ function App() {
           state.projectMetadata ?? undefined,
           state.videoClips,
           state.audioClips,
+          state.adjustmentLayers,
           state.mediaAssets,
           state.trackSettings,
         );
@@ -2395,7 +2574,7 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, audioClips, mediaAssets, trackSettings });
+    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, audioClips, adjustmentLayers, mediaAssets, trackSettings });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
   }, [
@@ -2403,6 +2582,7 @@ function App() {
     markers,
     videoClips,
     audioClips,
+    adjustmentLayers,
     mediaAssets,
     trackSettings,
     videoPath,
@@ -2434,6 +2614,7 @@ function App() {
           projectMetadata,
           videoClips,
           audioClips,
+          adjustmentLayers,
           mediaAssets,
           trackSettings,
         });
@@ -2455,6 +2636,7 @@ function App() {
     projectMetadata,
     videoClips,
     audioClips,
+    adjustmentLayers,
     mediaAssets,
     trackSettings,
     hasUnsavedChanges,
@@ -2598,6 +2780,9 @@ function App() {
     replaceSubtitles([]);
     replaceVideoClips([]);
     replaceAudioClips([]);
+    setAdjustmentLayers([]);
+    setSelectedAdjustmentLayerId(null);
+    setAdjustmentPanelOpen(false);
     setMarkers([]);
     setSubtitleSearch("");
     setTimelineZoom(1);
@@ -2613,6 +2798,7 @@ function App() {
       markers: [] as TimelineMarker[],
       videoClips: [] as VideoTimelineClip[],
       audioClips: [] as AudioTimelineClip[],
+      adjustmentLayers: [] as AdjustmentLayerClip[],
       mediaAssets: [] as ProjectMediaAsset[],
       trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS } as TimelineTrackSettings,
     };
@@ -2629,6 +2815,7 @@ function App() {
         const loadedVideoClips =
           matchingProject.videoClips;
         const loadedAudioClips = matchingProject.audioClips;
+        const loadedAdjustmentLayers = matchingProject.adjustmentLayers;
         const loadedMediaAssets = matchingProject.mediaAssets;
 
         resolvedMetadata = {
@@ -2644,6 +2831,7 @@ function App() {
           markSourceInitializedFor: path,
         });
         replaceAudioClips(loadedAudioClips);
+        setAdjustmentLayers(loadedAdjustmentLayers);
         setMarkers(loadedMarkers);
         setMediaAssets(loadedMediaAssets);
         setTrackSettings(matchingProject.trackSettings);
@@ -2654,6 +2842,7 @@ function App() {
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
           audioClips: loadedAudioClips,
+          adjustmentLayers: loadedAdjustmentLayers,
           mediaAssets: loadedMediaAssets,
           trackSettings: matchingProject.trackSettings,
         };
@@ -2663,6 +2852,7 @@ function App() {
           markers: loadedMarkers,
           videoClips: loadedVideoClips,
           audioClips: loadedAudioClips,
+          adjustmentLayers: loadedAdjustmentLayers,
           mediaAssets: loadedMediaAssets,
           trackSettings: matchingProject.trackSettings,
         });
@@ -2679,6 +2869,7 @@ function App() {
             markers: [],
             videoClips: [],
             audioClips: [],
+            adjustmentLayers: [],
             mediaAssets: [],
             trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
           };
@@ -2688,6 +2879,7 @@ function App() {
             markers: [],
             videoClips: [],
             audioClips: [],
+            adjustmentLayers: [],
             mediaAssets: [],
             trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
@@ -2697,6 +2889,7 @@ function App() {
             markers: [],
             videoClips: [],
             audioClips: [],
+            adjustmentLayers: [],
             mediaAssets: [],
             trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
@@ -2712,6 +2905,7 @@ function App() {
         markers: [],
         videoClips: [],
         audioClips: [],
+        adjustmentLayers: [],
         mediaAssets: [],
         trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
       };
@@ -2721,6 +2915,7 @@ function App() {
         markers: [],
         videoClips: [],
         audioClips: [],
+        adjustmentLayers: [],
         mediaAssets: [],
         trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
       });
@@ -2934,6 +3129,7 @@ function App() {
         [],
         [],
         [],
+        [],
         DEFAULT_TIMELINE_TRACK_SETTINGS,
       );
 
@@ -2987,6 +3183,7 @@ function App() {
           },
           matchingProject.videoClips,
           matchingProject.audioClips,
+          matchingProject.adjustmentLayers,
           matchingProject.mediaAssets,
           matchingProject.trackSettings,
         );
@@ -3044,6 +3241,7 @@ function App() {
           },
           oldProject.videoClips,
           oldProject.audioClips,
+          oldProject.adjustmentLayers,
           oldProject.mediaAssets,
           oldProject.trackSettings,
         );
@@ -3199,6 +3397,7 @@ function App() {
         projectMetadata,
         videoClips,
         audioClips,
+        adjustmentLayers,
         mediaAssets,
         trackSettings,
       });
@@ -3233,6 +3432,7 @@ function App() {
     }
     clearVideoClipSelection();
     clearAudioClipSelection();
+    clearAdjustmentLayerSelection();
     const subtitle = subtitles.find((item) => item.id === id);
     if (subtitle) {
       setActiveSubtitleTrackId(getSubtitleTrackId(subtitle));
@@ -3287,6 +3487,7 @@ function App() {
         timelineDuration,
         videoClips,
         audioClips,
+        adjustmentLayers,
         trackSettings,
         range,
 
@@ -3551,7 +3752,11 @@ function App() {
 
       case "edit.delete-subtitle":
         if (screen === "editor") {
-          if (!deleteSelectedAudioClipsWithHistory() && !deleteSelectedVideoClipWithHistory()) {
+          if (
+            !deleteSelectedAdjustmentLayerWithHistory() &&
+            !deleteSelectedAudioClipsWithHistory() &&
+            !deleteSelectedVideoClipWithHistory()
+          ) {
             deleteSelectionWithHistory();
           }
         }
@@ -3785,6 +3990,12 @@ function App() {
           } else {
             deleteTimelineRangeWithHistory();
           }
+          return;
+        }
+
+        if (selectedAdjustmentLayerId) {
+          event.preventDefault();
+          deleteSelectedAdjustmentLayerWithHistory();
           return;
         }
 
@@ -4094,6 +4305,7 @@ function App() {
             seekRequest={seekRequest}
             videoClips={videoClips}
             audioClips={audioClips}
+            adjustmentLayers={adjustmentLayers}
             timelineDuration={timelineDuration}
             trackSettings={trackSettings}
             selectedVideoClipId={selectedProgramVideoClipId}
@@ -4151,6 +4363,7 @@ function App() {
         waveformsBySource={waveformsBySource}
         videoClips={videoClips}
         audioClips={audioClips}
+        adjustmentLayers={adjustmentLayers}
         subtitles={subtitles}
         markers={markers}
         zoom={timelineZoom}
@@ -4163,8 +4376,19 @@ function App() {
         selectedVideoClipIds={selectedVideoClipIds}
         selectedAudioClipId={selectedAudioClipId}
         selectedAudioClipIds={selectedAudioClipIds}
+        selectedAdjustmentLayerId={selectedAdjustmentLayerId}
         activeSubtitleTrackId={activeSubtitleTrackId}
         onAddTrack={handleAddTimelineTrack}
+        onCreateAdjustmentLayer={createAdjustmentLayer}
+        onAdjustmentLayerSelect={(id) => selectAdjustmentLayer(id, false)}
+        onAdjustmentLayerOpen={(id) => selectAdjustmentLayer(id, true)}
+        onAdjustmentLayerEditStart={beginAdjustmentLayerEdit}
+        onAdjustmentLayerEditEnd={endAdjustmentLayerEdit}
+        onAdjustmentLayerMove={moveAdjustmentLayer}
+        onAdjustmentLayerResize={resizeAdjustmentLayer}
+        onOpenAdjustmentControls={() => {
+          if (selectedAdjustmentLayerId) setAdjustmentPanelOpen(true);
+        }}
         onDeleteTrack={handleDeleteTimelineTrack}
         onPasteTargetChange={handleTimelinePasteTargetChange}
         onTimelineRangeChange={setTimelineRange}
@@ -4230,6 +4454,13 @@ function App() {
         onCloseCompound={closeCompound}
         onSkimPreviewChange={handleSkimPreviewChange}
         onSeek={requestSeek}
+      />
+
+      <AdjustmentLayerPanel
+        layer={adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null}
+        open={adjustmentPanelOpen}
+        onClose={() => setAdjustmentPanelOpen(false)}
+        onChange={updateAdjustmentLayer}
       />
 
       {(isGenerating || generationError) && (

@@ -11,6 +11,7 @@ import {
 import { getSubtitleTrackId, type Subtitle } from "../../types/subtitle";
 import type { TimelineMarker } from "../../types/timeline";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrack as TimelineTrackModel,
   TimelineTrackId,
@@ -58,6 +59,7 @@ type TimelineProps = {
   waveformsBySource: Record<string, number[]>;
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   zoom: number;
@@ -71,11 +73,20 @@ type TimelineProps = {
   selectedVideoClipIds: string[];
   selectedAudioClipId: string | null;
   selectedAudioClipIds: string[];
+  selectedAdjustmentLayerId: string | null;
   activeSubtitleTrackId: TimelineTrackId;
 
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
   onAddTrack?: (kind: TimelineTrackKind | "video-audio") => void;
+  onCreateAdjustmentLayer?: () => void;
+  onAdjustmentLayerSelect?: (id: string) => void;
+  onAdjustmentLayerOpen?: (id: string) => void;
+  onAdjustmentLayerEditStart?: (id: string) => boolean | void;
+  onAdjustmentLayerEditEnd?: () => void;
+  onAdjustmentLayerMove?: (id: string, newTimelineStart: number) => void;
+  onAdjustmentLayerResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
+  onOpenAdjustmentControls?: () => void;
   onDeleteTrack?: (trackId: TimelineTrackId) => void;
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   onClearSubtitleSelection?: () => void;
@@ -204,6 +215,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   waveformsBySource,
   videoClips,
   audioClips,
+  adjustmentLayers,
   subtitles,
   markers,
   zoom,
@@ -216,10 +228,19 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   selectedVideoClipIds,
   selectedAudioClipId,
   selectedAudioClipIds,
+  selectedAdjustmentLayerId,
   activeSubtitleTrackId,
   onSeek,
   onSkimPreviewChange,
   onAddTrack,
+  onCreateAdjustmentLayer,
+  onAdjustmentLayerSelect,
+  onAdjustmentLayerOpen,
+  onAdjustmentLayerEditStart,
+  onAdjustmentLayerEditEnd,
+  onAdjustmentLayerMove,
+  onAdjustmentLayerResize,
+  onOpenAdjustmentControls,
   onDeleteTrack,
   onPasteTargetChange,
   onClearSubtitleSelection,
@@ -440,6 +461,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       { time: clip.timelineEnd, kind: "clip" as const, clipId: clip.id },
     ]);
 
+    const adjustmentTargets = adjustmentLayers.flatMap((layer) => [
+      { time: layer.timelineStart, kind: "clip" as const, clipId: layer.id },
+      { time: layer.timelineEnd, kind: "clip" as const, clipId: layer.id },
+    ]);
+
     const markerTargets = markers.map((marker) => ({
       time: marker.time,
       kind: "marker" as const,
@@ -448,10 +474,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     return [
       { time: 0, kind: "timeline" as const },
       ...clipTargets,
+      ...adjustmentTargets,
       ...markerTargets,
       { time: currentTime, kind: "playhead" as const },
     ];
-  }, [currentTime, displayVideoClips, markers]);
+  }, [adjustmentLayers, currentTime, displayVideoClips, markers]);
 
   const timelineTracks = useMemo(
     () =>
@@ -1283,6 +1310,14 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             duration={workspaceDuration}
             currentTime={currentTime}
             track={track}
+            adjustmentLayers={adjustmentLayers.filter((layer) => layer.trackId === track.id)}
+            selectedAdjustmentLayerId={selectedAdjustmentLayerId}
+            onAdjustmentLayerSelect={onAdjustmentLayerSelect}
+            onAdjustmentLayerOpen={onAdjustmentLayerOpen}
+            onAdjustmentLayerEditStart={onAdjustmentLayerEditStart}
+            onAdjustmentLayerEditEnd={onAdjustmentLayerEditEnd}
+            onAdjustmentLayerMove={onAdjustmentLayerMove}
+            onAdjustmentLayerResize={onAdjustmentLayerResize}
             selectedVideoClipId={selectedVideoClipId}
             selectedVideoClipIds={selectedVideoClipIds}
             framesByClipId={framesByClipId}
@@ -1714,6 +1749,29 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
               >
                 Freeze
               </button>
+            </div>
+          )}
+
+          {!expandedCompoundId && (
+            <div className="timeline-adjustment-actions" aria-label="Adjustment layer actions">
+              <button
+                type="button"
+                className="timeline-action-button adjustment"
+                onClick={onCreateAdjustmentLayer}
+                title="Create an adjustment layer at the playhead or selected range"
+              >
+                + Adjustment
+              </button>
+              {selectedAdjustmentLayerId && (
+                <button
+                  type="button"
+                  className="timeline-action-button"
+                  onClick={onOpenAdjustmentControls}
+                  title="Open Adjustment Layer controls"
+                >
+                  Controls
+                </button>
+              )}
             </div>
           )}
 

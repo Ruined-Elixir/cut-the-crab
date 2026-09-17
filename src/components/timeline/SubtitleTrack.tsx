@@ -300,8 +300,6 @@ function SubtitleTrack({
 }: SubtitleTrackProps) {
   const [draggingSubtitleIds, setDraggingSubtitleIds] =
     useState<string[]>([]);
-  const [draggingCompoundId, setDraggingCompoundId] =
-    useState<string | null>(null);
   const [snapIndicator, setSnapIndicator] =
     useState<SnapTarget | null>(null);
 

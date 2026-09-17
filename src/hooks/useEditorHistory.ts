@@ -8,13 +8,14 @@ import {
 
 import type { Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
-import type { AudioTimelineClip, TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
+import type { AdjustmentLayerClip, AudioTimelineClip, TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
 
 export type EditorHistorySnapshot = {
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   trackSettings: TimelineTrackSettings;
 };
 
@@ -42,6 +43,7 @@ function cloneSnapshot(
       }),
     ),
     audioClips: snapshot.audioClips.map((clip) => ({ ...clip })),
+    adjustmentLayers: snapshot.adjustmentLayers.map((layer) => ({ ...layer })),
     trackSettings: Object.fromEntries(
       Object.entries(snapshot.trackSettings).map(([trackId, settings]) => [
         trackId,
