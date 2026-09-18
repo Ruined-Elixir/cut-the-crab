@@ -34,6 +34,16 @@ export type ExportTimelineRange = {
   end: number;
 };
 
+export type ExportFrameSize = {
+  width: number;
+  height: number;
+};
+
+export const DEFAULT_EXPORT_FRAME_SIZE: ExportFrameSize = {
+  width: 1920,
+  height: 1080,
+};
+
 type ExportTimelineVideoOptions = {
   timelineDuration: number;
   videoClips: VideoTimelineClip[];
@@ -41,6 +51,7 @@ type ExportTimelineVideoOptions = {
   adjustmentLayers: AdjustmentLayerClip[];
   trackSettings: TimelineTrackSettings;
   range?: ExportTimelineRange | null;
+  frameSize?: ExportFrameSize;
   onStart?: () => void;
   onProgress?: (progress: VideoExportProgress) => void;
 };
@@ -54,8 +65,6 @@ type ClipRenderWindow = {
   transitionOutCross?: { start: number; duration: number };
 };
 
-const OUTPUT_WIDTH = 1920;
-const OUTPUT_HEIGHT = 1080;
 const OUTPUT_FPS = 30;
 const EPSILON = 0.03;
 
@@ -70,6 +79,27 @@ function clamp(value: number, min: number, max: number) {
 
 function n(value: number, digits = 4) {
   return Number.isFinite(value) ? value.toFixed(digits) : "0";
+}
+
+function evenDimension(value: number, fallback: number) {
+  const finite = Number.isFinite(value) ? Math.round(value) : fallback;
+  const clamped = Math.max(64, Math.min(7680, finite));
+  return clamped % 2 === 0 ? clamped : clamped + 1;
+}
+
+function normalizeExportFrameSize(
+  frameSize?: ExportFrameSize,
+): ExportFrameSize {
+  return {
+    width: evenDimension(
+      frameSize?.width ?? DEFAULT_EXPORT_FRAME_SIZE.width,
+      DEFAULT_EXPORT_FRAME_SIZE.width,
+    ),
+    height: evenDimension(
+      frameSize?.height ?? DEFAULT_EXPORT_FRAME_SIZE.height,
+      DEFAULT_EXPORT_FRAME_SIZE.height,
+    ),
+  };
 }
 
 function atempoFilters(rate: number) {
@@ -352,8 +382,12 @@ function buildTimelineFilterGraph(
   trackSettings: TimelineTrackSettings,
   timelineDuration: number,
   range?: ExportTimelineRange | null,
+  frameSize?: ExportFrameSize,
 ) {
   const safeDuration = Math.max(0.1, timelineDuration);
+  const normalizedFrameSize = normalizeExportFrameSize(frameSize);
+  const outputWidth = normalizedFrameSize.width;
+  const outputHeight = normalizedFrameSize.height;
   const exportRange = normalizeExportRange(range, safeDuration);
   const outputDuration = exportRange
     ? Math.max(0.001, exportRange.end - exportRange.start)
@@ -362,7 +396,7 @@ function buildTimelineFilterGraph(
   const filterParts: string[] = [];
 
   filterParts.push(
-    `color=c=black:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:r=${OUTPUT_FPS}:d=${n(
+    `color=c=black:s=${outputWidth}x${outputHeight}:r=${OUTPUT_FPS}:d=${n(
       safeDuration,
       3,
     )}[basev]`,
@@ -445,7 +479,7 @@ function buildTimelineFilterGraph(
       videoFilters.push(`setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`);
     }
     videoFilters.push(
-      `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease`,
+      `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease`,
       "format=rgba",
     );
 
@@ -822,11 +856,16 @@ export async function exportStyledVideo(
     return null;
   }
 
+  const frameSize = normalizeExportFrameSize(options.frameSize);
   const visibleSubtitles = subtitles.filter(
     (subtitle) => !options.trackSettings[getSubtitleTrackId(subtitle)]?.hidden,
   );
   const assContent = buildAssTrack(
     subtitlesForExportRange(visibleSubtitles, normalizedRange),
+    {
+      playResWidth: frameSize.width,
+      playResHeight: frameSize.height,
+    },
   );
   const { inputPaths, filterComplex, outputDuration } =
     buildTimelineFilterGraph(
@@ -836,6 +875,7 @@ export async function exportStyledVideo(
       options.trackSettings,
       options.timelineDuration,
       normalizedRange,
+      frameSize,
     );
 
   const resolvedInputs = inputPaths.length > 0 ? inputPaths : [videoPath];

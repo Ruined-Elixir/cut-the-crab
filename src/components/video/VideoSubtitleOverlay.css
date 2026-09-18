@@ -13,6 +13,31 @@
   pointer-events: none;
 }
 
+
+
+/*
+ * Dedicated subtitle render frame.
+ *
+ * SubtitlesOctopus can resize/reposition the supplied canvas to match the
+ * entire HTMLVideoElement. The Program Monitor, however, may have black
+ * letterbox space around the actual export frame. Constraining the canvases
+ * here keeps browser libass, the transparent interaction proxy, and FFmpeg
+ * export on the same coordinate rectangle.
+ */
+.ass-subtitle-frame {
+  position:absolute;
+  z-index:100;
+  overflow:hidden;
+  pointer-events:none;
+}
+
+.ass-subtitle-frame > .ass-subtitle-canvas {
+  left:0!important;
+  top:0!important;
+  width:100%!important;
+  height:100%!important;
+}
+
 .ass-subtitle-canvas {
   position: absolute;
   z-index: 100;

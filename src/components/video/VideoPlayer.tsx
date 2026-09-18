@@ -31,11 +31,16 @@ import { adjustmentCssFilter, adjustmentLayersAffectingVideoTrack } from "../../
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
 import ProgramLayersPanel from "./ProgramLayersPanel";
+import ProgramSnapOverlay from "./ProgramSnapOverlay";
 import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime, videoPlaybackRate } from "../../utils/videoRetime";
 import {
+  PROGRAM_FRAME_SNAP_THRESHOLD_PX,
   PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
+  programFrameSnapLines,
+  programLayoutSnapLines,
   snapProgramBoundsToBounds,
-  snapProgramPercent,
+  snapProgramBoundsToLines,
+  snapProgramPointToLines,
   type ProgramBounds,
   type ProgramSnapGuide,
 } from "../../utils/programSnapping";
@@ -659,6 +664,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     cropLeft: number;
   } | null>(null);
   const [programSnapGuides, setProgramSnapGuides] = useState<ProgramSnapGuide[]>([]);
+  const [programMoveSnappingActive, setProgramMoveSnappingActive] = useState(false);
 
   // Keep normal Program Monitor video elements keyed by clip identity, not track.
   // A layer reorder changes trackId, but the decoded media element can remain alive.
@@ -1697,6 +1703,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     event.preventDefault();
     event.stopPropagation();
 
+    setProgramMoveSnappingActive(true);
+    setProgramSnapGuides([]);
+
     const startX = event.clientX;
     const startY = event.clientY;
     const startPositionX = (selectedDisplayClip ?? selectedActiveClip).positionX ?? 0;
@@ -1772,31 +1781,58 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
       );
 
-      // Object-to-object snapping gets priority. If there is no nearby visible
-      // clip edge/center, fall back to the Program layout guides.
-      const layoutSnapX = snapProgramPercent(
-        50 + rawPositionX,
+      // Snapping v2: object-to-object remains the strongest target. Next,
+      // softly attract the moving clip's edges to the visible aspect-ratio
+      // frames and to the Program Monitor edge. Existing layout points remain
+      // a final fallback so centre/thirds snapping is preserved.
+      const frameSnapX = snapProgramBoundsToLines(
+        movingBounds,
+        programFrameSnapLines(shellDimensions.width, shellDimensions.height, "x"),
+        shellDimensions.width,
+        "x",
+        PROGRAM_FRAME_SNAP_THRESHOLD_PX,
+      );
+      const frameSnapY = snapProgramBoundsToLines(
+        movingBounds,
+        programFrameSnapLines(shellDimensions.width, shellDimensions.height, "y"),
+        shellDimensions.height,
+        "y",
+        PROGRAM_FRAME_SNAP_THRESHOLD_PX,
+      );
+
+      const layoutSnapX = snapProgramPointToLines(
+        movingBounds.centerX,
+        programLayoutSnapLines(0, shellDimensions.width),
         shellDimensions.width,
         "x",
       );
-      const layoutSnapY = snapProgramPercent(
-        50 + rawPositionY,
+      const layoutSnapY = snapProgramPointToLines(
+        movingBounds.centerY,
+        programLayoutSnapLines(0, shellDimensions.height),
         shellDimensions.height,
         "y",
       );
 
-      const nextPositionX = objectSnapX.guide
-        ? rawPositionX + (objectSnapX.deltaPx / shellDimensions.width) * 100
-        : layoutSnapX.value - 50;
-      const nextPositionY = objectSnapY.guide
-        ? rawPositionY + (objectSnapY.deltaPx / shellDimensions.height) * 100
-        : layoutSnapY.value - 50;
+      const chosenSnapX = objectSnapX.guide
+        ? objectSnapX
+        : frameSnapX.guide
+          ? frameSnapX
+          : layoutSnapX;
+      const chosenSnapY = objectSnapY.guide
+        ? objectSnapY
+        : frameSnapY.guide
+          ? frameSnapY
+          : layoutSnapY;
+
+      const nextPositionX =
+        rawPositionX + (chosenSnapX.deltaPx / shellDimensions.width) * 100;
+      const nextPositionY =
+        rawPositionY + (chosenSnapY.deltaPx / shellDimensions.height) * 100;
 
       setProgramSnapGuides(
-        [
-          objectSnapX.guide ?? layoutSnapX.guide,
-          objectSnapY.guide ?? layoutSnapY.guide,
-        ].filter((guide): guide is ProgramSnapGuide => guide !== null),
+        [chosenSnapX.guide, chosenSnapY.guide].filter(
+          (guide): guide is ProgramSnapGuide => guide !== null,
+        ),
       );
 
       onVideoTransformChange(selectedActiveClip.id, {
@@ -1807,6 +1843,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
     const handlePointerUp = () => {
       setProgramSnapGuides([]);
+      setProgramMoveSnappingActive(false);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -2613,21 +2650,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               );
             })}
 
-            {programSnapGuides.length > 0 && (
-              <div className="program-snap-guide-layer" aria-hidden="true">
-                {programSnapGuides.map((guide) => (
-                  <span
-                    key={`${guide.axis}-${guide.percent}`}
-                    className={`program-snap-guide ${guide.axis}`}
-                    style={
-                      guide.axis === "x"
-                        ? { left: `${guide.percent}%` }
-                        : { top: `${guide.percent}%` }
-                    }
-                  />
-                ))}
-              </div>
-            )}
+            <ProgramSnapOverlay
+              width={shellDimensions.width}
+              height={shellDimensions.height}
+              activeGuides={programSnapGuides}
+              show={programMoveSnappingActive}
+            />
 
             {!isSkimPreviewActive && isProgramTransformActive && selectedActiveClip && selectedTrackVisible && (
               <div

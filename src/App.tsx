@@ -15,6 +15,7 @@ import Timeline, {
   type TimelineHandle,
 } from "./components/timeline/Timeline";
 import ExportProgressModal from "./components/export/ExportProgressModal";
+import ExportSettingsModal from "./components/export/ExportSettingsModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
 import AdjustmentLayerPanel from "./components/adjustments/AdjustmentLayerPanel";
 
@@ -44,7 +45,11 @@ import {
   videoPathExists,
 } from "./services/projectRegistry";
 
-import { exportStyledVideo } from "./services/videoExport";
+import {
+  DEFAULT_EXPORT_FRAME_SIZE,
+  exportStyledVideo,
+  type ExportFrameSize,
+} from "./services/videoExport";
 import {
   parseClipTranscriptionCommand,
   updateTranscriptionMenuTargets,
@@ -519,6 +524,11 @@ function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("Preparing export...");
+  const [exportSettingsRequest, setExportSettingsRequest] = useState<{
+    range: TimelineRange | null;
+  } | null>(null);
+  const [lastExportFrameSize, setLastExportFrameSize] =
+    useState<ExportFrameSize>({ ...DEFAULT_EXPORT_FRAME_SIZE });
 
   // ==========================================================================
   // Project save state
@@ -3650,8 +3660,9 @@ function App() {
   // Exporting
   // ==========================================================================
 
-  const handleExportStyledVideo = async (
-    range: TimelineRange | null = null,
+  const performExportStyledVideo = async (
+    range: TimelineRange | null,
+    frameSize: ExportFrameSize,
   ) => {
     if (!videoPath || isExporting) {
       return;
@@ -3667,13 +3678,14 @@ function App() {
         adjustmentLayers,
         trackSettings,
         range,
+        frameSize,
 
         onStart: () => {
           setExportProgress(0);
           setExportStatus(
             isRangeExport
-              ? "Preparing selected range export..."
-              : "Preparing edited timeline export...",
+              ? `Preparing selected range export · ${frameSize.width}×${frameSize.height}...`
+              : `Preparing edited timeline export · ${frameSize.width}×${frameSize.height}...`,
           );
           setIsExporting(true);
         },
@@ -3687,7 +3699,6 @@ function App() {
       if (outputPath) {
         setExportProgress(100);
         setExportStatus("Export complete.");
-
       }
     } catch (error) {
       console.error(
@@ -3701,12 +3712,27 @@ function App() {
     }
   };
 
-  const handleExportSelectedRange = async () => {
+  const openExportSettings = (range: TimelineRange | null = null) => {
+    if (!videoPath || isExporting) {
+      return;
+    }
+
+    setExportSettingsRequest({
+      range: range
+        ? {
+            start: range.start,
+            end: range.end,
+          }
+        : null,
+    });
+  };
+
+  const handleExportSelectedRange = () => {
     if (!timelineRange) {
       return;
     }
 
-    await handleExportStyledVideo(timelineRange);
+    openExportSettings(timelineRange);
   };
 
   const executeEditorEditCommand = async (
@@ -3844,11 +3870,11 @@ function App() {
         return;
 
       case "file.export-video":
-        await handleExportStyledVideo();
+        openExportSettings();
         return;
 
       case "file.export-range":
-        await handleExportSelectedRange();
+        handleExportSelectedRange();
         return;
 
       case "edit.undo":
@@ -4580,7 +4606,7 @@ function App() {
         onLiftRange={liftTimelineRangeWithHistory}
         onExtractRange={extractTimelineRangeWithHistory}
         onExportRange={() => {
-          void handleExportSelectedRange();
+          handleExportSelectedRange();
         }}
         onClearSubtitleSelection={() => {
           clearSubtitleSelection();
@@ -4655,6 +4681,21 @@ function App() {
           onDismissError={clearGenerationError}
         />
       )}
+
+      <ExportSettingsModal
+        open={exportSettingsRequest !== null && !isExporting}
+        rangeExport={Boolean(exportSettingsRequest?.range)}
+        initialFrameSize={lastExportFrameSize}
+        onCancel={() => setExportSettingsRequest(null)}
+        onExport={(frameSize) => {
+          const request = exportSettingsRequest;
+          if (!request) return;
+
+          setLastExportFrameSize(frameSize);
+          setExportSettingsRequest(null);
+          void performExportStyledVideo(request.range, frameSize);
+        }}
+      />
 
       {isExporting && (
         <ExportProgressModal progress={exportProgress} status={exportStatus} />

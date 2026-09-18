@@ -28,7 +28,17 @@ import {
   getRenderedVideoRect,
   type RenderedVideoRect,
 } from "../../utils/videoGeometry";
-import { snapProgramPercent, type ProgramSnapGuide } from "../../utils/programSnapping";
+import {
+  PROGRAM_FRAME_SNAP_THRESHOLD_PX,
+  programFrameSnapLines,
+  programLayoutSnapLines,
+  snapProgramBoundsToLines,
+  snapProgramPointToLines,
+  type ProgramBounds,
+  type ProgramSnapGuide,
+} from "../../utils/programSnapping";
+
+import ProgramSnapOverlay from "./ProgramSnapOverlay";
 
 import "./VideoSubtitleOverlay.css";
 
@@ -144,6 +154,7 @@ function VideoSubtitleOverlay({
     null,
   );
   const [subtitleSnapGuides, setSubtitleSnapGuides] = useState<ProgramSnapGuide[]>([]);
+  const [subtitleMoveSnappingActive, setSubtitleMoveSnappingActive] = useState(false);
 
   const styleScopeRef = useRef<SubtitleStyleScope>("current");
 
@@ -346,7 +357,7 @@ function VideoSubtitleOverlay({
     return `translate(${deltaX}px, ${deltaY}px)`;
   }, [activeSubtitle, draftPosition, renderedVideoRect]);
 
-  const baseCanvasStyle: CSSProperties = renderedVideoRect
+  const subtitleFrameStyle: CSSProperties = renderedVideoRect
     ? {
         left: `${renderedVideoRect.left}px`,
         top: `${renderedVideoRect.top}px`,
@@ -360,15 +371,19 @@ function VideoSubtitleOverlay({
         height: "100%",
       };
 
+  /*
+   * Keep the libass canvases inside a dedicated frame wrapper. SubtitlesOctopus
+   * may resize/reposition its canvas against the full <video> element; the
+   * wrapper + CSS constraints make the visible result use the same geometry as
+   * the interaction proxy and the exported ASS coordinate space.
+   */
   const canvas0Style: CSSProperties = {
-    ...baseCanvasStyle,
     opacity: frontCanvasIndex === 0 && !isEditing ? 1 : 0,
     transform:
       frontCanvasIndex === 0 ? dragCanvasTransform : "translate(0px, 0px)",
   };
 
   const canvas1Style: CSSProperties = {
-    ...baseCanvasStyle,
     opacity: frontCanvasIndex === 1 && !isEditing ? 1 : 0,
     transform:
       frontCanvasIndex === 1 ? dragCanvasTransform : "translate(0px, 0px)",
@@ -426,7 +441,12 @@ function VideoSubtitleOverlay({
   const handleSubtitlePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    if (event.button !== 0 || !shellRef.current || !activeSubtitle) {
+    if (
+      event.button !== 0 ||
+      !shellRef.current ||
+      !activeSubtitle ||
+      !renderedVideoRect
+    ) {
       return;
     }
 
@@ -435,20 +455,43 @@ function VideoSubtitleOverlay({
 
     setStyleMenu(null);
     setSubtitleSnapGuides([]);
+    setSubtitleMoveSnappingActive(true);
     onSubtitleSelect?.(activeSubtitle.id);
 
     const subtitleId = activeSubtitle.id;
     const shell = shellRef.current;
+    const frameRect = renderedVideoRect;
+    const pointerId = event.pointerId;
+    const dragTarget = event.currentTarget;
 
     const initialX = activeSubtitle.positionX ?? 50;
     const initialY = activeSubtitle.positionY ?? 80;
 
+    /*
+     * Preserve where inside the subtitle box the user grabbed it. Without this,
+     * the first pointermove jumps the subtitle centre underneath the cursor.
+     */
+    const shellRectAtStart = shell.getBoundingClientRect();
+    const initialCenterClientX =
+      shellRectAtStart.left +
+      frameRect.left +
+      frameRect.width * (initialX / 100);
+    const initialCenterClientY =
+      shellRectAtStart.top +
+      frameRect.top +
+      frameRect.height * (initialY / 100);
+    const grabOffsetX = event.clientX - initialCenterClientX;
+    const grabOffsetY = event.clientY - initialCenterClientY;
+
+    const initialProxyRect =
+      interactionButtonRef.current?.getBoundingClientRect() ?? null;
+    const proxyWidth = initialProxyRect?.width ?? 0;
+    const proxyHeight = initialProxyRect?.height ?? 0;
+
     const initialDraft: DraftPosition = {
       subtitleId,
-
       originX: initialX,
       originY: initialY,
-
       positionX: initialX,
       positionY: initialY,
     };
@@ -456,104 +499,46 @@ function VideoSubtitleOverlay({
     draftPositionRef.current = initialDraft;
     setDraftPosition(initialDraft);
 
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const video = shell.querySelector<HTMLVideoElement>("video");
+    try {
+      dragTarget.setPointerCapture(pointerId);
+    } catch {
+      // Window-level listeners below remain the fallback.
+    }
 
-      if (!video) {
+    let finished = false;
+
+    const finishDrag = () => {
+      if (finished) {
         return;
       }
+      finished = true;
 
-      const shellRect = shell.getBoundingClientRect();
-      const videoRect = getRenderedVideoRect(video, shell);
-
-      if (!videoRect) {
-        return;
-      }
-
-      const proxyRect = interactionButtonRef.current?.getBoundingClientRect();
-
-      const videoLeft = shellRect.left + videoRect.left;
-      const videoTop = shellRect.top + videoRect.top;
-
-      let x = ((moveEvent.clientX - videoLeft) / videoRect.width) * 100;
-      let y = ((moveEvent.clientY - videoTop) / videoRect.height) * 100;
-
-      let minX = 0;
-      let maxX = 100;
-      let minY = 0;
-      let maxY = 100;
-
-      if (proxyRect) {
-        const halfWidthPercent = (proxyRect.width / videoRect.width) * 50;
-        const halfHeightPercent = (proxyRect.height / videoRect.height) * 50;
-
-        minX = halfWidthPercent;
-        maxX = 100 - halfWidthPercent;
-        minY = halfHeightPercent;
-        maxY = 100 - halfHeightPercent;
-      }
-
-      x = Math.max(minX, Math.min(maxX, x));
-      y = Math.max(minY, Math.min(maxY, y));
-
-      const snappedX = snapProgramPercent(x, videoRect.width, "x");
-      const snappedY = snapProgramPercent(y, videoRect.height, "y");
-
-      const snappedClampedX = Math.max(minX, Math.min(maxX, snappedX.value));
-      const snappedClampedY = Math.max(minY, Math.min(maxY, snappedY.value));
-
-      const xGuide =
-        snappedX.guide && Math.abs(snappedClampedX - snappedX.value) < 0.001
-          ? snappedX.guide
-          : null;
-      const yGuide =
-        snappedY.guide && Math.abs(snappedClampedY - snappedY.value) < 0.001
-          ? snappedY.guide
-          : null;
-
-      setSubtitleSnapGuides(
-        [xGuide, yGuide].filter(
-          (guide): guide is ProgramSnapGuide => guide !== null,
-        ),
-      );
-
-      x = snappedClampedX;
-      y = snappedClampedY;
-
-      const currentDraft = draftPositionRef.current;
-
-      const nextDraft: DraftPosition = {
-        subtitleId,
-
-        // Preserve the original front-canvas position for the entire drag
-        // and while the replacement libass renderer is loading.
-        originX: currentDraft?.originX ?? activeSubtitle.positionX ?? 50,
-
-        originY: currentDraft?.originY ?? activeSubtitle.positionY ?? 80,
-
-        positionX: x,
-        positionY: y,
-      };
-
-      draftPositionRef.current = nextDraft;
-      setDraftPosition(nextDraft);
-    };
-
-    const handlePointerUp = () => {
       setSubtitleSnapGuides([]);
+      setSubtitleMoveSnappingActive(false);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      try {
+        if (dragTarget.hasPointerCapture(pointerId)) {
+          dragTarget.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // The browser may already have released capture.
+      }
 
       const finalDraft = draftPositionRef.current;
 
       if (
         finalDraft &&
-        (finalDraft.positionX !== (activeSubtitle.positionX ?? 50) ||
-          finalDraft.positionY !== (activeSubtitle.positionY ?? 80))
+        (Math.abs(finalDraft.positionX - (activeSubtitle.positionX ?? 50)) >
+          0.0001 ||
+          Math.abs(finalDraft.positionY - (activeSubtitle.positionY ?? 80)) >
+            0.0001)
       ) {
         /*
-         * Keep draftPosition until the new libass back-buffer finishes.
-         * This keeps the old exact canvas translated at the final position.
+         * Keep draftPosition until the new libass back-buffer finishes. This
+         * keeps the exact old canvas translated at the dropped position.
          */
         onSubtitlePositionChange?.(
           finalDraft.subtitleId,
@@ -566,8 +551,105 @@ function VideoSubtitleOverlay({
       }
     };
 
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
+
+      // If a native interaction swallowed pointerup, never leave the subtitle
+      // attached to the cursor.
+      if ((moveEvent.buttons & 1) === 0) {
+        finishDrag();
+        return;
+      }
+
+      const shellRect = shell.getBoundingClientRect();
+
+      const centerX = moveEvent.clientX - shellRect.left - grabOffsetX;
+      const centerY = moveEvent.clientY - shellRect.top - grabOffsetY;
+
+      let x = ((centerX - frameRect.left) / frameRect.width) * 100;
+      let y = ((centerY - frameRect.top) / frameRect.height) * 100;
+
+      // Snapping v2 intentionally does not clamp subtitles to the frame. The
+      // player edge is magnetic, not a wall: drag through it to continue out.
+      const halfWidth = proxyWidth / 2;
+      const halfHeight = proxyHeight / 2;
+
+      const movingBounds: ProgramBounds = {
+        left: centerX - halfWidth,
+        right: centerX + halfWidth,
+        top: centerY - halfHeight,
+        bottom: centerY + halfHeight,
+        centerX,
+        centerY,
+      };
+
+      const frameSnapX = snapProgramBoundsToLines(
+        movingBounds,
+        programFrameSnapLines(shellRect.width, shellRect.height, "x"),
+        shellRect.width,
+        "x",
+        PROGRAM_FRAME_SNAP_THRESHOLD_PX,
+      );
+      const frameSnapY = snapProgramBoundsToLines(
+        movingBounds,
+        programFrameSnapLines(shellRect.width, shellRect.height, "y"),
+        shellRect.height,
+        "y",
+        PROGRAM_FRAME_SNAP_THRESHOLD_PX,
+      );
+
+      // Preserve the existing subtitle layout snapping, expressed in shell
+      // pixels so the shared ProgramSnapOverlay can visualize the target.
+      const layoutSnapX = snapProgramPointToLines(
+        movingBounds.centerX,
+        programLayoutSnapLines(frameRect.left, frameRect.width),
+        shellRect.width,
+        "x",
+      );
+      const layoutSnapY = snapProgramPointToLines(
+        movingBounds.centerY,
+        programLayoutSnapLines(frameRect.top, frameRect.height),
+        shellRect.height,
+        "y",
+      );
+
+      const chosenSnapX = frameSnapX.guide ? frameSnapX : layoutSnapX;
+      const chosenSnapY = frameSnapY.guide ? frameSnapY : layoutSnapY;
+
+      x += (chosenSnapX.deltaPx / frameRect.width) * 100;
+      y += (chosenSnapY.deltaPx / frameRect.height) * 100;
+
+      setSubtitleSnapGuides(
+        [chosenSnapX.guide, chosenSnapY.guide].filter(
+          (guide): guide is ProgramSnapGuide => guide !== null,
+        ),
+      );
+
+      const currentDraft = draftPositionRef.current;
+      const nextDraft: DraftPosition = {
+        subtitleId,
+        originX: currentDraft?.originX ?? activeSubtitle.positionX ?? 50,
+        originY: currentDraft?.originY ?? activeSubtitle.positionY ?? 80,
+        positionX: x,
+        positionY: y,
+      };
+
+      draftPositionRef.current = nextDraft;
+      setDraftPosition(nextDraft);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) {
+        return;
+      }
+      finishDrag();
+    };
+
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   const openStyleMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -831,53 +913,30 @@ function VideoSubtitleOverlay({
   return (
     <>
       <div className="video-subtitle-layer">
-        {subtitleSnapGuides.length > 0 && (
-          <div className="subtitle-snap-guide-layer" aria-hidden="true">
-            {subtitleSnapGuides.map((guide) => {
-              const rect = renderedVideoRect;
-
-              if (!rect) {
-                return null;
-              }
-
-              return (
-                <span
-                  key={`${guide.axis}-${guide.percent}`}
-                  className={`subtitle-snap-guide ${guide.axis}`}
-                  style={
-                    guide.axis === "x"
-                      ? {
-                          left: `${rect.left + rect.width * (guide.percent / 100)}px`,
-                          top: `${rect.top}px`,
-                          height: `${rect.height}px`,
-                        }
-                      : {
-                          top: `${rect.top + rect.height * (guide.percent / 100)}px`,
-                          left: `${rect.left}px`,
-                          width: `${rect.width}px`,
-                        }
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
-
-        <canvas
-          ref={canvas0Ref}
-          className="ass-subtitle-canvas"
-          width={ASS_WIDTH}
-          height={ASS_HEIGHT}
-          style={canvas0Style}
+        <ProgramSnapOverlay
+          width={shellRef.current?.clientWidth ?? 0}
+          height={shellRef.current?.clientHeight ?? 0}
+          activeGuides={subtitleSnapGuides}
+          show={subtitleMoveSnappingActive}
         />
 
-        <canvas
-          ref={canvas1Ref}
-          className="ass-subtitle-canvas"
-          width={ASS_WIDTH}
-          height={ASS_HEIGHT}
-          style={canvas1Style}
-        />
+        <div className="ass-subtitle-frame" style={subtitleFrameStyle}>
+          <canvas
+            ref={canvas0Ref}
+            className="ass-subtitle-canvas"
+            width={ASS_WIDTH}
+            height={ASS_HEIGHT}
+            style={canvas0Style}
+          />
+
+          <canvas
+            ref={canvas1Ref}
+            className="ass-subtitle-canvas"
+            width={ASS_WIDTH}
+            height={ASS_HEIGHT}
+            style={canvas1Style}
+          />
+        </div>
 
         {activeSubtitle &&
           (isEditing && editingStyle ? (

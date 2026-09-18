@@ -88,12 +88,21 @@ function getAlignment(textAlign: Subtitle["textAlign"]): number {
  * Because both preview and export use libass, this is intentionally our
  * canonical background implementation.
  */
-function createStyle(index: number, subtitle: Subtitle): string {
+type AssTrackOptions = {
+  playResWidth?: number;
+  playResHeight?: number;
+};
+
+function createStyle(
+  index: number,
+  subtitle: Subtitle,
+  designScale: number,
+): string {
   const fontFamily = sanitizeStyleValue(
     resolveAssFontFamily(subtitle.fontFamily),
   );
 
-  const fontSize = subtitle.fontSize ?? 24;
+  const fontSize = (subtitle.fontSize ?? 24) * designScale;
   const textColor = hexToAssColor(subtitle.color ?? "#ffffff");
 
   const hasBackground =
@@ -115,8 +124,8 @@ function createStyle(index: number, subtitle: Subtitle): string {
    *
    * These are design-space units at PlayResY=1080.
    */
-  const outline = 2;
-  const boxPadding = hasBackground ? 8 : 0;
+  const outline = 2 * designScale;
+  const boxPadding = hasBackground ? 8 * designScale : 0;
 
   return [
     `Style: Subtitle${index}`,
@@ -150,13 +159,18 @@ function subtitleLayer(subtitle: Subtitle) {
   return match ? Math.max(0, Number(match[1]) - 1) : 0;
 }
 
-function createDialogue(index: number, subtitle: Subtitle): string {
+function createDialogue(
+  index: number,
+  subtitle: Subtitle,
+  playResWidth: number,
+  playResHeight: number,
+): string {
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
 
-  const x = ((subtitle.positionX ?? 50) / 100) * ASS_WIDTH;
+  const x = ((subtitle.positionX ?? 50) / 100) * playResWidth;
 
-  const y = ((subtitle.positionY ?? 80) / 100) * ASS_HEIGHT;
+  const y = ((subtitle.positionY ?? 80) / 100) * playResHeight;
 
   const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
@@ -166,25 +180,44 @@ function createDialogue(index: number, subtitle: Subtitle): string {
   return `Dialogue: ${subtitleLayer(subtitle)},${start},${end},Subtitle${index},,0,0,0,,${override}${text}`;
 }
 
-export function buildAssTrack(subtitles: Subtitle[]): string {
+export function buildAssTrack(
+  subtitles: Subtitle[],
+  options: AssTrackOptions = {},
+): string {
+  const playResWidth = Math.max(
+    2,
+    Math.round(options.playResWidth ?? ASS_WIDTH),
+  );
+  const playResHeight = Math.max(
+    2,
+    Math.round(options.playResHeight ?? ASS_HEIGHT),
+  );
+
+  // Subtitle style sizes are authored against the canonical 1080-high design
+  // space. Scale them with export height so custom aspect/resolution exports
+  // retain the same relative typography.
+  const designScale = playResHeight / ASS_HEIGHT;
+
   const sorted = [...subtitles].sort((a, b) =>
     a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
   );
 
   const styles = sorted
-    .map((subtitle, index) => createStyle(index, subtitle))
+    .map((subtitle, index) => createStyle(index, subtitle, designScale))
     .join("\n");
 
   const events = sorted
-    .map((subtitle, index) => createDialogue(index, subtitle))
+    .map((subtitle, index) =>
+      createDialogue(index, subtitle, playResWidth, playResHeight),
+    )
     .join("\n");
 
   return `[Script Info]
 ScriptType: v4.00+
-PlayResX: ${ASS_WIDTH}
-PlayResY: ${ASS_HEIGHT}
-LayoutResX: ${ASS_WIDTH}
-LayoutResY: ${ASS_HEIGHT}
+PlayResX: ${playResWidth}
+PlayResY: ${playResHeight}
+LayoutResX: ${playResWidth}
+LayoutResY: ${playResHeight}
 ScaledBorderAndShadow: yes
 WrapStyle: 0
 YCbCr Matrix: TV.709
