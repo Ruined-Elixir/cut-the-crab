@@ -5,6 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type {
   AdjustmentLayerClip,
+  AdjustmentLayerProperty,
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
@@ -12,7 +13,10 @@ import type {
 } from "../types/timelineModel";
 
 import { buildAssTrack } from "../utils/assSubtitles";
-import { adjustmentFilterParameters } from "../utils/adjustmentLayers";
+import {
+  adjustmentLayerChannel,
+  adjustmentLayerPropertyBaseValue,
+} from "../utils/adjustmentLayers";
 import { isFreezeFrameClip, isReverseVideoClip, videoPlaybackRate } from "../utils/videoRetime";
 import {
   baseVideoTransformValue,
@@ -120,6 +124,34 @@ function ffmpegKeyframeExpression(
 
   const first = channel[0];
   return `if(lt(${timeExpression},${n(first.time, 6)}),${scaled(first.value)},${expression})`;
+}
+
+function ffmpegAdjustmentPropertyExpression(
+  layer: AdjustmentLayerClip,
+  property: AdjustmentLayerProperty,
+  timeExpression = "t",
+) {
+  const channel = [...adjustmentLayerChannel(layer, property)].sort(
+    (a, b) => a.time - b.time,
+  );
+  const baseValue = adjustmentLayerPropertyBaseValue(layer, property);
+
+  if (channel.length === 0) return n(baseValue, 6);
+  if (channel.length === 1) return n(channel[0].value, 6);
+
+  let expression = n(channel[channel.length - 1].value, 6);
+  for (let index = channel.length - 2; index >= 0; index -= 1) {
+    const left = channel[index];
+    const right = channel[index + 1];
+    const leftTime = layer.timelineStart + left.time;
+    const rightTime = layer.timelineStart + right.time;
+    const span = Math.max(0.000001, rightTime - leftTime);
+    const interpolated = `${n(left.value, 6)}+(${n(right.value - left.value, 6)})*(${timeExpression}-${n(leftTime, 6)})/${n(span, 6)}`;
+    expression = `if(lt(${timeExpression},${n(rightTime, 6)}),${interpolated},${expression})`;
+  }
+
+  const firstTime = layer.timelineStart + channel[0].time;
+  return `if(lt(${timeExpression},${n(firstTime, 6)}),${n(channel[0].value, 6)},${expression})`;
 }
 
 function clipDuration(clip: VideoTimelineClip) {
@@ -568,31 +600,43 @@ function buildTimelineFilterGraph(
     const trackAdjustments = adjustmentLayers
       .filter((layer) =>
         layer.trackId === trackId &&
+        layer.enabled !== false &&
         trackSettings[layer.trackId]?.deleted !== true &&
-        trackSettings[layer.trackId]?.hidden !== true &&
-        layer.opacity > 0
+        trackSettings[layer.trackId]?.hidden !== true
       )
       .sort((a, b) => a.timelineStart - b.timelineStart);
 
     // An adjustment layer lives on a video track and affects the composite of
     // tracks below it. Apply it before media from its own track is overlaid.
+    // v1.1 evaluates every animated channel per frame using FFmpeg's eq
+    // expression engine, so Program Monitor keyframes survive final export.
     for (const layer of trackAdjustments) {
-      const parameters = adjustmentFilterParameters([layer]);
-      const brightness = clamp(parameters.brightness - 1, -1, 1);
-      const contrast = clamp(parameters.contrast, 0.05, 2);
-      const saturation = clamp(parameters.saturation, 0, 3);
-      const temperature = clamp(parameters.temperature * 0.18, -0.25, 0.25);
+      const opacity = ffmpegAdjustmentPropertyExpression(layer, "opacity");
+      const exposure = ffmpegAdjustmentPropertyExpression(layer, "exposure");
+      const contrastControl = ffmpegAdjustmentPropertyExpression(layer, "contrast");
+      const saturationControl = ffmpegAdjustmentPropertyExpression(layer, "saturation");
+      const temperature = ffmpegAdjustmentPropertyExpression(layer, "temperature");
+      const tint = ffmpegAdjustmentPropertyExpression(layer, "tint");
+      const highlights = ffmpegAdjustmentPropertyExpression(layer, "highlights");
+      const shadows = ffmpegAdjustmentPropertyExpression(layer, "shadows");
+      const whites = ffmpegAdjustmentPropertyExpression(layer, "whites");
+      const blacks = ffmpegAdjustmentPropertyExpression(layer, "blacks");
+      const strength = `((${opacity})/100)`;
+
+      const brightness = `clip(((${exposure})*0.12+(${whites})*0.0016+(${blacks})*0.0009)*${strength},-1,1)`;
+      const contrast = `clip(1+((${contrastControl})/100*0.75+(${whites})*0.0012-(${blacks})*0.0010)*${strength},0.05,2)`;
+      const saturation = `clip(1+(((${saturationControl})/100)-1)*${strength},0,3)`;
+      const gamma = `clip(1+(((${shadows})/100)*0.5-((${highlights})/100)*0.18)*${strength},0.4,3)`;
+      const gammaWeight = `clip(1-max(0,((${shadows})/100)*${strength})*0.55,0.1,1)`;
+      const gammaR = `clip(1+(((${temperature})/100)*0.14+((${tint})/100)*0.07)*${strength},0.5,2)`;
+      const gammaG = `clip(1-((${tint})/100)*0.12*${strength},0.5,2)`;
+      const gammaB = `clip(1+(-(((${temperature})/100)*0.14)+((${tint})/100)*0.07)*${strength},0.5,2)`;
       const enable = `between(t,${n(layer.timelineStart, 6)},${n(layer.timelineEnd, 6)})`;
       const nextLabel = `vadj${compositeStage++}`;
-      const filters = [
-        `eq=brightness=${n(brightness, 6)}:contrast=${n(contrast, 6)}:saturation=${n(saturation, 6)}:enable='${enable}'`,
-      ];
-      if (Math.abs(temperature) > 0.0001) {
-        filters.push(
-          `colorbalance=rs=${n(temperature, 6)}:bs=${n(-temperature, 6)}:enable='${enable}'`,
-        );
-      }
-      filterParts.push(`[${currentVideoLabel}]${filters.join(",")}[${nextLabel}]`);
+
+      filterParts.push(
+        `[${currentVideoLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${nextLabel}]`,
+      );
       currentVideoLabel = nextLabel;
     }
 

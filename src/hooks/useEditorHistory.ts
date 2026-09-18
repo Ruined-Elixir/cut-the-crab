@@ -43,7 +43,17 @@ function cloneSnapshot(
       }),
     ),
     audioClips: snapshot.audioClips.map((clip) => ({ ...clip })),
-    adjustmentLayers: snapshot.adjustmentLayers.map((layer) => ({ ...layer })),
+    adjustmentLayers: snapshot.adjustmentLayers.map((layer) => ({
+      ...layer,
+      keyframes: layer.keyframes
+        ? Object.fromEntries(
+            Object.entries(layer.keyframes).map(([property, channel]) => [
+              property,
+              channel?.map((keyframe) => ({ ...keyframe })),
+            ]),
+          )
+        : undefined,
+    })) as AdjustmentLayerClip[],
     trackSettings: Object.fromEntries(
       Object.entries(snapshot.trackSettings).map(([trackId, settings]) => [
         trackId,

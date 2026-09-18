@@ -17,6 +17,11 @@ import {
 } from "../../services/nativeContextMenu";
 import { videoPlaybackRate } from "../../utils/videoRetime";
 import { allVideoTransformKeyframeTimes } from "../../utils/videoTransformKeyframes";
+import {
+  ADJUSTMENT_KEYFRAME_EPSILON,
+  adjustmentLayerKeyframeCountAtTime,
+  allAdjustmentLayerKeyframeTimes,
+} from "../../utils/adjustmentLayers";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
@@ -713,6 +718,7 @@ function VideoTrack({
                 "timeline-adjustment-layer",
                 selected ? "selected" : "",
                 dragging ? "dragging" : "",
+                layer.enabled === false ? "disabled" : "",
               ].filter(Boolean).join(" ")}
               style={{ left: `${left}%`, width: `${width}%` }}
               data-adjustment-layer-id={layer.id}
@@ -749,13 +755,46 @@ function VideoTrack({
               <div className="timeline-adjustment-layer-header">
                 <span className="timeline-adjustment-icon" aria-hidden="true">◇</span>
                 <strong>{layer.name}</strong>
-                <span className="timeline-adjustment-badge">ADJ</span>
+                <span className="timeline-adjustment-badge">{layer.enabled === false ? "OFF" : "ADJ"}</span>
               </div>
               <div className="timeline-adjustment-summary">
                 <span>Opacity {Math.round(layer.opacity)}%</span>
                 <span>Exp {layer.exposure > 0 ? "+" : ""}{layer.exposure.toFixed(1)}</span>
                 <span>Sat {Math.round(layer.saturation)}%</span>
               </div>
+              {allAdjustmentLayerKeyframeTimes(layer).length > 0 && (
+                <div className="adjustment-keyframe-strip" aria-label={`${layer.name} keyframes`}>
+                  {allAdjustmentLayerKeyframeTimes(layer).map((relativeTime) => {
+                    const absoluteTime = layer.timelineStart + relativeTime;
+                    const markerLeft = layer.timelineEnd > layer.timelineStart
+                      ? (relativeTime / (layer.timelineEnd - layer.timelineStart)) * 100
+                      : 0;
+                    const count = adjustmentLayerKeyframeCountAtTime(layer, relativeTime);
+                    const active = Math.abs(currentTime - absoluteTime) <= ADJUSTMENT_KEYFRAME_EPSILON;
+                    return (
+                      <button
+                        type="button"
+                        key={relativeTime}
+                        className={`adjustment-keyframe-marker ${active ? "active" : ""}`.trim()}
+                        style={{ left: `${markerLeft}%` }}
+                        title={`${count} keyframe${count === 1 ? "" : "s"} at ${absoluteTime.toFixed(2)}s`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onAdjustmentLayerSelect?.(layer.id);
+                          onSeek?.(absoluteTime);
+                        }}
+                      >
+                        ◆
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div
                 className="adjustment-resize-handle right"
                 onMouseDown={(event) => startAdjustmentResize(event, layer, "right")}

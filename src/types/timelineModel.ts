@@ -26,6 +26,28 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+export type AdjustmentLayerProperty =
+  | "opacity"
+  | "exposure"
+  | "contrast"
+  | "saturation"
+  | "temperature"
+  | "tint"
+  | "highlights"
+  | "shadows"
+  | "whites"
+  | "blacks";
+
+export type AdjustmentLayerKeyframe = {
+  /** Time in seconds relative to the adjustment layer's timelineStart. */
+  time: number;
+  value: number;
+};
+
+export type AdjustmentLayerKeyframes = Partial<
+  Record<AdjustmentLayerProperty, AdjustmentLayerKeyframe[]>
+>;
+
 export type AdjustmentLayerClip = {
   id: string;
   kind: "adjustment";
@@ -33,6 +55,8 @@ export type AdjustmentLayerClip = {
   name: string;
   timelineStart: number;
   timelineEnd: number;
+  /** Fast bypass that preserves all settings/keyframes. */
+  enabled: boolean;
   /** Effect mix strength. 100 = fully applied, 0 = bypassed. */
   opacity: number;
   /** Exposure-style brightness adjustment in stops-ish UI units (-3..3). */
@@ -43,6 +67,15 @@ export type AdjustmentLayerClip = {
   saturation: number;
   /** Warm/cool balance (-100..100). */
   temperature: number;
+  /** Green/magenta balance (-100..100). */
+  tint: number;
+  /** Tonal controls (-100..100, 0 = neutral). */
+  highlights: number;
+  shadows: number;
+  whites: number;
+  blacks: number;
+  /** Optional animated channels. Values interpolate linearly between keys. */
+  keyframes?: AdjustmentLayerKeyframes;
 };
 
 

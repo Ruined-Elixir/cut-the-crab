@@ -524,6 +524,7 @@ function adjustedVideoTransitionStyle(
       clip.trackId,
       trackSettings,
     ),
+    timelineTime,
   );
 
   return {
@@ -2324,6 +2325,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         adjustmentLayersAffectingVideoTrack(
                           adjustmentLayers, displayTime, trackId, trackSettings,
                         ),
+                        displayTime,
                       ) || undefined,
                       opacity:
                         (1 - dissolve.progress) *
@@ -2362,6 +2364,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         adjustmentLayersAffectingVideoTrack(
                           adjustmentLayers, displayTime, trackId, trackSettings,
                         ),
+                        displayTime,
                       ) || undefined,
                       opacity:
                         dissolve.progress *

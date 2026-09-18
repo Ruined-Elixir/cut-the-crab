@@ -99,6 +99,7 @@ import {
   DEFAULT_ADJUSTMENT_LAYER_VALUES,
   MIN_ADJUSTMENT_LAYER_DURATION,
   normalizedAdjustmentLayer,
+  trimAdjustmentLayerKeyframes,
 } from "./utils/adjustmentLayers";
 import {
   applyTimelineRangeEdit,
@@ -890,7 +891,12 @@ function App() {
         if (layer.id !== id || trackSettings[layer.trackId]?.locked) return layer;
         const start = Math.max(0, Math.min(newStart, newEnd - MIN_ADJUSTMENT_LAYER_DURATION));
         const end = Math.max(start + MIN_ADJUSTMENT_LAYER_DURATION, newEnd);
-        return { ...layer, timelineStart: start, timelineEnd: end };
+        return normalizedAdjustmentLayer({
+          ...layer,
+          timelineStart: start,
+          timelineEnd: end,
+          keyframes: trimAdjustmentLayerKeyframes(layer, start, end),
+        });
       }),
     );
   };
@@ -4459,8 +4465,10 @@ function App() {
       <AdjustmentLayerPanel
         layer={adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null}
         open={adjustmentPanelOpen}
+        currentTime={currentTime}
         onClose={() => setAdjustmentPanelOpen(false)}
         onChange={updateAdjustmentLayer}
+        onSeek={requestSeek}
       />
 
       {(isGenerating || generationError) && (

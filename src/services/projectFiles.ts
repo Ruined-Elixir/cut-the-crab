@@ -10,6 +10,7 @@ import type { TimelineMarker } from "../types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "../types/timelineModel";
 import type {
   AdjustmentLayerClip,
+  AdjustmentLayerKeyframes,
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
@@ -17,6 +18,10 @@ import type {
   VideoTransformKeyframes,
 } from "../types/timelineModel";
 import { normalizeVideoTransformKeyframes } from "../utils/videoTransformKeyframes";
+import {
+  ADJUSTMENT_LAYER_PROPERTIES,
+  normalizeAdjustmentKeyframes,
+} from "../utils/adjustmentLayers";
 import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
 import type {
   ProjectLanguage,
@@ -24,7 +29,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 21;
+export const CURRENT_PROJECT_VERSION = 22;
 
 export type SubtitleProject = {
   version: number;
@@ -103,6 +108,30 @@ function parseVideoTransformKeyframes(
   }
 
   return normalizeVideoTransformKeyframes(parsed, clipDuration);
+}
+
+
+function parseAdjustmentKeyframes(
+  value: unknown,
+  duration: number,
+): AdjustmentLayerKeyframes | undefined {
+  if (!isRecord(value)) return undefined;
+  const parsed: AdjustmentLayerKeyframes = {};
+
+  for (const property of ADJUSTMENT_LAYER_PROPERTIES) {
+    const rawChannel = value[property];
+    if (!Array.isArray(rawChannel)) continue;
+    const channel = rawChannel
+      .filter(isRecord)
+      .map((item) => ({
+        time: asNumber(item.time, Number.NaN),
+        value: asNumber(item.value, Number.NaN),
+      }))
+      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
+    if (channel.length > 0) parsed[property] = channel;
+  }
+
+  return normalizeAdjustmentKeyframes(parsed, duration);
 }
 
 function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
@@ -406,6 +435,8 @@ function normalizeAdjustmentLayer(
 
   if (timelineEnd - timelineStart < 0.1) return null;
 
+  const duration = timelineEnd - timelineStart;
+
   return {
     id: typeof value.id === "string" && value.id ? value.id : `adjustment-${index}-${crypto.randomUUID()}`,
     kind: "adjustment",
@@ -413,11 +444,18 @@ function normalizeAdjustmentLayer(
     name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : `Adjustment Layer ${index + 1}`,
     timelineStart,
     timelineEnd,
+    enabled: asOptionalBoolean(value.enabled) ?? true,
     opacity: Math.max(0, Math.min(100, asNumber(value.opacity, 100))),
     exposure: Math.max(-3, Math.min(3, asNumber(value.exposure, 0))),
     contrast: Math.max(-100, Math.min(100, asNumber(value.contrast, 0))),
     saturation: Math.max(0, Math.min(200, asNumber(value.saturation, 100))),
     temperature: Math.max(-100, Math.min(100, asNumber(value.temperature, 0))),
+    tint: Math.max(-100, Math.min(100, asNumber(value.tint, 0))),
+    highlights: Math.max(-100, Math.min(100, asNumber(value.highlights, 0))),
+    shadows: Math.max(-100, Math.min(100, asNumber(value.shadows, 0))),
+    whites: Math.max(-100, Math.min(100, asNumber(value.whites, 0))),
+    blacks: Math.max(-100, Math.min(100, asNumber(value.blacks, 0))),
+    keyframes: parseAdjustmentKeyframes(value.keyframes, duration),
   };
 }
 

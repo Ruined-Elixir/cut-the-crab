@@ -2595,3 +2595,51 @@
 .timeline-adjustment-layer.selected .adjustment-resize-handle::after {
   opacity:1
 }
+
+.timeline-adjustment-layer.disabled {
+  opacity:.52;
+  filter:saturate(.5)
+}
+
+.timeline-adjustment-layer.disabled .timeline-adjustment-summary {
+  text-decoration:line-through;
+  text-decoration-color:rgba(255,255,255,.28)
+}
+
+.adjustment-keyframe-strip {
+  position:absolute;
+  left:7px;
+  right:7px;
+  bottom:2px;
+  height:12px;
+  z-index:9;
+  pointer-events:none
+}
+
+.adjustment-keyframe-marker {
+  position:absolute;
+  top:50%;
+  width:13px;
+  height:13px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:rgba(224,191,255,.78);
+  font-size:7px;
+  line-height:13px;
+  text-align:center;
+  transform:translate(-50%,-50%);
+  text-shadow:0 1px 3px rgba(0,0,0,.75);
+  pointer-events:auto;
+  cursor:pointer
+}
+
+.adjustment-keyframe-marker:hover,
+.adjustment-keyframe-marker.active {
+  color:#fff;
+  text-shadow:0 0 7px rgba(206,151,255,.9)
+}
+
+.adjustment-keyframe-marker.active {
+  font-size:9px
+}
