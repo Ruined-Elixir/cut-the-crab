@@ -2042,6 +2042,177 @@ function App() {
     moveVideoClipToTrack(id, targetTrackId, newTimelineStart);
   };
 
+  type ProgramLayerDirection = "forward" | "backward";
+
+  const programVisibleVideoClipsAtTime = (atTime: number) => {
+    const interactiveIds = new Set(programInteractiveVideoClipIds);
+    return videoClips
+      .filter(
+        (clip) =>
+          interactiveIds.has(clip.id) &&
+          atTime >= clip.timelineStart &&
+          atTime < clip.timelineEnd &&
+          trackSettings[clip.trackId]?.deleted !== true &&
+          trackSettings[clip.trackId]?.hidden !== true,
+      )
+      .sort(
+        (a, b) =>
+          timelineTrackIndexFromId(a.trackId) -
+          timelineTrackIndexFromId(b.trackId),
+      );
+  };
+
+  const overlapsProgramLayerSpan = (
+    startA: number,
+    endA: number,
+    startB: number,
+    endB: number,
+  ) => endA > startB + 0.000001 && startA < endB - 0.000001;
+
+  const validateProgramLayerAssignments = (
+    assignments: Map<string, TimelineTrackId>,
+  ): string | null => {
+    const movingIds = new Set(assignments.keys());
+    const targetTrackIds = [...assignments.values()];
+
+    if (new Set(targetTrackIds).size !== targetTrackIds.length) {
+      return "Two video layers cannot occupy the same target track.";
+    }
+
+    for (const [clipId, targetTrackId] of assignments) {
+      const clip = videoClips.find((item) => item.id === clipId);
+      if (!clip) return "One of the visible video layers no longer exists.";
+
+      if (
+        trackSettings[clip.trackId]?.locked ||
+        trackSettings[targetTrackId]?.locked
+      ) {
+        return "Unlock the affected video tracks before changing their layer order.";
+      }
+
+      if (
+        timelineTrackKindFromId(targetTrackId) !== "video" ||
+        trackSettings[targetTrackId]?.deleted === true
+      ) {
+        return "The target video layer is not available.";
+      }
+
+      const adjustmentConflict = adjustmentLayers.some(
+        (layer) =>
+          layer.trackId === targetTrackId &&
+          overlapsProgramLayerSpan(
+            clip.timelineStart,
+            clip.timelineEnd,
+            layer.timelineStart,
+            layer.timelineEnd,
+          ),
+      );
+      if (adjustmentConflict) {
+        return "That reorder would place a video clip on a track occupied by an Adjustment Layer during the same time span. Move the Adjustment Layer to another video track first.";
+      }
+
+      const unrelatedVideoConflict = videoClips.some(
+        (other) =>
+          !movingIds.has(other.id) &&
+          other.trackId === targetTrackId &&
+          overlapsProgramLayerSpan(
+            clip.timelineStart,
+            clip.timelineEnd,
+            other.timelineStart,
+            other.timelineEnd,
+          ),
+      );
+      if (unrelatedVideoConflict) {
+        return "That reorder would overlap another video elsewhere on the target track. Move or trim that clip first.";
+      }
+    }
+
+    return null;
+  };
+
+  const applyProgramVideoLayerAssignments = (
+    assignments: Map<string, TimelineTrackId>,
+  ) => {
+    const error = validateProgramLayerAssignments(assignments);
+    if (error) {
+      window.alert(error);
+      return false;
+    }
+
+    const hasChange = [...assignments].some(([id, trackId]) =>
+      videoClips.some((clip) => clip.id === id && clip.trackId !== trackId),
+    );
+    if (!hasChange) return true;
+
+    markNextChangeImmediate();
+    replaceVideoClips(
+      videoClips.map((clip) => {
+        const targetTrackId = assignments.get(clip.id);
+        return targetTrackId ? { ...clip, trackId: targetTrackId } : clip;
+      }),
+    );
+    return true;
+  };
+
+  const handleProgramVideoLayerChange = (
+    id: string,
+    direction: ProgramLayerDirection,
+    atTime: number,
+  ) => {
+    // Program Monitor compositing is track-based: V1 is behind V2, V2 is
+    // behind V3, etc. Layer commands therefore swap the real V-track IDs
+    // of the two adjacent visible clips. There is no second z-order model.
+    const visibleBottomToTop = programVisibleVideoClipsAtTime(atTime);
+    const currentIndex = visibleBottomToTop.findIndex((clip) => clip.id === id);
+    if (currentIndex < 0) return false;
+
+    const neighborIndex =
+      direction === "forward" ? currentIndex + 1 : currentIndex - 1;
+    const neighbor = visibleBottomToTop[neighborIndex];
+    const clip = visibleBottomToTop[currentIndex];
+    if (!clip || !neighbor) return false;
+
+    return applyProgramVideoLayerAssignments(
+      new Map<string, TimelineTrackId>([
+        [clip.id, neighbor.trackId],
+        [neighbor.id, clip.trackId],
+      ]),
+    );
+  };
+
+  const handleProgramVideoLayerReorder = (
+    orderedClipIdsTopToBottom: string[],
+    atTime: number,
+  ) => {
+    // The Layers panel is only a controller for the existing V-track stack.
+    // Reordering rows reassigns the same currently-visible V-track IDs.
+    const visibleBottomToTop = programVisibleVideoClipsAtTime(atTime);
+    if (visibleBottomToTop.length < 2) return true;
+
+    const visibleIds = new Set(visibleBottomToTop.map((clip) => clip.id));
+    if (
+      orderedClipIdsTopToBottom.length !== visibleIds.size ||
+      orderedClipIdsTopToBottom.some((id) => !visibleIds.has(id)) ||
+      new Set(orderedClipIdsTopToBottom).size !== visibleIds.size
+    ) {
+      return false;
+    }
+
+    const targetTracksBottomToTop = visibleBottomToTop
+      .map((clip) => clip.trackId)
+      .sort(
+        (a, b) =>
+          timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
+      );
+    const requestedBottomToTop = [...orderedClipIdsTopToBottom].reverse();
+    const assignments = new Map<string, TimelineTrackId>();
+
+    requestedBottomToTop.forEach((clipId, index) => {
+      assignments.set(clipId, targetTracksBottomToTop[index]);
+    });
+
+    return applyProgramVideoLayerAssignments(assignments);
+  };
 
   const handleVideoPlaybackRateChange = (id: string, requestedRate: number) => {
     const clip = videoClips.find((item) => item.id === id);
@@ -4317,6 +4488,8 @@ function App() {
             selectedVideoClipId={selectedProgramVideoClipId}
             interactiveVideoClipIds={programInteractiveVideoClipIds}
             onVideoClipSelect={handleProgramVideoClipSelect}
+            onVideoLayerChange={handleProgramVideoLayerChange}
+            onVideoLayerReorder={handleProgramVideoLayerReorder}
             onVideoTransformChange={handleVideoTransformChange}
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}

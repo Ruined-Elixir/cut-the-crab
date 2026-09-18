@@ -1,12 +1,25 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { Menu } from "@tauri-apps/api/menu";
+import { Menu, MenuItem, Submenu } from "@tauri-apps/api/menu";
 
-export type NativeContextMenuItem = {
+export type NativeContextMenuActionItem = {
   id: string;
   text: string;
   enabled?: boolean;
   action: () => void;
+  items?: never;
 };
+
+export type NativeContextMenuSubmenuItem = {
+  id: string;
+  text: string;
+  enabled?: boolean;
+  items: NativeContextMenuItem[];
+  action?: never;
+};
+
+export type NativeContextMenuItem =
+  | NativeContextMenuActionItem
+  | NativeContextMenuSubmenuItem;
 
 let activeContextMenu: Menu | null = null;
 
@@ -22,6 +35,8 @@ export function canShowNativeContextMenu(): boolean {
  * Shows a platform-native context menu. Tauri delegates the actual popup to
  * the host OS/toolkit, so macOS, Windows and Linux each get their native menu
  * appearance and interaction behavior.
+ *
+ * Items may contain nested `items`, which Tauri renders as a native submenu.
  */
 export async function showNativeContextMenu(
   items: NativeContextMenuItem[],
@@ -39,24 +54,41 @@ export async function showNativeContextMenu(
 
   let menu: Menu | null = null;
 
-  menu = await Menu.new({
-    items: items.map((item) => ({
+  const scheduleMenuClose = () => {
+    const menuToClose = menu;
+    queueMicrotask(() => {
+      if (!menuToClose) return;
+      void menuToClose.close().catch(() => undefined);
+      if (activeContextMenu === menuToClose) {
+        activeContextMenu = null;
+      }
+    });
+  };
+
+  const buildItem = async (item: NativeContextMenuItem): Promise<MenuItem | Submenu> => {
+    if ("items" in item && item.items) {
+      const submenuItems = await Promise.all(item.items.map(buildItem));
+      return Submenu.new({
+        id: item.id,
+        text: item.text,
+        enabled: item.enabled ?? true,
+        items: submenuItems,
+      });
+    }
+
+    return MenuItem.new({
       id: item.id,
       text: item.text,
       enabled: item.enabled ?? true,
       action: () => {
         item.action();
-
-        const menuToClose = menu;
-        queueMicrotask(() => {
-          if (!menuToClose) return;
-          void menuToClose.close().catch(() => undefined);
-          if (activeContextMenu === menuToClose) {
-            activeContextMenu = null;
-          }
-        });
+        scheduleMenuClose();
       },
-    })),
+    });
+  };
+
+  menu = await Menu.new({
+    items: await Promise.all(items.map(buildItem)),
   });
 
   activeContextMenu = menu;

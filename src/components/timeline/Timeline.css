@@ -2570,9 +2570,10 @@
   position:absolute;
   top:0;
   bottom:0;
-  z-index:10;
-  width:7px;
-  cursor:ew-resize
+  z-index:12;
+  width:11px;
+  cursor:ew-resize;
+  touch-action:none
 }
 
 .adjustment-resize-handle.left { left:0 }
@@ -2583,17 +2584,50 @@
   position:absolute;
   top:50%;
   left:50%;
-  width:2px;
-  height:16px;
-  border-radius:2px;
-  background:rgba(255,255,255,.28);
+  width:3px;
+  height:24px;
+  border-radius:3px;
+  background:rgba(255,255,255,.34);
+  box-shadow:0 0 0 1px rgba(0,0,0,.14);
   transform:translate(-50%,-50%);
   opacity:0
 }
 
 .timeline-adjustment-layer:hover .adjustment-resize-handle::after,
-.timeline-adjustment-layer.selected .adjustment-resize-handle::after {
+.timeline-adjustment-layer.selected .adjustment-resize-handle::after,
+.timeline-adjustment-layer.resizing .adjustment-resize-handle::after {
   opacity:1
+}
+
+.timeline-adjustment-layer.resizing {
+  cursor:ew-resize;
+  box-shadow:0 0 0 2px rgba(198,145,255,.5),0 5px 16px rgba(0,0,0,.4)
+}
+
+.timeline-adjustment-layer.resizing-left .adjustment-resize-handle.left::after,
+.timeline-adjustment-layer.resizing-right .adjustment-resize-handle.right::after {
+  background:rgba(255,255,255,.95);
+  box-shadow:0 0 8px rgba(211,166,255,.8)
+}
+
+.adjustment-edit-readout {
+  position:absolute;
+  left:50%;
+  bottom:3px;
+  z-index:14;
+  max-width:calc(100% - 28px);
+  padding:2px 5px;
+  overflow:hidden;
+  border:1px solid rgba(220,184,255,.32);
+  border-radius:4px;
+  background:rgba(20,14,28,.88);
+  color:rgba(255,249,255,.95);
+  font-size:8px;
+  line-height:1.2;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  transform:translateX(-50%);
+  pointer-events:none
 }
 
 .timeline-adjustment-layer.disabled {
@@ -2642,4 +2676,68 @@
 
 .adjustment-keyframe-marker.active {
   font-size:9px
+}
+
+
+/* ==========================================================================
+   Sticky time ruler during vertical track scrolling
+   ========================================================================== */
+
+/*
+ * The editable ruler normally lives inside .timeline-scroll, which is the
+ * horizontal overflow container. Making that ruler sticky directly would pin
+ * it to the wrong scroll container. This zero-height grid overlay is instead a
+ * direct child of .timeline-body (the vertical scroller), while its inner track
+ * is translated by Timeline.tsx using the same horizontal scrollLeft.
+ */
+.timeline-sticky-ruler {
+  position: sticky;
+  top: 0;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.timeline-sticky-ruler-surface {
+  width: 100%;
+  height: 30px;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  background: #18181a;
+  box-shadow:
+    0 1px 0 var(--separator-soft),
+    0 5px 12px -10px rgba(0, 0, 0, 0.95);
+}
+
+.timeline-sticky-ruler-label-spacer {
+  height: 30px;
+  background: #18181a;
+  box-shadow: inset -1px 0 var(--separator-soft);
+}
+
+.timeline-sticky-ruler-viewport {
+  min-width: 0;
+  height: 30px;
+  overflow: hidden;
+  background: #18181a;
+  pointer-events: auto;
+}
+
+.timeline-sticky-ruler-track {
+  height: 30px;
+  transform-origin: left top;
+  will-change: transform;
+}
+
+.timeline-sticky-ruler-track > .timeline-ruler.track-only,
+.timeline-sticky-ruler-track > .timeline-ruler.track-only > .timeline-ruler-scale {
+  height: 30px;
+}
+
+/* Keep the sticky ruler visually above clips/range shading while leaving the
+   real timeline rows and playhead untouched below it. */
+.timeline-sticky-ruler .timeline-ruler-scale {
+  background: #18181a;
 }

@@ -155,6 +155,9 @@ function VideoTrack({
     useState<string | null>(null);
   const [draggingAdjustmentId, setDraggingAdjustmentId] =
     useState<string | null>(null);
+  const [adjustmentGestureMode, setAdjustmentGestureMode] = useState<
+    "move" | "resize-left" | "resize-right" | null
+  >(null);
   const [fadeDrag, setFadeDrag] = useState<{
     clipId: string;
     edge: "in" | "out";
@@ -583,6 +586,7 @@ function VideoTrack({
     if (!trackElement || duration <= 0) return;
 
     setDraggingAdjustmentId(layer.id);
+    setAdjustmentGestureMode("move");
     const startX = event.clientX;
     const originalStart = layer.timelineStart;
     const layerDuration = Math.max(MIN_VIDEO_CLIP_DURATION, layer.timelineEnd - layer.timelineStart);
@@ -590,6 +594,13 @@ function VideoTrack({
     const snapThresholdSeconds = (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
 
     const handleMove = (moveEvent: MouseEvent) => {
+      // If mouseup was swallowed by a native menu/window transition, never
+      // leave the Adjustment Layer attached to the cursor.
+      if ((moveEvent.buttons & 1) === 0) {
+        finishGesture();
+        return;
+      }
+
       const delta = ((moveEvent.clientX - startX) / width) * duration;
       const rawStart = Math.max(0, originalStart + delta);
       const rawEnd = rawStart + layerDuration;
@@ -621,16 +632,21 @@ function VideoTrack({
       onAdjustmentLayerMove?.(layer.id, bestStart);
     };
 
-    const handleUp = () => {
+    const finishGesture = () => {
       setDraggingAdjustmentId(null);
+      setAdjustmentGestureMode(null);
       onSnapGuideChange?.(null);
       onAdjustmentLayerEditEnd?.();
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("blur", finishGesture);
     };
+
+    const handleUp = () => finishGesture();
 
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
+    window.addEventListener("blur", finishGesture);
   };
 
   const startAdjustmentResize = (
@@ -638,7 +654,7 @@ function VideoTrack({
     layer: AdjustmentLayerClip,
     edge: "left" | "right",
   ) => {
-    if (track.locked) return;
+    if (event.button !== 0 || track.locked) return;
     event.preventDefault();
     event.stopPropagation();
     onAdjustmentLayerSelect?.(layer.id);
@@ -647,36 +663,97 @@ function VideoTrack({
     const trackElement = event.currentTarget.parentElement?.parentElement;
     if (!trackElement || duration <= 0) return;
 
+    setDraggingAdjustmentId(layer.id);
+    setAdjustmentGestureMode(edge === "left" ? "resize-left" : "resize-right");
+
     const width = trackElement.getBoundingClientRect().width;
     const startX = event.clientX;
     const originalStart = layer.timelineStart;
     const originalEnd = layer.timelineEnd;
+    const snapThresholdSeconds =
+      (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
 
-    const handleMove = (moveEvent: MouseEvent) => {
-      const delta = ((moveEvent.clientX - startX) / width) * duration;
-      if (edge === "left") {
-        onAdjustmentLayerResize?.(
-          layer.id,
-          Math.max(0, Math.min(originalEnd - MIN_VIDEO_CLIP_DURATION, originalStart + delta)),
-          originalEnd,
-        );
-      } else {
-        onAdjustmentLayerResize?.(
-          layer.id,
-          originalStart,
-          Math.max(originalStart + MIN_VIDEO_CLIP_DURATION, originalEnd + delta),
-        );
+    const resolveSnappedEdge = (rawTime: number) => {
+      let bestTime = rawTime;
+      let bestDistance = snapThresholdSeconds + Number.EPSILON;
+      let bestTarget: number | null = null;
+
+      for (const target of snapTargets) {
+        if (target.clipId === layer.id) continue;
+        const distance = Math.abs(rawTime - target.time);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestTime = target.time;
+          bestTarget = target.time;
+        }
       }
+
+      if (bestDistance > snapThresholdSeconds) {
+        return { time: rawTime, target: null as number | null };
+      }
+
+      return { time: bestTime, target: bestTarget };
     };
 
-    const handleUp = () => {
+    const handleMove = (moveEvent: MouseEvent) => {
+      // Native/context interactions can occasionally swallow mouseup. Stop the
+      // trim immediately if the primary button is no longer held.
+      if ((moveEvent.buttons & 1) === 0) {
+        finishGesture();
+        return;
+      }
+
+      const delta = ((moveEvent.clientX - startX) / width) * duration;
+
+      if (edge === "left") {
+        const rawStart = Math.max(
+          0,
+          Math.min(
+            originalEnd - MIN_VIDEO_CLIP_DURATION,
+            originalStart + delta,
+          ),
+        );
+        const snapped = resolveSnappedEdge(rawStart);
+        const nextStart = Math.max(
+          0,
+          Math.min(
+            originalEnd - MIN_VIDEO_CLIP_DURATION,
+            snapped.time,
+          ),
+        );
+        onSnapGuideChange?.(snapped.target === nextStart ? snapped.target : null);
+        onAdjustmentLayerResize?.(layer.id, nextStart, originalEnd);
+        return;
+      }
+
+      const rawEnd = Math.max(
+        originalStart + MIN_VIDEO_CLIP_DURATION,
+        originalEnd + delta,
+      );
+      const snapped = resolveSnappedEdge(rawEnd);
+      const nextEnd = Math.max(
+        originalStart + MIN_VIDEO_CLIP_DURATION,
+        snapped.time,
+      );
+      onSnapGuideChange?.(snapped.target === nextEnd ? snapped.target : null);
+      onAdjustmentLayerResize?.(layer.id, originalStart, nextEnd);
+    };
+
+    const finishGesture = () => {
+      setDraggingAdjustmentId(null);
+      setAdjustmentGestureMode(null);
+      onSnapGuideChange?.(null);
       onAdjustmentLayerEditEnd?.();
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("blur", finishGesture);
     };
+
+    const handleUp = () => finishGesture();
 
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
+    window.addEventListener("blur", finishGesture);
   };
 
   return (
@@ -718,11 +795,14 @@ function VideoTrack({
                 "timeline-adjustment-layer",
                 selected ? "selected" : "",
                 dragging ? "dragging" : "",
+                dragging && adjustmentGestureMode?.startsWith("resize") ? "resizing" : "",
+                dragging && adjustmentGestureMode === "resize-left" ? "resizing-left" : "",
+                dragging && adjustmentGestureMode === "resize-right" ? "resizing-right" : "",
                 layer.enabled === false ? "disabled" : "",
               ].filter(Boolean).join(" ")}
               style={{ left: `${left}%`, width: `${width}%` }}
               data-adjustment-layer-id={layer.id}
-              title={`${layer.name} · double-click for controls`}
+              title={`${layer.name} · drag to move · drag either edge to trim · double-click for controls`}
               onMouseDown={(event) => startAdjustmentMove(event, layer)}
               onDoubleClick={(event) => {
                 event.preventDefault();
@@ -758,10 +838,18 @@ function VideoTrack({
                 <span className="timeline-adjustment-badge">{layer.enabled === false ? "OFF" : "ADJ"}</span>
               </div>
               <div className="timeline-adjustment-summary">
+                <span>{Math.max(0, layer.timelineEnd - layer.timelineStart).toFixed(2)}s</span>
                 <span>Opacity {Math.round(layer.opacity)}%</span>
                 <span>Exp {layer.exposure > 0 ? "+" : ""}{layer.exposure.toFixed(1)}</span>
                 <span>Sat {Math.round(layer.saturation)}%</span>
               </div>
+              {dragging && adjustmentGestureMode && (
+                <div className="adjustment-edit-readout" aria-hidden="true">
+                  {adjustmentGestureMode === "move"
+                    ? `${layer.timelineStart.toFixed(2)}s → ${layer.timelineEnd.toFixed(2)}s`
+                    : `${(layer.timelineEnd - layer.timelineStart).toFixed(2)}s`}
+                </div>
+              )}
               {allAdjustmentLayerKeyframeTimes(layer).length > 0 && (
                 <div className="adjustment-keyframe-strip" aria-label={`${layer.name} keyframes`}>
                   {allAdjustmentLayerKeyframeTimes(layer).map((relativeTime) => {

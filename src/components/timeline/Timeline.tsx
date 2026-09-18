@@ -1024,7 +1024,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
 
     if (
       target.closest(
-        ".timeline-video-clip, .subtitle-clip, .audio-clip-label, .timeline-user-marker, .timeline-range-handle, button, input",
+        ".timeline-video-clip, .timeline-adjustment-layer, .subtitle-clip, .audio-clip-label, .timeline-user-marker, .timeline-range-handle, button, input",
       )
     ) {
       return;
@@ -1916,6 +1916,29 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       </div>
 
       <div ref={bodyRef} className="timeline-body">
+        <div className="timeline-sticky-ruler" aria-label="Timeline time ruler">
+          <div className="timeline-sticky-ruler-surface">
+            <div className="timeline-sticky-ruler-label-spacer" aria-hidden="true" />
+            <div className="timeline-sticky-ruler-viewport">
+              <div
+                className="timeline-sticky-ruler-track"
+                style={{
+                  width: `${timelineTrackWidthPx}px`,
+                  transform: `translateX(-${timelineScrollLeft}px)`,
+                }}
+              >
+                <TimelineRuler
+                  duration={workspaceDuration}
+                  zoom={zoom * workspaceWidthRatio}
+                  currentTime={currentTime}
+                  onSeek={onSeek}
+                  showLabelSpacer={false}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="timeline-fixed-column" aria-label="Timeline tracks">
           <div className="timeline-fixed-ruler-spacer" />
           <div className="timeline-fixed-track-stack">

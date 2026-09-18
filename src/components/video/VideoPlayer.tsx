@@ -30,6 +30,7 @@ import { adjustmentCssFilter, adjustmentLayersAffectingVideoTrack } from "../../
 
 import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
+import ProgramLayersPanel from "./ProgramLayersPanel";
 import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime, videoPlaybackRate } from "../../utils/videoRetime";
 import {
   PROGRAM_OBJECT_SNAP_THRESHOLD_PX,
@@ -73,6 +74,8 @@ type VideoPlayerProps = {
   selectedVideoClipId?: string | null;
   interactiveVideoClipIds?: string[];
   onVideoClipSelect?: (id: string) => void;
+  onVideoLayerChange?: (id: string, direction: "forward" | "backward", atTime: number) => void;
+  onVideoLayerReorder?: (orderedClipIdsTopToBottom: string[], atTime: number) => boolean | void;
   onVideoTransformChange?: (
     id: string,
     transform: {
@@ -618,6 +621,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   selectedVideoClipId,
   interactiveVideoClipIds,
   onVideoClipSelect,
+  onVideoLayerChange,
+  onVideoLayerReorder,
   onVideoTransformChange,
   onApplyVideoCropToTrack,
   proxyPathsBySource = {},
@@ -645,6 +650,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const [programTransformClipId, setProgramTransformClipId] = useState<string | null>(null);
   const [cropModeClipId, setCropModeClipId] = useState<string | null>(null);
   const [opacityEditor, setOpacityEditor] = useState<OpacityEditorState | null>(null);
+  const [layersPanelOpen, setLayersPanelOpen] = useState(false);
   const cropStartRef = useRef<{
     clipId: string;
     cropTop: number;
@@ -654,10 +660,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   } | null>(null);
   const [programSnapGuides, setProgramSnapGuides] = useState<ProgramSnapGuide[]>([]);
 
-  const videoRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
+  // Keep normal Program Monitor video elements keyed by clip identity, not track.
+  // A layer reorder changes trackId, but the decoded media element can remain alive.
+  const videoRefsByClipId = useRef<Record<string, HTMLVideoElement | null>>({});
   const dissolveOutgoingRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
   const dissolveIncomingRefs = useRef<Record<VideoTrackId, HTMLVideoElement | null>>({});
-  const audioRefs = useRef<Record<AudioTrackId, HTMLAudioElement | null>>({});
+  // Linked audio follows the video clip when that clip swaps V-tracks. Keep
+  // the decoded audio element keyed by clip identity for the same reason.
+  const audioRefsByPlaybackKey = useRef<Record<string, HTMLAudioElement | null>>({});
   const primaryMetadataAudioRef = useRef<HTMLAudioElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const opacityEditorRef = useRef<HTMLDivElement | null>(null);
@@ -905,11 +915,54 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     return () => observer.disconnect();
   }, [videoPath]);
 
-  const videoElementForTrack = (trackId: VideoTrackId) =>
-    videoRefs.current[trackId] ?? null;
+  const videoElementForTrack = (
+    trackId: VideoTrackId,
+    timelineTime = displayTimeRef.current,
+  ) => {
+    const activeClip = findActiveVideoClip(
+      videoClipsRef.current,
+      timelineTime,
+      trackId,
+    );
 
-  const audioElementForTrack = (trackId: AudioTrackId) =>
-    audioRefs.current[trackId] ?? null;
+    return activeClip
+      ? videoRefsByClipId.current[activeClip.id] ?? null
+      : null;
+  };
+
+  const audioPlaybackKeyForTrack = (
+    trackId: AudioTrackId,
+    timelineTime = displayTimeRef.current,
+  ) => {
+    const linkedVideoTrackId = trackSettingsRef.current[trackId]?.linkedTrackId;
+    const linkedVideoClip =
+      linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)
+        ? findActiveVideoClip(
+            videoClipsRef.current,
+            timelineTime,
+            linkedVideoTrackId,
+          )
+        : null;
+
+    if (linkedVideoClip) return `video:${linkedVideoClip.id}`;
+
+    const standaloneClip = findActiveAudioClip(
+      audioClipsRef.current,
+      timelineTime,
+      trackId,
+    );
+    return standaloneClip ? `audio:${standaloneClip.id}` : null;
+  };
+
+  const audioElementForTrack = (
+    trackId: AudioTrackId,
+    timelineTime = displayTimeRef.current,
+  ) => {
+    const playbackKey = audioPlaybackKeyForTrack(trackId, timelineTime);
+    return playbackKey
+      ? audioRefsByPlaybackKey.current[playbackKey] ?? null
+      : null;
+  };
 
   const dissolveElementsForTrack = (trackId: VideoTrackId) => ({
     outgoing: dissolveOutgoingRefs.current[trackId] ?? null,
@@ -1049,7 +1102,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    const video = videoElementForTrack(trackId);
+    const video = videoElementForTrack(trackId, timelineTime);
     const activeClip = findActiveVideoClip(
       videoClipsRef.current,
       timelineTime,
@@ -1112,8 +1165,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     );
     const clipChanged =
       activeVideoClipIdRefs.current[trackId] !== activeClip.id;
+    const sourceTimeDrift = Math.abs(video.currentTime - safeSourceTime);
+    // Track-only layer reorders should not reseek an already-decoded clip.
+    // Seek only when the source position actually differs. This preserves the
+    // existing behavior for scrubbing, trims, reverse/freeze, and source-time
+    // changes while making V-track swaps effectively immediate.
+    const shouldSeek = (clipChanged || forceSeek) && sourceTimeDrift > 0.015;
 
-    if (clipChanged || forceSeek) {
+    if (shouldSeek) {
       try {
         video.currentTime = safeSourceTime;
       } catch (error) {
@@ -1127,7 +1186,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       activeClip,
       safeSourceTime,
       `${trackId}:${activeClip.id}`,
-      clipChanged || forceSeek,
+      shouldSeek,
     );
 
     const seekDrivenPlayback = isFreezeFrameClip(activeClip) || isReverseVideoClip(activeClip);
@@ -1148,7 +1207,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     shouldPlay: boolean,
     forceSeek = false,
   ) => {
-    const audio = audioElementForTrack(audioTrackId);
+    const audio = audioElementForTrack(audioTrackId, timelineTime);
     const linkedVideoTrackId = trackSettingsRef.current[audioTrackId]?.linkedTrackId;
     const linkedVideoClip = linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)
       ? findActiveVideoClip(videoClipsRef.current, timelineTime, linkedVideoTrackId)
@@ -1178,7 +1237,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       : activeClip.sourceDuration ?? activeClip.sourceOut;
     const safeSourceTime = Math.max(0, Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime));
     const clipChanged = activeAudioClipIdRefs.current[audioTrackId] !== activeClip.id;
-    if (clipChanged || forceSeek) {
+    const sourceTimeDrift = Math.abs(audio.currentTime - safeSourceTime);
+    const shouldSeek = (clipChanged || forceSeek) && sourceTimeDrift > 0.015;
+    if (shouldSeek) {
       try {
         audio.currentTime = safeSourceTime;
       } catch (error) {
@@ -1278,10 +1339,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     if (isPlayingRef.current) {
       isPlayingRef.current = false;
       setIsPlaying(false);
-      (Object.values(videoRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+      (Object.values(videoRefsByClipId.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
       (Object.values(dissolveOutgoingRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
       (Object.values(dissolveIncomingRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
-      (Object.values(audioRefs.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
+      (Object.values(audioRefsByPlaybackKey.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
       return;
     }
 
@@ -1318,8 +1379,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     setSkimPreviewTime(null);
     setVideoVisibility({});
 
-    (Object.values(videoRefs.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
-    (Object.values(audioRefs.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
+    (Object.values(videoRefsByClipId.current) as Array<HTMLVideoElement | null>).forEach((element) => element?.pause());
+    (Object.values(audioRefsByPlaybackKey.current) as Array<HTMLAudioElement | null>).forEach((element) => element?.pause());
 
     isPlayingRef.current = false;
     currentTimeRef.current = 0;
@@ -1393,8 +1454,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     };
   }, [isPlaying]);
 
-  const handleVideoLoadedMetadata = (trackId: VideoTrackId) => {
-    const video = videoElementForTrack(trackId);
+  const handleVideoLoadedMetadata = (
+    trackId: VideoTrackId,
+    clipId: string,
+  ) => {
+    const video = videoRefsByClipId.current[clipId] ?? null;
 
     if (video?.videoWidth && video.videoHeight) {
       setVideoDimensions((current) => ({
@@ -1415,7 +1479,53 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     );
   };
 
-  const handleAudioLoadedMetadata = (audioTrackId: AudioTrackId) => {
+  // When an already-loaded clip is reassigned to another V-track, React keeps
+  // the same <video> element. Refresh the track-indexed dimensions from that
+  // preserved element so transform/crop math stays correct without waiting for
+  // another loadedmetadata event.
+  useEffect(() => {
+    setVideoDimensions((current) => {
+      let next = current;
+      let changed = false;
+
+      for (const trackId of videoTrackIds) {
+        const clip = findActiveVideoClip(
+          videoClips,
+          displayTimeRef.current,
+          trackId,
+        );
+        if (!clip) continue;
+
+        const video = videoRefsByClipId.current[clip.id];
+        if (!video?.videoWidth || !video.videoHeight) continue;
+
+        const previous = current[trackId];
+        if (
+          previous?.width === video.videoWidth &&
+          previous?.height === video.videoHeight
+        ) {
+          continue;
+        }
+
+        if (!changed) {
+          next = { ...current };
+          changed = true;
+        }
+        next[trackId] = {
+          width: video.videoWidth,
+          height: video.videoHeight,
+        };
+      }
+
+      return changed ? next : current;
+    });
+  }, [videoClips, videoTrackIds]);
+
+  const handleAudioLoadedMetadata = (
+    audioTrackId: AudioTrackId,
+    playbackKey: string,
+  ) => {
+    if (!audioRefsByPlaybackKey.current[playbackKey]) return;
     activeAudioClipIdRefs.current[audioTrackId] = null;
     syncAudioTrackToTimeline(
       audioTrackId,
@@ -1493,6 +1603,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         !!clip && !isTrackHidden(trackSettings, clip.trackId),
     )
     .sort((a, b) => videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId));
+  const programLayerItems = visibleActiveClips
+    .filter((clip) => isProgramVideoClipInteractive(clip))
+    .slice()
+    .reverse()
+    .map((clip) => ({
+      clip,
+      trackLabel: videoTrackLabel(clip.trackId),
+      locked: trackSettings[clip.trackId]?.locked ?? false,
+    }));
   const topVisualClip = visibleActiveClips[visibleActiveClips.length - 1] ?? null;
   const subtitleVideoTimeOffset = topVisualClip
     ? topVisualClip.timelineStart - topVisualClip.sourceIn
@@ -2123,12 +2242,63 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
       return;
     }
 
+    // CTC's real compositing order is the V-track number:
+    // V1 behind V2 behind V3, etc. programLayerItems is the same stack shown
+    // in the Layers panel, ordered FRONT -> BACK. Use the selected clip's
+    // actual position in that stack to disable impossible one-step moves.
+    const programLayerIndex = programLayerItems.findIndex(
+      (item) => item.clip.id === clip.id,
+    );
+    const hasMultipleProgramLayers =
+      programLayerItems.length > 1 && programLayerIndex >= 0;
+    const forwardNeighbor =
+      programLayerIndex > 0 ? programLayerItems[programLayerIndex - 1] : null;
+    const backwardNeighbor =
+      programLayerIndex >= 0 && programLayerIndex < programLayerItems.length - 1
+        ? programLayerItems[programLayerIndex + 1]
+        : null;
+    const canUseLayerCommands =
+      !locked &&
+      hasMultipleProgramLayers &&
+      !!onVideoLayerChange;
+    const canBringForward =
+      canUseLayerCommands &&
+      !!forwardNeighbor &&
+      !forwardNeighbor.locked;
+    const canSendBackward =
+      canUseLayerCommands &&
+      !!backwardNeighbor &&
+      !backwardNeighbor.locked;
+
+    const reorderOneStep = (direction: "forward" | "backward") => {
+      onVideoLayerChange?.(clip.id, direction, displayTime);
+    };
+
     void showNativeContextMenu([
       {
         id: `program-video.${clip.id}.opacity`,
         text: "Opacity…",
         enabled: !locked,
         action: () => openOpacityEditor(clip, clientX, clientY),
+      },
+      {
+        id: `program-video.${clip.id}.layer`,
+        text: "Layer",
+        enabled: canBringForward || canSendBackward,
+        items: [
+          {
+            id: `program-video.${clip.id}.layer.forward`,
+            text: "Bring Forward",
+            enabled: canBringForward,
+            action: () => reorderOneStep("forward"),
+          },
+          {
+            id: `program-video.${clip.id}.layer.backward`,
+            text: "Send Backward",
+            enabled: canSendBackward,
+            action: () => reorderOneStep("backward"),
+          },
+        ],
       },
     ]).catch((error) => {
       console.error("Failed to show Program Monitor video menu:", error);
@@ -2266,6 +2436,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
           </div>
         )}
 
+        {primaryVideoUrl && (
+          <button
+            type="button"
+            className={`program-layers-button ${layersPanelOpen ? "active" : ""}`.trim()}
+            onClick={() => setLayersPanelOpen((current) => !current)}
+            aria-pressed={layersPanelOpen}
+            title="Show video layers at the current playhead"
+          >
+            Layers
+          </button>
+        )}
+
         <button
           className="video-file-button"
           onClick={() => void onChooseVideo?.()}
@@ -2391,8 +2573,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
               return (
                 <video
-                  key={`${trackId}:${clip.id}:${clip.sourcePath}`}
-                  ref={(element) => { videoRefs.current[trackId] = element; }}
+                  key={clip.id}
+                  ref={(element) => {
+                    videoRefsByClipId.current[clip.id] = element;
+                  }}
                   src={sourceUrl}
                   data-source-path={clip.sourcePath}
                   data-preview-proxy={proxyPathsBySource[clip.sourcePath] ? "true" : "false"}
@@ -2418,7 +2602,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       trackSettings,
                     ),
                   }}
-                  onLoadedMetadata={() => handleVideoLoadedMetadata(trackId)}
+                  onLoadedMetadata={() => handleVideoLoadedMetadata(trackId, clip.id)}
                   onPointerDown={(event) =>
                     handleProgramClipPointerDown(event, clip)
                   }
@@ -2557,16 +2741,34 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               const previewPath = sourcePath
                 ? proxyPathsBySource[sourcePath] ?? sourcePath
                 : null;
+              const linkedVideoTrackId = trackSettings[audioTrackId]?.linkedTrackId;
+              const linkedVideoClip =
+                linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)
+                  ? activeClipsByTrack[linkedVideoTrackId] ?? null
+                  : null;
+              const standaloneClip = linkedVideoClip
+                ? null
+                : findActiveAudioClip(audioClips, displayTime, audioTrackId);
+              const playbackKey = linkedVideoClip
+                ? `video:${linkedVideoClip.id}`
+                : standaloneClip
+                  ? `audio:${standaloneClip.id}`
+                  : `gap:${audioTrackId}`;
+
               return (
                 <audio
-                  key={`${audioTrackId}:${previewPath ?? "gap"}`}
-                  ref={(element) => { audioRefs.current[audioTrackId] = element; }}
+                  key={playbackKey}
+                  ref={(element) => {
+                    audioRefsByPlaybackKey.current[playbackKey] = element;
+                  }}
                   src={previewPath ? convertFileSrc(previewPath) : undefined}
                   data-source-path={sourcePath ?? ""}
                   data-preview-proxy={sourcePath && proxyPathsBySource[sourcePath] ? "true" : "false"}
                   preload="auto"
                   hidden
-                  onLoadedMetadata={() => handleAudioLoadedMetadata(audioTrackId)}
+                  onLoadedMetadata={() =>
+                    handleAudioLoadedMetadata(audioTrackId, playbackKey)
+                  }
                 />
               );
             })}
@@ -2595,6 +2797,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               onAllSubtitleStylesChange={onAllSubtitleStylesChange}
             />
           </div>
+
+          <ProgramLayersPanel
+            open={layersPanelOpen}
+            items={programLayerItems}
+            selectedClipId={selectedActiveClip?.id ?? selectedVideoClipId ?? null}
+            onClose={() => setLayersPanelOpen(false)}
+            onSelect={(id) => onVideoClipSelect?.(id)}
+            onReorder={(orderedIds) => onVideoLayerReorder?.(orderedIds, displayTime)}
+          />
 
           {opacityEditor && opacityEditorClip && opacityEditorStyle && (
         <div
