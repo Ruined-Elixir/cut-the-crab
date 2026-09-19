@@ -506,3 +506,20 @@
   color:rgba(255,255,255,.48);
   font-size:10px;
 }
+
+.program-effects-button {
+  flex-shrink:0;
+  order:1;
+  min-height:28px;
+  padding:0 9px;
+  border:none;
+  border-radius:8px;
+  background:var(--control-fill);
+  color:var(--secondary-label);
+  font-size:11px;
+  font-weight:500;
+  cursor:pointer
+}
+.program-effects-button:hover:not(:disabled) { background:var(--control-fill-hover);color:var(--label) }
+.program-effects-button:disabled { opacity:.42;cursor:default }
+.program-video-vignette { will-change:transform,opacity;transform-origin:center center }

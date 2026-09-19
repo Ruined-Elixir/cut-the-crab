@@ -4,6 +4,7 @@ import {
   sliceVideoTransformKeyframes,
 } from "./videoTransformKeyframes";
 import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime } from "./videoRetime";
+import { videoEffectStacksEqual } from "./videoEffects";
 
 const EPSILON = 0.000001;
 
@@ -58,7 +59,8 @@ function sameContinuousClipProperties(
     optionalNumberEqual(left.cropBottom, right.cropBottom, 0) &&
     optionalNumberEqual(left.cropLeft, right.cropLeft, 0) &&
     optionalNumberEqual(left.audioVolume, right.audioVolume, 100) &&
-    (left.audioMuted ?? false) === (right.audioMuted ?? false)
+    (left.audioMuted ?? false) === (right.audioMuted ?? false) &&
+    videoEffectStacksEqual(left.effects, right.effects)
   );
 }
 

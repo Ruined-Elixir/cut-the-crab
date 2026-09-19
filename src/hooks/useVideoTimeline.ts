@@ -8,6 +8,7 @@ import {
 import type { ProjectMediaAsset } from "../types/project";
 import type {
   TimelineTrackId,
+  VideoEffectInstance,
   VideoTimelineClip,
   VideoTransitionType,
   VideoTransformKeyframeProperty,
@@ -1353,6 +1354,19 @@ export function useVideoTimeline({
     );
   };
 
+  const updateVideoClipEffects = (
+    id: string,
+    effects: VideoEffectInstance[],
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) =>
+        clip.id === id
+          ? { ...clip, effects: effects.length > 0 ? effects.map((effect) => ({ ...effect })) : undefined }
+          : clip,
+      ),
+    );
+  };
+
   const toggleVideoClipTransformKeyframe = (
     id: string,
     property: VideoTransformKeyframeProperty,
@@ -1623,6 +1637,7 @@ export function useVideoTimeline({
     toggleVideoClipReverse,
     insertVideoFreezeFrame,
     updateVideoClipTransform,
+    updateVideoClipEffects,
     toggleVideoClipTransformKeyframe,
     applyVideoClipCropToTrack,
     resetVideoClipTransform,

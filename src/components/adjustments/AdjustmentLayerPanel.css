@@ -232,3 +232,7 @@
   background:var(--control-fill-hover);
   color:var(--label)
 }
+
+.adjustment-toolbar-actions { display:flex;align-items:center;gap:7px }
+.adjustment-effects-button { min-height:25px;padding:0 8px;border:1px solid rgba(255,255,255,.1);border-radius:7px;background:rgba(255,255,255,.055);color:rgba(255,255,255,.78);font-size:9px;font-weight:600;cursor:pointer }
+.adjustment-effects-button:hover { background:rgba(255,255,255,.1);color:#fff }

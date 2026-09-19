@@ -18,6 +18,7 @@ import ExportProgressModal from "./components/export/ExportProgressModal";
 import ExportSettingsModal from "./components/export/ExportSettingsModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
 import AdjustmentLayerPanel from "./components/adjustments/AdjustmentLayerPanel";
+import EffectsStackPanel from "./components/effects/EffectsStackPanel";
 
 import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
@@ -67,6 +68,7 @@ import type {
   TimelineTrackId,
   TimelineTrackKind,
   TimelineTrackSettings,
+  VideoEffectInstance,
   VideoTimelineClip,
 } from "./types/timelineModel";
 import type {
@@ -141,6 +143,11 @@ type CompoundClipboardPayload = {
 };
 
 type AppScreen = "home" | "editor";
+
+type EffectsPanelTarget = {
+  kind: "video" | "adjustment";
+  id: string;
+};
 
 const AUTOSAVE_DEBOUNCE_MS = 200;
 
@@ -516,6 +523,7 @@ function App() {
   const [adjustmentLayers, setAdjustmentLayers] = useState<AdjustmentLayerClip[]>([]);
   const [selectedAdjustmentLayerId, setSelectedAdjustmentLayerId] = useState<string | null>(null);
   const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
+  const [effectsPanelTarget, setEffectsPanelTarget] = useState<EffectsPanelTarget | null>(null);
 
   // ==========================================================================
   // Video export UI
@@ -641,6 +649,7 @@ function App() {
     toggleVideoClipReverse,
     insertVideoFreezeFrame,
     updateVideoClipTransform,
+    updateVideoClipEffects,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
     updateVideoClipOpacityFade,
@@ -771,6 +780,44 @@ function App() {
     ? adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null
     : null;
 
+  const effectsPanelVideoClip = effectsPanelTarget?.kind === "video"
+    ? videoClips.find((clip) => clip.id === effectsPanelTarget.id) ?? null
+    : null;
+  const effectsPanelAdjustmentLayer = effectsPanelTarget?.kind === "adjustment"
+    ? adjustmentLayers.find((layer) => layer.id === effectsPanelTarget.id) ?? null
+    : null;
+
+  useEffect(() => {
+    if (!effectsPanelTarget) return;
+    const exists = effectsPanelTarget.kind === "video"
+      ? videoClips.some((clip) => clip.id === effectsPanelTarget.id)
+      : adjustmentLayers.some((layer) => layer.id === effectsPanelTarget.id);
+    if (!exists) setEffectsPanelTarget(null);
+  }, [adjustmentLayers, effectsPanelTarget, videoClips]);
+
+  useEffect(() => {
+    if (!effectsPanelTarget) return;
+
+    if (selectedAdjustmentLayerId && adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
+      if (effectsPanelTarget.kind !== "adjustment" || effectsPanelTarget.id !== selectedAdjustmentLayerId) {
+        setEffectsPanelTarget({ kind: "adjustment", id: selectedAdjustmentLayerId });
+      }
+      return;
+    }
+
+    if (selectedVideoClipId && videoClips.some((clip) => clip.id === selectedVideoClipId)) {
+      if (effectsPanelTarget.kind !== "video" || effectsPanelTarget.id !== selectedVideoClipId) {
+        setEffectsPanelTarget({ kind: "video", id: selectedVideoClipId });
+      }
+    }
+  }, [
+    adjustmentLayers,
+    effectsPanelTarget,
+    selectedAdjustmentLayerId,
+    selectedVideoClipId,
+    videoClips,
+  ]);
+
   useEffect(() => {
     if (selectedAdjustmentLayerId && !adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
       setSelectedAdjustmentLayerId(null);
@@ -806,6 +853,30 @@ function App() {
           : layer,
       ),
     );
+  };
+
+  const openVideoEffects = (id: string) => {
+    if (!videoClips.some((clip) => clip.id === id)) return;
+    setEffectsPanelTarget({ kind: "video", id });
+  };
+
+  const openAdjustmentEffects = (id: string) => {
+    if (!adjustmentLayers.some((layer) => layer.id === id)) return;
+    setEffectsPanelTarget({ kind: "adjustment", id });
+  };
+
+  const updateEffectsPanelStack = (effects: VideoEffectInstance[]) => {
+    const target = effectsPanelTarget;
+    if (!target) return;
+
+    if (target.kind === "video") {
+      updateVideoClipEffects(target.id, effects);
+      return;
+    }
+
+    updateAdjustmentLayer(target.id, {
+      effects: effects.length > 0 ? effects.map((effect) => ({ ...effect })) : undefined,
+    });
   };
 
   const createAdjustmentLayer = () => {
@@ -4522,6 +4593,7 @@ function App() {
             onVideoLayerChange={handleProgramVideoLayerChange}
             onVideoLayerReorder={handleProgramVideoLayerReorder}
             onVideoTransformChange={handleVideoTransformChange}
+            onOpenVideoEffects={openVideoEffects}
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
@@ -4673,6 +4745,35 @@ function App() {
         onClose={() => setAdjustmentPanelOpen(false)}
         onChange={updateAdjustmentLayer}
         onSeek={requestSeek}
+        onOpenEffects={() => {
+          if (selectedAdjustmentLayerId) openAdjustmentEffects(selectedAdjustmentLayerId);
+        }}
+      />
+
+      <EffectsStackPanel
+        open={effectsPanelTarget !== null}
+        targetName={
+          effectsPanelVideoClip?.sourceName ??
+          effectsPanelAdjustmentLayer?.name ??
+          "Effects"
+        }
+        targetDetail={
+          effectsPanelVideoClip
+            ? effectsPanelVideoClip.trackId.replace("video-", "V")
+            : effectsPanelAdjustmentLayer
+              ? effectsPanelAdjustmentLayer.trackId.replace("video-", "V")
+              : undefined
+        }
+        effects={effectsPanelVideoClip?.effects ?? effectsPanelAdjustmentLayer?.effects}
+        disabled={Boolean(
+          effectsPanelVideoClip
+            ? trackSettings[effectsPanelVideoClip.trackId]?.locked
+            : effectsPanelAdjustmentLayer
+              ? trackSettings[effectsPanelAdjustmentLayer.trackId]?.locked
+              : false
+        )}
+        onChange={updateEffectsPanelStack}
+        onClose={() => setEffectsPanelTarget(null)}
       />
 
       {(isGenerating || generationError) && (

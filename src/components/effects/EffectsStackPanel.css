@@ -1,0 +1,137 @@
+.effects-stack-panel {
+  position:fixed;
+  z-index:3600;
+  width:372px;
+  max-height:min(600px,calc(100vh - 16px));
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:14px;
+  background:rgba(31,31,34,.96);
+  -webkit-backdrop-filter:blur(24px) saturate(1.1);
+  backdrop-filter:blur(24px) saturate(1.1);
+  box-shadow:0 22px 60px rgba(0,0,0,.42),0 3px 12px rgba(0,0,0,.28);
+  color:rgba(255,255,255,.94);
+  user-select:none
+}
+
+.effects-stack-panel.disabled { opacity:.88 }
+
+.effects-stack-header {
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:8px 10px 8px 13px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  cursor:move
+}
+
+.effects-stack-header>div { min-width:0;display:flex;flex-direction:column;gap:2px }
+.effects-stack-header strong { font-size:13px;font-weight:700 }
+.effects-stack-header small { max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.48);font-size:10px }
+.effects-stack-header button,
+.effect-stack-remove,
+.effect-stack-move {
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:rgba(255,255,255,.62);
+  cursor:pointer
+}
+.effects-stack-header button { width:30px;height:30px;font-size:20px }
+.effects-stack-header button:hover,
+.effect-stack-remove:hover:not(:disabled),
+.effect-stack-move:hover:not(:disabled) { background:rgba(255,255,255,.08);color:#fff }
+
+.effects-stack-addbar {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:6px;
+  padding:9px 10px;
+  border-bottom:1px solid rgba(255,255,255,.07)
+}
+.effects-stack-addbar button {
+  min-height:30px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;
+  background:rgba(255,255,255,.055);
+  color:rgba(255,255,255,.84);
+  font-size:10px;
+  font-weight:600;
+  cursor:pointer
+}
+.effects-stack-addbar button:hover:not(:disabled) { background:rgba(255,255,255,.1) }
+.effects-stack-addbar button:disabled { opacity:.42;cursor:default }
+
+.effects-stack-body {
+  min-height:150px;
+  flex:1;
+  overflow:auto;
+  padding:9px 10px 12px
+}
+.effects-stack-empty {
+  min-height:150px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  text-align:center;
+  color:rgba(255,255,255,.43)
+}
+.effects-stack-empty strong { color:rgba(255,255,255,.68);font-size:12px }
+.effects-stack-empty span { max-width:250px;font-size:10px;line-height:1.45 }
+
+.effect-stack-card {
+  margin-bottom:8px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;
+  background:rgba(255,255,255,.035);
+  overflow:hidden
+}
+.effect-stack-card[draggable="true"] { cursor:grab }
+.effect-stack-card[draggable="true"]:active { cursor:grabbing }
+.effect-stack-card.bypassed { opacity:.58 }
+.effect-stack-card-header {
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:4px 6px;
+  border-bottom:1px solid rgba(255,255,255,.055)
+}
+.effect-stack-drag-handle { width:18px;color:rgba(255,255,255,.32);font-size:11px;text-align:center }
+.effect-stack-enable { min-width:0;flex:1;display:flex;align-items:center;gap:7px;font-size:11px }
+.effect-stack-enable input { margin:0 }
+.effect-stack-enable strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650 }
+.effect-stack-order { width:22px;color:rgba(255,255,255,.32);font-size:9px;text-align:center;font-variant-numeric:tabular-nums }
+.effect-stack-move,.effect-stack-remove { width:25px;height:25px;padding:0;font-size:11px }
+.effect-stack-remove { font-size:17px }
+.effect-stack-move:disabled,.effect-stack-remove:disabled { opacity:.25;cursor:default }
+.effect-stack-card-controls { padding:8px 9px 10px }
+
+.effect-stack-slider {
+  display:grid;
+  grid-template-columns:66px 1fr 56px;
+  align-items:center;
+  gap:8px;
+  min-height:28px;
+  color:rgba(255,255,255,.64);
+  font-size:10px
+}
+.effect-stack-slider input { width:100%;margin:0;accent-color:var(--system-blue,#0a84ff) }
+.effect-stack-slider output { text-align:right;color:rgba(255,255,255,.8);font-variant-numeric:tabular-nums }
+.effect-stack-slider input:disabled { opacity:.38 }
+
+.effects-stack-footer {
+  min-height:31px;
+  display:flex;
+  align-items:center;
+  padding:0 11px;
+  border-top:1px solid rgba(255,255,255,.07);
+  color:rgba(255,255,255,.38);
+  font-size:9px
+}

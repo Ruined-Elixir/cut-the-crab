@@ -24,6 +24,7 @@ import {
   hasVideoTransformKeyframes,
   videoTransformChannel,
 } from "../utils/videoTransformKeyframes";
+import { videoEffectFfmpegFilters } from "../utils/videoEffects";
 
 export type VideoExportProgress = {
   progress: number;
@@ -545,6 +546,7 @@ function buildTimelineFilterGraph(
       `scale=${compositionWidth}:${compositionHeight}:force_original_aspect_ratio=decrease`,
       "format=rgba",
     );
+    videoFilters.push(...videoEffectFfmpegFilters(clip.effects));
 
     if (cropTop > 0 || cropRight > 0 || cropBottom > 0 || cropLeft > 0) {
       videoFilters.push(
@@ -735,6 +737,12 @@ function buildTimelineFilterGraph(
         `[${currentVideoLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${nextLabel}]`,
       );
       currentVideoLabel = nextLabel;
+
+      for (const effectFilter of videoEffectFfmpegFilters(layer.effects, enable)) {
+        const effectLabel = `vfx${compositeStage++}`;
+        filterParts.push(`[${currentVideoLabel}]${effectFilter}[${effectLabel}]`);
+        currentVideoLabel = effectLabel;
+      }
     }
 
     const trackClips = orderedVideoClips.filter((clip) => clip.trackId === trackId);

@@ -23,6 +23,7 @@ type AdjustmentLayerPanelProps = {
   onClose: () => void;
   onChange: (id: string, patch: Partial<AdjustmentLayerClip>) => void;
   onSeek?: (time: number) => void;
+  onOpenEffects?: () => void;
 };
 
 type Position = { x: number; y: number };
@@ -122,6 +123,7 @@ export default function AdjustmentLayerPanel({
   onClose,
   onChange,
   onSeek,
+  onOpenEffects,
 }: AdjustmentLayerPanelProps) {
   const [position, setPosition] = useState<Position>(() => ({
     x: Math.max(12, window.innerWidth - PANEL_WIDTH - 24),
@@ -281,7 +283,10 @@ export default function AdjustmentLayerPanel({
           />
           <span>Enable Adjustment Layer</span>
         </label>
-        <span className="adjustment-keyframe-legend"><b>◆</b> animated property keyframes</span>
+        <div className="adjustment-toolbar-actions">
+          <button type="button" className="adjustment-effects-button" onClick={onOpenEffects}>Effects…</button>
+          <span className="adjustment-keyframe-legend"><b>◆</b> keyframes</span>
+        </div>
       </div>
 
       <div className="adjustment-layer-panel-body">

@@ -26,6 +26,43 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+
+export type VideoEffectKind =
+  | "gaussian-blur"
+  | "sharpen"
+  | "vignette";
+
+export type GaussianBlurVideoEffect = {
+  id: string;
+  kind: "gaussian-blur";
+  enabled: boolean;
+  /** Blur radius in canonical 1080p Program-space pixels. */
+  radius: number;
+};
+
+export type SharpenVideoEffect = {
+  id: string;
+  kind: "sharpen";
+  enabled: boolean;
+  /** 0..100 UI strength. */
+  amount: number;
+};
+
+export type VignetteVideoEffect = {
+  id: string;
+  kind: "vignette";
+  enabled: boolean;
+  /** 0..100 edge-darkening strength. */
+  amount: number;
+  /** 0..100 softness/feather. */
+  softness: number;
+};
+
+export type VideoEffectInstance =
+  | GaussianBlurVideoEffect
+  | SharpenVideoEffect
+  | VignetteVideoEffect;
+
 export type AdjustmentLayerProperty =
   | "opacity"
   | "exposure"
@@ -76,6 +113,8 @@ export type AdjustmentLayerClip = {
   blacks: number;
   /** Optional animated channels. Values interpolate linearly between keys. */
   keyframes?: AdjustmentLayerKeyframes;
+  /** Ordered reusable effects stack. */
+  effects?: VideoEffectInstance[];
 };
 
 
@@ -145,6 +184,8 @@ export type VideoTimelineClip = TimelineClipBase & {
   /** Runtime-only collapsed timeline representation. Never persisted. */
   compoundDisplay?: boolean;
   compoundMemberCount?: number;
+  /** Ordered reusable effects stack. */
+  effects?: VideoEffectInstance[];
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {

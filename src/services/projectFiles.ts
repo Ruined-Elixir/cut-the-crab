@@ -13,6 +13,7 @@ import type {
   AdjustmentLayerKeyframes,
   AudioTimelineClip,
   TimelineTrackSettings,
+  VideoEffectInstance,
   VideoTimelineClip,
   VideoTransformKeyframeProperty,
   VideoTransformKeyframes,
@@ -23,13 +24,14 @@ import {
   normalizeAdjustmentKeyframes,
 } from "../utils/adjustmentLayers";
 import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
+import { normalizeVideoEffects } from "../utils/videoEffects";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 22;
+export const CURRENT_PROJECT_VERSION = 23;
 
 export type SubtitleProject = {
   version: number;
@@ -132,6 +134,52 @@ function parseAdjustmentKeyframes(
   }
 
   return normalizeAdjustmentKeyframes(parsed, duration);
+}
+
+function parseVideoEffects(value: unknown): VideoEffectInstance[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const parsed: VideoEffectInstance[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const raw = value[index];
+    if (!isRecord(raw)) continue;
+    const id = typeof raw.id === "string" && raw.id.length > 0
+      ? raw.id
+      : `effect-${index}-${crypto.randomUUID()}`;
+    const enabled = asOptionalBoolean(raw.enabled) ?? true;
+
+    if (raw.kind === "gaussian-blur") {
+      parsed.push({
+        id,
+        kind: "gaussian-blur",
+        enabled,
+        radius: asNumber(raw.radius, 8),
+      });
+      continue;
+    }
+
+    if (raw.kind === "sharpen") {
+      parsed.push({
+        id,
+        kind: "sharpen",
+        enabled,
+        amount: asNumber(raw.amount, 35),
+      });
+      continue;
+    }
+
+    if (raw.kind === "vignette") {
+      parsed.push({
+        id,
+        kind: "vignette",
+        enabled,
+        amount: asNumber(raw.amount, 45),
+        softness: asNumber(raw.softness, 60),
+      });
+    }
+  }
+
+  return normalizeVideoEffects(parsed);
 }
 
 function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
@@ -342,6 +390,7 @@ function normalizeVideoClip(
       value.transformKeyframes,
       timelineEnd - timelineStart,
     ),
+    effects: parseVideoEffects(value.effects),
     cropTop: Math.max(0, Math.min(49, asNumber(value.cropTop, 0))),
     cropRight: Math.max(0, Math.min(49, asNumber(value.cropRight, 0))),
     cropBottom: Math.max(0, Math.min(49, asNumber(value.cropBottom, 0))),
@@ -456,6 +505,7 @@ function normalizeAdjustmentLayer(
     whites: Math.max(-100, Math.min(100, asNumber(value.whites, 0))),
     blacks: Math.max(-100, Math.min(100, asNumber(value.blacks, 0))),
     keyframes: parseAdjustmentKeyframes(value.keyframes, duration),
+    effects: parseVideoEffects(value.effects),
   };
 }
 

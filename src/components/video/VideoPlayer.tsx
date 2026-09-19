@@ -1,4 +1,5 @@
 import {
+  Fragment,
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -32,6 +33,7 @@ import VideoControls from "./VideoControls";
 import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
 import ProgramLayersPanel from "./ProgramLayersPanel";
 import ProgramSnapOverlay from "./ProgramSnapOverlay";
+import VideoEffectFilterDefs from "../effects/VideoEffectFilterDefs";
 import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime, videoPlaybackRate } from "../../utils/videoRetime";
 import {
   PROGRAM_FRAME_SNAP_THRESHOLD_PX,
@@ -44,6 +46,12 @@ import {
   type ProgramBounds,
   type ProgramSnapGuide,
 } from "../../utils/programSnapping";
+import {
+  combinedVignette,
+  hasRasterVideoEffects,
+  videoEffectFilterDomId,
+  videoEffectsForClipAtTime,
+} from "../../utils/videoEffects";
 import {
   evaluateVideoTransform,
   evaluateVideoTransformProperty,
@@ -83,6 +91,7 @@ type VideoPlayerProps = {
   onVideoClipSelect?: (id: string) => void;
   onVideoLayerChange?: (id: string, direction: "forward" | "backward", atTime: number) => void;
   onVideoLayerReorder?: (orderedClipIdsTopToBottom: string[], atTime: number) => boolean | void;
+  onOpenVideoEffects?: (id: string) => void;
   onVideoTransformChange?: (
     id: string,
     transform: {
@@ -613,6 +622,41 @@ function programBoundsForClip(
   };
 }
 
+function videoVignetteOverlayStyle(
+  clip: VideoTimelineClip,
+  effects: ReturnType<typeof videoEffectsForClipAtTime>,
+  sourceSize: VideoDimensions,
+  shellSize: ShellDimensions,
+  timelineTime: number,
+): CSSProperties | null {
+  const vignette = combinedVignette(effects);
+  if (!vignette || vignette.amount <= 0.001 || shellSize.width <= 0 || shellSize.height <= 0) {
+    return null;
+  }
+
+  const sourceWidth = Math.max(1, sourceSize.width);
+  const sourceHeight = Math.max(1, sourceSize.height);
+  const fitScale = Math.min(shellSize.width / sourceWidth, shellSize.height / sourceHeight);
+  const fittedWidth = sourceWidth * fitScale;
+  const fittedHeight = sourceHeight * fitScale;
+  const fittedLeft = (shellSize.width - fittedWidth) / 2;
+  const fittedTop = (shellSize.height - fittedHeight) / 2;
+  const softness = Math.max(0, Math.min(100, vignette.softness)) / 100;
+  const clearStop = 18 + softness * 55;
+  const edgeAlpha = Math.max(0, Math.min(1, vignette.amount / 100));
+
+  return {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    ...videoTransformStyle(clip, sourceSize, shellSize, timelineTime),
+    backgroundImage: `radial-gradient(ellipse at center, rgba(0,0,0,0) ${clearStop.toFixed(1)}%, rgba(0,0,0,${edgeAlpha.toFixed(4)}) 100%)`,
+    backgroundSize: `${fittedWidth}px ${fittedHeight}px`,
+    backgroundPosition: `${fittedLeft}px ${fittedTop}px`,
+    backgroundRepeat: "no-repeat",
+  };
+}
+
 const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer({
   videoPath,
   videoName,
@@ -630,6 +674,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   onVideoClipSelect,
   onVideoLayerChange,
   onVideoLayerReorder,
+  onOpenVideoEffects,
   onVideoTransformChange,
   onApplyVideoCropToTrack,
   proxyPathsBySource = {},
@@ -2328,6 +2373,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         action: () => openOpacityEditor(clip, clientX, clientY),
       },
       {
+        id: `program-video.${clip.id}.effects`,
+        text: "Effects…",
+        enabled: !!onOpenVideoEffects,
+        action: () => onOpenVideoEffects?.(clip.id),
+      },
+      {
         id: `program-video.${clip.id}.layer`,
         text: "Layer",
         enabled: canBringForward || canSendBackward,
@@ -2482,6 +2533,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
           </div>
         )}
 
+        {primaryVideoUrl && selectedActiveClip && (
+          <button
+            type="button"
+            className="program-effects-button"
+            onClick={() => onOpenVideoEffects?.(selectedActiveClip.id)}
+            title="Open Effects for selected video"
+          >
+            Effects
+          </button>
+        )}
+
         {primaryVideoUrl && (
           <button
             type="button"
@@ -2528,8 +2590,58 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               if (!dissolve || isTrackHidden(trackSettings, trackId)) return null;
 
               const zIndex = videoTrackIndex(trackId);
+              const outgoingEffects = videoEffectsForClipAtTime(
+                dissolve.outgoing, adjustmentLayers, displayTime, trackSettings,
+              );
+              const incomingEffects = videoEffectsForClipAtTime(
+                dissolve.incoming, adjustmentLayers, displayTime, trackSettings,
+              );
+              const outgoingEffectFilterId = videoEffectFilterDomId(`${dissolve.outgoing.id}-dissolve`);
+              const incomingEffectFilterId = videoEffectFilterDomId(`${dissolve.incoming.id}-dissolve`);
+              const outgoingRasterFilter = hasRasterVideoEffects(outgoingEffects)
+                ? `url(#${outgoingEffectFilterId})`
+                : "";
+              const incomingRasterFilter = hasRasterVideoEffects(incomingEffects)
+                ? `url(#${incomingEffectFilterId})`
+                : "";
+              const adjustmentFilter = adjustmentCssFilter(
+                adjustmentLayersAffectingVideoTrack(
+                  adjustmentLayers, displayTime, trackId, trackSettings,
+                ),
+                displayTime,
+              );
+              const outgoingVignetteStyle = videoVignetteOverlayStyle(
+                dissolve.outgoing, outgoingEffects,
+                videoDimensions[trackId] ?? { width: 16, height: 9 },
+                shellDimensions, displayTime,
+              );
+              const incomingVignetteStyle = videoVignetteOverlayStyle(
+                dissolve.incoming, incomingEffects,
+                videoDimensions[trackId] ?? { width: 16, height: 9 },
+                shellDimensions, displayTime,
+              );
+              const dissolvePreviewScale = Math.max(0.05, shellDimensions.height / 1080);
+              const outgoingOpacity =
+                (1 - dissolve.progress) *
+                videoOpacityFadeFactor(dissolve.outgoing, displayTime) *
+                (evaluateVideoTransformProperty(dissolve.outgoing, "opacity", displayTime) / 100);
+              const incomingOpacity =
+                dissolve.progress *
+                videoOpacityFadeFactor(dissolve.incoming, displayTime) *
+                (evaluateVideoTransformProperty(dissolve.incoming, "opacity", displayTime) / 100);
+
               return (
                 <div key={`dissolve:${trackId}`} className="program-dissolve-pair">
+                  <VideoEffectFilterDefs
+                    filterId={outgoingEffectFilterId}
+                    effects={outgoingEffects}
+                    previewScale={dissolvePreviewScale}
+                  />
+                  <VideoEffectFilterDefs
+                    filterId={incomingEffectFilterId}
+                    effects={incomingEffects}
+                    previewScale={dissolvePreviewScale}
+                  />
                   <video
                     key={`${trackId}-dissolve-out:${dissolve.outgoing.id}`}
                     ref={(element) => { dissolveOutgoingRefs.current[trackId] = element; }}
@@ -2549,16 +2661,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         shellDimensions,
                         displayTime,
                       ),
-                      filter: adjustmentCssFilter(
-                        adjustmentLayersAffectingVideoTrack(
-                          adjustmentLayers, displayTime, trackId, trackSettings,
-                        ),
-                        displayTime,
-                      ) || undefined,
-                      opacity:
-                        (1 - dissolve.progress) *
-                        videoOpacityFadeFactor(dissolve.outgoing, displayTime) *
-                        (evaluateVideoTransformProperty(dissolve.outgoing, "opacity", displayTime) / 100),
+                      filter: [outgoingRasterFilter, adjustmentFilter].filter(Boolean).join(" ") || undefined,
+                      opacity: outgoingOpacity,
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(
@@ -2569,6 +2673,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       )
                     }
                   />
+                  {outgoingVignetteStyle && (
+                    <div
+                      className="program-video-vignette program-dissolve-layer"
+                      aria-hidden="true"
+                      style={{ zIndex, ...outgoingVignetteStyle, opacity: outgoingOpacity }}
+                    />
+                  )}
                   <video
                     key={`${trackId}-dissolve-in:${dissolve.incoming.id}`}
                     ref={(element) => { dissolveIncomingRefs.current[trackId] = element; }}
@@ -2588,16 +2699,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         shellDimensions,
                         displayTime,
                       ),
-                      filter: adjustmentCssFilter(
-                        adjustmentLayersAffectingVideoTrack(
-                          adjustmentLayers, displayTime, trackId, trackSettings,
-                        ),
-                        displayTime,
-                      ) || undefined,
-                      opacity:
-                        dissolve.progress *
-                        videoOpacityFadeFactor(dissolve.incoming, displayTime) *
-                        (evaluateVideoTransformProperty(dissolve.incoming, "opacity", displayTime) / 100),
+                      filter: [incomingRasterFilter, adjustmentFilter].filter(Boolean).join(" ") || undefined,
+                      opacity: incomingOpacity,
                     }}
                     onLoadedMetadata={() =>
                       syncSameTrackDissolve(
@@ -2608,6 +2711,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       )
                     }
                   />
+                  {incomingVignetteStyle && (
+                    <div
+                      className="program-video-vignette program-dissolve-layer"
+                      aria-hidden="true"
+                      style={{ zIndex, ...incomingVignetteStyle, opacity: incomingOpacity }}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -2617,8 +2727,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               const sourceUrl = sourceUrlsByTrack[trackId];
               if (!clip || !sourceUrl || dissolvesByTrack[trackId]) return null;
 
+              const previewEffects = videoEffectsForClipAtTime(
+                clip, adjustmentLayers, displayTime, trackSettings,
+              );
+              const effectFilterId = videoEffectFilterDomId(clip.id);
+              const effectFilter = hasRasterVideoEffects(previewEffects)
+                ? `url(#${effectFilterId})`
+                : "";
+              const transitionStyle = adjustedVideoTransitionStyle(
+                clip, displayTime, adjustmentLayers, trackSettings,
+              );
+              const vignetteStyle = videoVignetteOverlayStyle(
+                clip,
+                previewEffects,
+                videoDimensions[trackId] ?? { width: 16, height: 9 },
+                shellDimensions,
+                displayTime,
+              );
+              const previewScale = Math.max(0.05, shellDimensions.height / 1080);
+
               return (
-                <video
+                <Fragment key={clip.id}>
+                  <VideoEffectFilterDefs
+                    filterId={effectFilterId}
+                    effects={previewEffects}
+                    previewScale={previewScale}
+                  />
+                  <video
                   key={clip.id}
                   ref={(element) => {
                     videoRefsByClipId.current[clip.id] = element;
@@ -2641,12 +2776,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       shellDimensions,
                       displayTime,
                     ),
-                    ...adjustedVideoTransitionStyle(
-                      clip,
-                      displayTime,
-                      adjustmentLayers,
-                      trackSettings,
-                    ),
+                    ...transitionStyle,
+                    filter: [effectFilter, transitionStyle.filter].filter(Boolean).join(" ") || undefined,
                   }}
                   onLoadedMetadata={() => handleVideoLoadedMetadata(trackId, clip.id)}
                   onPointerDown={(event) =>
@@ -2656,6 +2787,22 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     handleProgramClipContextMenu(event, clip)
                   }
                 />
+                  {vignetteStyle && (
+                    <div
+                      className="program-video-vignette"
+                      aria-hidden="true"
+                      style={{
+                        zIndex: videoTrackIndex(trackId),
+                        visibility:
+                          videoVisibility[trackId] && !isTrackHidden(trackSettings, trackId)
+                            ? "visible"
+                            : "hidden",
+                        ...vignetteStyle,
+                        opacity: typeof transitionStyle.opacity === "number" ? transitionStyle.opacity : 1,
+                      }}
+                    />
+                  )}
+                </Fragment>
               );
             })}
 
