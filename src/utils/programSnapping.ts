@@ -42,6 +42,85 @@ export const PROGRAM_SNAP_THRESHOLD_PX = 7;
 export const PROGRAM_OBJECT_SNAP_THRESHOLD_PX = 5;
 export const PROGRAM_FRAME_SNAP_THRESHOLD_PX = 8;
 
+// The editor is authored against one canonical 16:9 Program frame. Aspect
+// guides are viewports cut from that frame, and export uses the same viewport
+// math so the dashed box is a true representation of the final output.
+export const PROGRAM_BASE_ASPECT = 16 / 9;
+
+export type ProgramViewportRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Center-crop viewport for a requested aspect inside a source frame.
+ * Standard CTC presets (4:3, 1:1, 9:16) keep the full source height and
+ * crop only the sides of the canonical 16:9 frame. Wider custom ratios keep
+ * the full width and crop top/bottom instead.
+ */
+export function programViewportRectForAspect(
+  sourceWidth: number,
+  sourceHeight: number,
+  aspect: number,
+): ProgramViewportRect {
+  const width = Math.max(1, sourceWidth);
+  const height = Math.max(1, sourceHeight);
+  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : PROGRAM_BASE_ASPECT;
+  const sourceAspect = width / height;
+
+  if (safeAspect <= sourceAspect) {
+    const viewportWidth = height * safeAspect;
+    return {
+      left: (width - viewportWidth) / 2,
+      top: 0,
+      width: viewportWidth,
+      height,
+    };
+  }
+
+  const viewportHeight = width / safeAspect;
+  return {
+    left: 0,
+    top: (height - viewportHeight) / 2,
+    width,
+    height: viewportHeight,
+  };
+}
+
+/**
+ * Canonical 16:9 Program frame inside the available monitor shell. It uses as
+ * much monitor height as possible (full height in the normal wide editor
+ * layout) while remaining fully visible if the panel becomes unusually narrow.
+ */
+export function programBaseFrameRect(
+  widthPx: number,
+  heightPx: number,
+): ProgramViewportRect {
+  const width = Math.max(1, widthPx);
+  const height = Math.max(1, heightPx);
+  const shellAspect = width / height;
+
+  if (shellAspect >= PROGRAM_BASE_ASPECT) {
+    const frameWidth = height * PROGRAM_BASE_ASPECT;
+    return {
+      left: (width - frameWidth) / 2,
+      top: 0,
+      width: frameWidth,
+      height,
+    };
+  }
+
+  const frameHeight = width / PROGRAM_BASE_ASPECT;
+  return {
+    left: 0,
+    top: (height - frameHeight) / 2,
+    width,
+    height: frameHeight,
+  };
+}
+
 const PROGRAM_ASPECT_GUIDE_SPECS = [
   { id: "aspect-16-9", label: "16:9", aspect: 16 / 9 },
   { id: "aspect-4-3", label: "4:3", aspect: 4 / 3 },
@@ -50,30 +129,27 @@ const PROGRAM_ASPECT_GUIDE_SPECS = [
 ] as const;
 
 /**
- * Returns centered presentation guides inside the Program Monitor.
- * The guides deliberately leave a margin so the actual player edge remains a
- * separate soft snap target.
+ * Returns the real export viewports inside the Program Monitor. The outer
+ * 16:9 frame uses the full available monitor height in the normal editor
+ * layout; 4:3, 1:1 and 9:16 share that exact height and crop inward from the
+ * sides. This is intentionally the same geometry used by final export.
  */
 export function programAspectGuideRects(
   widthPx: number,
   heightPx: number,
 ): ProgramAspectGuideRect[] {
-  const width = Math.max(1, widthPx);
-  const height = Math.max(1, heightPx);
-  const availableWidth = width * 0.88;
-  const availableHeight = height * 0.88;
+  const base = programBaseFrameRect(widthPx, heightPx);
 
   return PROGRAM_ASPECT_GUIDE_SPECS.map((spec) => {
-    let rectWidth = availableWidth;
-    let rectHeight = rectWidth / spec.aspect;
-
-    if (rectHeight > availableHeight) {
-      rectHeight = availableHeight;
-      rectWidth = rectHeight * spec.aspect;
-    }
-
-    const left = (width - rectWidth) / 2;
-    const top = (height - rectHeight) / 2;
+    const localViewport = programViewportRectForAspect(
+      base.width,
+      base.height,
+      spec.aspect,
+    );
+    const left = base.left + localViewport.left;
+    const top = base.top + localViewport.top;
+    const rectWidth = localViewport.width;
+    const rectHeight = localViewport.height;
 
     return {
       id: spec.id,
@@ -82,8 +158,8 @@ export function programAspectGuideRects(
       right: left + rectWidth,
       top,
       bottom: top + rectHeight,
-      centerX: width / 2,
-      centerY: height / 2,
+      centerX: left + rectWidth / 2,
+      centerY: top + rectHeight / 2,
     };
   });
 }

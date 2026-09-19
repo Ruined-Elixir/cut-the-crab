@@ -146,7 +146,7 @@ function ExportSettingsModal({
             <h2 id="export-settings-title">
               {rangeExport ? "Export Selected Range" : "Export Video"}
             </h2>
-            <p>Choose the exact output frame before rendering.</p>
+            <p>Preset ratios export exactly what is inside the matching dashed Program Monitor guide.</p>
           </div>
 
           <button
@@ -226,7 +226,7 @@ function ExportSettingsModal({
 
           {presetId === "custom" && (
             <p className="export-custom-note">
-              Custom dimensions are rounded to even pixels for H.264 export.
+              Custom dimensions use the same centered Program viewport logic and are rounded to even pixels for H.264 export.
             </p>
           )}
         </div>

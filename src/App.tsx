@@ -3679,6 +3679,11 @@ function App() {
         trackSettings,
         range,
         frameSize,
+        // Export from the same wide editing canvas shown by the Program
+        // Monitor, then crop the selected dashed aspect-ratio viewport.
+        // This keeps transformed multi-layer compositions pixel-consistent
+        // with what the user actually framed in the viewer.
+        programPreviewSize: videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
 
         onStart: () => {
           setExportProgress(0);

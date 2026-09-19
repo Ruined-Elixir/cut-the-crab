@@ -88,9 +88,22 @@ function getAlignment(textAlign: Subtitle["textAlign"]): number {
  * Because both preview and export use libass, this is intentionally our
  * canonical background implementation.
  */
+export type AssSourceViewport = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 type AssTrackOptions = {
   playResWidth?: number;
   playResHeight?: number;
+  /**
+   * Optional crop viewport expressed in canonical 1920x1080 Program-space
+   * coordinates. Export uses this to remap subtitle positions into the exact
+   * same aspect-ratio box shown by the Program Monitor.
+   */
+  sourceViewport?: AssSourceViewport;
 };
 
 function createStyle(
@@ -164,13 +177,20 @@ function createDialogue(
   subtitle: Subtitle,
   playResWidth: number,
   playResHeight: number,
+  sourceViewport: AssSourceViewport,
 ): string {
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
 
-  const x = ((subtitle.positionX ?? 50) / 100) * playResWidth;
+  const sourceX = ((subtitle.positionX ?? 50) / 100) * ASS_WIDTH;
+  const sourceY = ((subtitle.positionY ?? 80) / 100) * ASS_HEIGHT;
 
-  const y = ((subtitle.positionY ?? 80) / 100) * playResHeight;
+  // Map the authored canonical Program-space point through the same centered
+  // crop used for video export. Values are intentionally allowed outside the
+  // output frame so libass naturally clips subtitles that sit beyond a chosen
+  // aspect viewport, exactly like the dashed Program Monitor box.
+  const x = ((sourceX - sourceViewport.left) / sourceViewport.width) * playResWidth;
+  const y = ((sourceY - sourceViewport.top) / sourceViewport.height) * playResHeight;
 
   const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
@@ -193,10 +213,23 @@ export function buildAssTrack(
     Math.round(options.playResHeight ?? ASS_HEIGHT),
   );
 
-  // Subtitle style sizes are authored against the canonical 1080-high design
-  // space. Scale them with export height so custom aspect/resolution exports
-  // retain the same relative typography.
-  const designScale = playResHeight / ASS_HEIGHT;
+  const sourceViewport = options.sourceViewport ?? {
+    left: 0,
+    top: 0,
+    width: ASS_WIDTH,
+    height: ASS_HEIGHT,
+  };
+  const safeSourceViewport: AssSourceViewport = {
+    left: Number.isFinite(sourceViewport.left) ? sourceViewport.left : 0,
+    top: Number.isFinite(sourceViewport.top) ? sourceViewport.top : 0,
+    width: Math.max(1, Number.isFinite(sourceViewport.width) ? sourceViewport.width : ASS_WIDTH),
+    height: Math.max(1, Number.isFinite(sourceViewport.height) ? sourceViewport.height : ASS_HEIGHT),
+  };
+
+  // Subtitle styles are authored in canonical Program-space units. Scale by
+  // the crop viewport -> output transform, not merely by output resolution.
+  // This keeps typography visually identical to what is inside the guide box.
+  const designScale = playResHeight / safeSourceViewport.height;
 
   const sorted = [...subtitles].sort((a, b) =>
     a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
@@ -208,7 +241,13 @@ export function buildAssTrack(
 
   const events = sorted
     .map((subtitle, index) =>
-      createDialogue(index, subtitle, playResWidth, playResHeight),
+      createDialogue(
+        index,
+        subtitle,
+        playResWidth,
+        playResHeight,
+        safeSourceViewport,
+      ),
     )
     .join("\n");
 

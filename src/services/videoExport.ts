@@ -12,7 +12,8 @@ import type {
   VideoTransformKeyframeProperty,
 } from "../types/timelineModel";
 
-import { buildAssTrack } from "../utils/assSubtitles";
+import { ASS_HEIGHT, ASS_WIDTH, buildAssTrack } from "../utils/assSubtitles";
+import { programViewportRectForAspect } from "../utils/programSnapping";
 import {
   adjustmentLayerChannel,
   adjustmentLayerPropertyBaseValue,
@@ -39,6 +40,11 @@ export type ExportFrameSize = {
   height: number;
 };
 
+export type ExportProgramPreviewSize = {
+  width: number;
+  height: number;
+};
+
 export const DEFAULT_EXPORT_FRAME_SIZE: ExportFrameSize = {
   width: 1920,
   height: 1080,
@@ -52,6 +58,12 @@ type ExportTimelineVideoOptions = {
   trackSettings: TimelineTrackSettings;
   range?: ExportTimelineRange | null;
   frameSize?: ExportFrameSize;
+  /**
+   * CSS-pixel size of the Program Monitor editing canvas at export time.
+   * Aspect-ratio guides are viewports inside this canvas, so reproducing its
+   * aspect before the final crop is required for preview/export parity.
+   */
+  programPreviewSize?: ExportProgramPreviewSize;
   onStart?: () => void;
   onProgress?: (progress: VideoExportProgress) => void;
 };
@@ -100,6 +112,38 @@ function normalizeExportFrameSize(
       DEFAULT_EXPORT_FRAME_SIZE.height,
     ),
   };
+}
+
+
+function exportViewportForFrameSize(frameSize: ExportFrameSize) {
+  const normalized = normalizeExportFrameSize(frameSize);
+  return programViewportRectForAspect(
+    ASS_WIDTH,
+    ASS_HEIGHT,
+    normalized.width / normalized.height,
+  );
+}
+
+function previewCompositionSize(
+  previewSize?: ExportProgramPreviewSize,
+) {
+  const width = previewSize?.width ?? ASS_WIDTH;
+  const height = previewSize?.height ?? ASS_HEIGHT;
+  const valid =
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    width > 0 &&
+    height > 0;
+
+  const aspect = valid ? width / height : ASS_WIDTH / ASS_HEIGHT;
+  const compositionHeight = ASS_HEIGHT;
+  // Work at a stable 1080 design height while preserving the actual Program
+  // Monitor aspect. This is resolution-independent but geometrically identical
+  // to the editing canvas.
+  let compositionWidth = Math.max(2, Math.round(compositionHeight * aspect));
+  if (compositionWidth % 2 !== 0) compositionWidth += 1;
+
+  return { width: compositionWidth, height: compositionHeight };
 }
 
 function atempoFilters(rate: number) {
@@ -383,11 +427,30 @@ function buildTimelineFilterGraph(
   timelineDuration: number,
   range?: ExportTimelineRange | null,
   frameSize?: ExportFrameSize,
+  programPreviewSize?: ExportProgramPreviewSize,
 ) {
   const safeDuration = Math.max(0.1, timelineDuration);
   const normalizedFrameSize = normalizeExportFrameSize(frameSize);
   const outputWidth = normalizedFrameSize.width;
   const outputHeight = normalizedFrameSize.height;
+
+  // Reproduce the actual Program Monitor editing canvas first. The dashed
+  // aspect-ratio boxes are centered viewports INSIDE that canvas; they are not
+  // separate canvases. Starting directly at 1920x1080 changes the meaning of
+  // position/contain geometry whenever the viewer itself is wider than 16:9.
+  //
+  // Use a fixed 1080 design height with the monitor's live aspect ratio so the
+  // geometry is deterministic while remaining pixel-independent. The selected
+  // export preset is cropped from this virtual canvas exactly like its dashed
+  // guide in the viewer, then scaled to the requested output resolution.
+  const compositionSize = previewCompositionSize(programPreviewSize);
+  const compositionWidth = compositionSize.width;
+  const compositionHeight = compositionSize.height;
+  const exportViewport = programViewportRectForAspect(
+    compositionWidth,
+    compositionHeight,
+    outputWidth / outputHeight,
+  );
   const exportRange = normalizeExportRange(range, safeDuration);
   const outputDuration = exportRange
     ? Math.max(0.001, exportRange.end - exportRange.start)
@@ -396,7 +459,7 @@ function buildTimelineFilterGraph(
   const filterParts: string[] = [];
 
   filterParts.push(
-    `color=c=black:s=${outputWidth}x${outputHeight}:r=${OUTPUT_FPS}:d=${n(
+    `color=c=black:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(
       safeDuration,
       3,
     )}[basev]`,
@@ -479,7 +542,7 @@ function buildTimelineFilterGraph(
       videoFilters.push(`setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`);
     }
     videoFilters.push(
-      `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease`,
+      `scale=${compositionWidth}:${compositionHeight}:force_original_aspect_ratio=decrease`,
       "format=rgba",
     );
 
@@ -700,15 +763,30 @@ function buildTimelineFilterGraph(
     }
   }
 
+  // Crop the finished Program-Monitor composition to the chosen guide, then
+  // scale that viewport to the requested output resolution. Keeping this step
+  // after all clip transforms/layers is what makes the export a literal
+  // "what is inside the dashed box" result.
+  const viewportLabel = `vviewport${compositeStage++}`;
+  filterParts.push(
+    `[${currentVideoLabel}]crop=w=${n(exportViewport.width, 6)}:h=${n(
+      exportViewport.height,
+      6,
+    )}:x=${n(exportViewport.left, 6)}:y=${n(
+      exportViewport.top,
+      6,
+    )},scale=${outputWidth}:${outputHeight}:flags=lanczos[${viewportLabel}]`,
+  );
+
   if (exportRange) {
     filterParts.push(
-      `[${currentVideoLabel}]trim=start=${n(exportRange.start)}:end=${n(
+      `[${viewportLabel}]trim=start=${n(exportRange.start)}:end=${n(
         exportRange.end,
       )},setpts=PTS-STARTPTS,fps=${OUTPUT_FPS}[vcomp]`,
     );
   } else {
     filterParts.push(
-      `[${currentVideoLabel}]trim=duration=${n(
+      `[${viewportLabel}]trim=duration=${n(
         safeDuration,
         3,
       )},setpts=PTS-STARTPTS,fps=${OUTPUT_FPS}[vcomp]`,
@@ -865,6 +943,7 @@ export async function exportStyledVideo(
     {
       playResWidth: frameSize.width,
       playResHeight: frameSize.height,
+      sourceViewport: exportViewportForFrameSize(frameSize),
     },
   );
   const { inputPaths, filterComplex, outputDuration } =
@@ -876,6 +955,7 @@ export async function exportStyledVideo(
       options.timelineDuration,
       normalizedRange,
       frameSize,
+      options.programPreviewSize,
     );
 
   const resolvedInputs = inputPaths.length > 0 ? inputPaths : [videoPath];

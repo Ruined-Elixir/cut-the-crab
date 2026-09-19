@@ -59,6 +59,8 @@ type SeekRequest = {
 
 export type VideoPlayerHandle = {
   setSkimPreviewTime: (time: number | null) => void;
+  /** Current Program Monitor editing-canvas size in CSS pixels. */
+  getProgramPreviewSize: () => { width: number; height: number } | null;
 };
 
 type VideoPlayerProps = {
@@ -710,6 +712,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
       const maxDuration = Math.max(0, timelineDurationRef.current || 0);
       setSkimPreviewTime(Math.max(0, Math.min(maxDuration, time)));
+    },
+    getProgramPreviewSize: () => {
+      const rect = shellRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+      return { width: rect.width, height: rect.height };
     },
   }), []);
 
