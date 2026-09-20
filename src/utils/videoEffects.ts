@@ -57,6 +57,37 @@ export function createVideoEffect(kind: VideoEffectKind): VideoEffectInstance {
   }
 }
 
+export function resetVideoEffect(
+  effect: VideoEffectInstance,
+): VideoEffectInstance {
+  const fresh = createVideoEffect(effect.kind);
+  return {
+    ...fresh,
+    id: effect.id,
+    enabled: effect.enabled !== false,
+  } as VideoEffectInstance;
+}
+
+export function duplicateVideoEffect(
+  effect: VideoEffectInstance,
+): VideoEffectInstance {
+  return {
+    ...effect,
+    id: `effect-${crypto.randomUUID()}`,
+  } as VideoEffectInstance;
+}
+
+export function videoEffectSummary(effect: VideoEffectInstance): string {
+  switch (effect.kind) {
+    case "gaussian-blur":
+      return `${Math.round(effect.radius)} px`;
+    case "sharpen":
+      return `${Math.round(effect.amount)}%`;
+    case "vignette":
+      return `${Math.round(effect.amount)}% · soft ${Math.round(effect.softness)}%`;
+  }
+}
+
 export function normalizeVideoEffect(
   effect: VideoEffectInstance,
 ): VideoEffectInstance {
@@ -192,13 +223,17 @@ export function reorderVideoEffects(
   effects: VideoEffectInstance[] | undefined,
   sourceId: string,
   targetId: string,
+  placement: "before" | "after" = "before",
 ) {
   const list = [...(effects ?? [])];
   const sourceIndex = list.findIndex((effect) => effect.id === sourceId);
-  const targetIndex = list.findIndex((effect) => effect.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return list;
+  if (sourceIndex < 0 || sourceId === targetId) return list;
+
   const [moved] = list.splice(sourceIndex, 1);
-  list.splice(targetIndex, 0, moved);
+  const targetIndex = list.findIndex((effect) => effect.id === targetId);
+  if (targetIndex < 0) return [...list, moved];
+
+  list.splice(targetIndex + (placement === "after" ? 1 : 0), 0, moved);
   return list;
 }
 

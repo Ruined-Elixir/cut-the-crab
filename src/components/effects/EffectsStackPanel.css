@@ -1,137 +1,284 @@
 .effects-stack-panel {
   position:fixed;
   z-index:3600;
-  width:372px;
-  max-height:min(600px,calc(100vh - 16px));
+  width:390px;
+  max-height:min(660px,calc(100vh - 16px));
   display:flex;
   flex-direction:column;
   overflow:hidden;
-  border:1px solid rgba(255,255,255,.13);
-  border-radius:14px;
-  background:rgba(31,31,34,.96);
-  -webkit-backdrop-filter:blur(24px) saturate(1.1);
-  backdrop-filter:blur(24px) saturate(1.1);
-  box-shadow:0 22px 60px rgba(0,0,0,.42),0 3px 12px rgba(0,0,0,.28);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:15px;
+  background:rgba(29,29,32,.97);
+  -webkit-backdrop-filter:blur(26px) saturate(1.12);
+  backdrop-filter:blur(26px) saturate(1.12);
+  box-shadow:0 24px 68px rgba(0,0,0,.46),0 3px 12px rgba(0,0,0,.3);
   color:rgba(255,255,255,.94);
   user-select:none
 }
 
-.effects-stack-panel.disabled { opacity:.88 }
+.effects-stack-panel.disabled { opacity:.9 }
 
 .effects-stack-header {
-  min-height:54px;
+  min-height:58px;
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:12px;
-  padding:8px 10px 8px 13px;
-  border-bottom:1px solid rgba(255,255,255,.08);
+  padding:9px 10px 9px 14px;
+  border-bottom:1px solid rgba(255,255,255,.085);
   cursor:move
 }
 
-.effects-stack-header>div { min-width:0;display:flex;flex-direction:column;gap:2px }
-.effects-stack-header strong { font-size:13px;font-weight:700 }
-.effects-stack-header small { max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.48);font-size:10px }
-.effects-stack-header button,
+.effects-stack-header-copy { min-width:0;display:flex;flex:1;flex-direction:column;gap:3px }
+.effects-stack-title-row { display:flex;align-items:center;gap:7px }
+.effects-stack-title-row strong { font-size:13px;font-weight:720;letter-spacing:.005em }
+.effects-stack-count {
+  min-width:30px;
+  height:17px;
+  padding:0 6px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:999px;
+  background:rgba(255,255,255,.055);
+  color:rgba(255,255,255,.52);
+  font-size:8px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums
+}
+.effects-stack-header small { max-width:308px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.46);font-size:10px }
+.effects-stack-close,
 .effect-stack-remove,
-.effect-stack-move {
+.effect-stack-move,
+.effect-stack-icon-button,
+.effect-stack-collapse,
+.effect-stack-power,
+.effect-stack-name {
   border:0;
-  border-radius:7px;
   background:transparent;
   color:rgba(255,255,255,.62);
   cursor:pointer
 }
-.effects-stack-header button { width:30px;height:30px;font-size:20px }
-.effects-stack-header button:hover,
+.effects-stack-close { flex:0 0 auto;width:30px;height:30px;border-radius:8px;font-size:20px }
+.effects-stack-close:hover,
 .effect-stack-remove:hover:not(:disabled),
-.effect-stack-move:hover:not(:disabled) { background:rgba(255,255,255,.08);color:#fff }
+.effect-stack-move:hover:not(:disabled),
+.effect-stack-icon-button:hover:not(:disabled),
+.effect-stack-collapse:hover,
+.effect-stack-power:hover:not(:disabled) { background:rgba(255,255,255,.085);color:#fff }
 
+.effects-stack-toolbar {
+  padding:9px 10px 8px;
+  border-bottom:1px solid rgba(255,255,255,.075);
+  background:rgba(255,255,255,.012)
+}
 .effects-stack-addbar {
   display:grid;
   grid-template-columns:repeat(3,1fr);
-  gap:6px;
-  padding:9px 10px;
-  border-bottom:1px solid rgba(255,255,255,.07)
+  gap:6px
 }
 .effects-stack-addbar button {
-  min-height:30px;
-  border:1px solid rgba(255,255,255,.1);
+  min-height:31px;
+  border:1px solid rgba(255,255,255,.105);
   border-radius:8px;
-  background:rgba(255,255,255,.055);
-  color:rgba(255,255,255,.84);
+  background:rgba(255,255,255,.06);
+  color:rgba(255,255,255,.86);
   font-size:10px;
+  font-weight:650;
+  cursor:pointer
+}
+.effects-stack-addbar button:hover:not(:disabled) { background:rgba(255,255,255,.105);border-color:rgba(255,255,255,.15) }
+.effects-stack-addbar button:disabled { opacity:.42;cursor:default }
+
+.effects-stack-stack-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:5px;
+  min-height:25px;
+  margin-top:6px
+}
+.effects-stack-stack-actions button {
+  min-height:23px;
+  padding:0 7px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:rgba(255,255,255,.44);
+  font-size:9px;
   font-weight:600;
   cursor:pointer
 }
-.effects-stack-addbar button:hover:not(:disabled) { background:rgba(255,255,255,.1) }
-.effects-stack-addbar button:disabled { opacity:.42;cursor:default }
+.effects-stack-stack-actions button:hover:not(:disabled) { background:rgba(255,255,255,.07);color:rgba(255,255,255,.82) }
+.effects-stack-stack-actions button.danger:hover:not(:disabled) { background:rgba(255,70,70,.1);color:rgba(255,125,125,.95) }
+.effects-stack-stack-actions button:disabled { opacity:.25;cursor:default }
 
 .effects-stack-body {
-  min-height:150px;
+  min-height:165px;
   flex:1;
   overflow:auto;
-  padding:9px 10px 12px
+  padding:10px 10px 13px;
+  scrollbar-gutter:stable
 }
 .effects-stack-empty {
-  min-height:150px;
+  min-height:175px;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:6px;
+  gap:7px;
   text-align:center;
-  color:rgba(255,255,255,.43)
+  color:rgba(255,255,255,.42)
 }
-.effects-stack-empty strong { color:rgba(255,255,255,.68);font-size:12px }
-.effects-stack-empty span { max-width:250px;font-size:10px;line-height:1.45 }
+.effects-stack-empty-icon {
+  width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  margin-bottom:2px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  background:rgba(255,255,255,.035);
+  color:rgba(255,255,255,.32);
+  font-size:11px;
+  font-weight:750;
+  letter-spacing:.04em
+}
+.effects-stack-empty strong { color:rgba(255,255,255,.7);font-size:12px }
+.effects-stack-empty span:last-child { max-width:265px;font-size:10px;line-height:1.5 }
 
 .effect-stack-card {
+  position:relative;
   margin-bottom:8px;
-  border:1px solid rgba(255,255,255,.09);
-  border-radius:10px;
-  background:rgba(255,255,255,.035);
-  overflow:hidden
+  border:1px solid rgba(255,255,255,.095);
+  border-radius:11px;
+  background:rgba(255,255,255,.038);
+  overflow:visible;
+  transition:border-color 80ms ease,background 80ms ease,opacity 80ms ease,transform 80ms ease
 }
-.effect-stack-card[draggable="true"] { cursor:grab }
-.effect-stack-card[draggable="true"]:active { cursor:grabbing }
-.effect-stack-card.bypassed { opacity:.58 }
+.effect-stack-card:hover { border-color:rgba(255,255,255,.135);background:rgba(255,255,255,.047) }
+.effect-stack-card.bypassed { opacity:.61 }
+.effect-stack-card.dragging { opacity:.42;transform:scale(.995) }
+.effect-stack-card.drop-before::before,
+.effect-stack-card.drop-after::after {
+  content:"";
+  position:absolute;
+  z-index:3;
+  left:4px;
+  right:4px;
+  height:2px;
+  border-radius:2px;
+  background:var(--system-blue,#0a84ff);
+  box-shadow:0 0 8px rgba(10,132,255,.5)
+}
+.effect-stack-card.drop-before::before { top:-5px }
+.effect-stack-card.drop-after::after { bottom:-5px }
+
 .effect-stack-card-header {
-  min-height:38px;
+  min-height:42px;
   display:flex;
   align-items:center;
-  gap:5px;
-  padding:4px 6px;
-  border-bottom:1px solid rgba(255,255,255,.055)
+  gap:3px;
+  padding:4px 5px 4px 4px;
+  border-bottom:1px solid rgba(255,255,255,.052)
 }
-.effect-stack-drag-handle { width:18px;color:rgba(255,255,255,.32);font-size:11px;text-align:center }
-.effect-stack-enable { min-width:0;flex:1;display:flex;align-items:center;gap:7px;font-size:11px }
-.effect-stack-enable input { margin:0 }
-.effect-stack-enable strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650 }
-.effect-stack-order { width:22px;color:rgba(255,255,255,.32);font-size:9px;text-align:center;font-variant-numeric:tabular-nums }
-.effect-stack-move,.effect-stack-remove { width:25px;height:25px;padding:0;font-size:11px }
-.effect-stack-remove { font-size:17px }
-.effect-stack-move:disabled,.effect-stack-remove:disabled { opacity:.25;cursor:default }
-.effect-stack-card-controls { padding:8px 9px 10px }
+.effect-stack-drag-handle {
+  width:20px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+  border-radius:6px;
+  color:rgba(255,255,255,.28);
+  font-size:14px;
+  cursor:grab
+}
+.effect-stack-drag-handle:hover { background:rgba(255,255,255,.055);color:rgba(255,255,255,.52) }
+.effect-stack-drag-handle:active { cursor:grabbing }
+.effect-stack-collapse { width:22px;height:28px;padding:0;border-radius:6px;font-size:16px;line-height:1 }
+.effect-stack-power {
+  width:25px;
+  height:27px;
+  padding:0;
+  border-radius:7px;
+  font-size:11px;
+  transition:color 80ms ease,background 80ms ease
+}
+.effect-stack-power.on { color:var(--system-blue,#0a84ff) }
+.effect-stack-power.off { color:rgba(255,255,255,.3) }
+.effect-stack-name {
+  min-width:0;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:1px;
+  padding:2px 4px;
+  border-radius:6px;
+  text-align:left
+}
+.effect-stack-name:hover { background:rgba(255,255,255,.035) }
+.effect-stack-name strong { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.88);font-size:11px;font-weight:650 }
+.effect-stack-name small { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.36);font-size:8.5px;font-variant-numeric:tabular-nums }
+.effect-stack-order { width:18px;color:rgba(255,255,255,.28);font-size:8.5px;text-align:center;font-variant-numeric:tabular-nums }
+.effect-stack-move,.effect-stack-remove,.effect-stack-icon-button { width:23px;height:25px;padding:0;border-radius:6px;font-size:10px }
+.effect-stack-icon-button { font-size:12px }
+.effect-stack-remove { font-size:16px }
+.effect-stack-move:disabled,.effect-stack-remove:disabled,.effect-stack-icon-button:disabled,.effect-stack-power:disabled { opacity:.24;cursor:default }
+.effect-stack-card-controls { padding:9px 9px 11px;overflow:hidden }
 
 .effect-stack-slider {
   display:grid;
-  grid-template-columns:66px 1fr 56px;
+  grid-template-columns:66px minmax(0,1fr) 72px;
   align-items:center;
   gap:8px;
-  min-height:28px;
-  color:rgba(255,255,255,.64);
+  min-height:31px;
+  color:rgba(255,255,255,.62);
   font-size:10px
 }
-.effect-stack-slider input { width:100%;margin:0;accent-color:var(--system-blue,#0a84ff) }
-.effect-stack-slider output { text-align:right;color:rgba(255,255,255,.8);font-variant-numeric:tabular-nums }
-.effect-stack-slider input:disabled { opacity:.38 }
-
-.effects-stack-footer {
-  min-height:31px;
+.effect-stack-slider-label { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+.effect-stack-range { width:100%;margin:0;accent-color:var(--system-blue,#0a84ff);cursor:grab;touch-action:none }
+.effect-stack-range:active { cursor:grabbing }
+.effect-stack-range:disabled { opacity:.34 }
+.effect-stack-value-field {
+  height:24px;
   display:flex;
   align-items:center;
+  border:1px solid rgba(255,255,255,.085);
+  border-radius:6px;
+  background:rgba(0,0,0,.14);
+  overflow:hidden
+}
+.effect-stack-value-field:focus-within { border-color:rgba(10,132,255,.58);box-shadow:0 0 0 1px rgba(10,132,255,.14) }
+.effect-stack-value-field input {
+  min-width:0;
+  width:100%;
+  height:100%;
+  padding:0 3px 0 7px;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:rgba(255,255,255,.83);
+  font:inherit;
+  font-variant-numeric:tabular-nums;
+  text-align:right
+}
+.effect-stack-value-field input::-webkit-inner-spin-button,
+.effect-stack-value-field input::-webkit-outer-spin-button { opacity:.3 }
+.effect-stack-value-field span { min-width:24px;padding-right:6px;color:rgba(255,255,255,.35);font-size:9px;text-align:left }
+.effect-stack-value-field:has(input:disabled) { opacity:.38 }
+
+.effects-stack-footer {
+  min-height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
   padding:0 11px;
   border-top:1px solid rgba(255,255,255,.07);
-  color:rgba(255,255,255,.38);
-  font-size:9px
+  color:rgba(255,255,255,.35);
+  font-size:8.5px
 }
+.effects-stack-footer span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+.effects-stack-footer span:last-child { text-align:right;color:rgba(255,255,255,.25) }

@@ -2540,7 +2540,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
             onClick={() => onOpenVideoEffects?.(selectedActiveClip.id)}
             title="Open Effects for selected video"
           >
-            Effects
+            Effects{selectedActiveClip.effects?.length ? ` · ${selectedActiveClip.effects.length}` : ""}
           </button>
         )}
 

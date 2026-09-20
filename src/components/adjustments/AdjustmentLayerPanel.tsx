@@ -284,7 +284,9 @@ export default function AdjustmentLayerPanel({
           <span>Enable Adjustment Layer</span>
         </label>
         <div className="adjustment-toolbar-actions">
-          <button type="button" className="adjustment-effects-button" onClick={onOpenEffects}>Effects…</button>
+          <button type="button" className="adjustment-effects-button" onClick={onOpenEffects}>
+            Effects{layer.effects?.length ? ` · ${layer.effects.length}` : "…"}
+          </button>
           <span className="adjustment-keyframe-legend"><b>◆</b> keyframes</span>
         </div>
       </div>

@@ -4773,6 +4773,11 @@ function App() {
               : false
         )}
         onChange={updateEffectsPanelStack}
+        onBeginContinuousChange={beginHistoryTransaction}
+        onEndContinuousChange={() => {
+          window.requestAnimationFrame(() => endHistoryTransaction());
+        }}
+        onDiscreteChange={markNextChangeImmediate}
         onClose={() => setEffectsPanelTarget(null)}
       />
 
