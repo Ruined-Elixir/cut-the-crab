@@ -36,7 +36,9 @@ function clampPanelPosition(position: Position): Position {
     y: Math.max(
       8,
       Math.min(
-        window.innerHeight - Math.min(PANEL_HEIGHT, window.innerHeight - 16) - 8,
+        window.innerHeight -
+          Math.min(PANEL_HEIGHT, window.innerHeight - 16) -
+          8,
         position.y,
       ),
     ),
@@ -147,7 +149,8 @@ export default function ProgramLayersPanel({
     targetClipId: string,
   ) => {
     event.preventDefault();
-    const sourceClipId = draggingClipId ?? event.dataTransfer.getData("text/plain");
+    const sourceClipId =
+      draggingClipId ?? event.dataTransfer.getData("text/plain");
     setDraggingClipId(null);
     setDragOverClipId(null);
 
@@ -169,7 +172,12 @@ export default function ProgramLayersPanel({
           <strong>Video Layers</strong>
           <small>Current playhead · drag to reorder</small>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close video layers" title="Close">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close video layers"
+          title="Close"
+        >
           ×
         </button>
       </div>
@@ -224,19 +232,32 @@ export default function ProgramLayersPanel({
                   setDragOverClipId(null);
                 }}
               >
-                <span className="program-layer-drag-handle" aria-hidden="true">⋮⋮</span>
+                <span className="program-layer-drag-handle" aria-hidden="true">
+                  ⋮⋮
+                </span>
                 <div className="program-layer-copy">
-                  <strong title={clip.sourceName}>{clip.sourceName || "Video"}</strong>
+                  <strong title={clip.sourceName}>
+                    {clip.sourceName || "Video"}
+                  </strong>
                   <small>
                     {item.trackLabel}
                     {clip.compoundName ? ` · ${clip.compoundName}` : ""}
                   </small>
                 </div>
-                {item.locked && <span className="program-layer-lock" title="Track locked">⌕</span>}
-                <div className="program-layer-order-buttons" aria-label="Layer order controls">
+                {item.locked && (
+                  <span className="program-layer-lock" title="Track locked">
+                    ⌕
+                  </span>
+                )}
+                <div
+                  className="program-layer-order-buttons"
+                  aria-label="Layer order controls"
+                >
                   <button
                     type="button"
-                    disabled={item.locked || index === 0 || items[index - 1]?.locked}
+                    disabled={
+                      item.locked || index === 0 || items[index - 1]?.locked
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       applyMove(index, index - 1);
@@ -248,7 +269,11 @@ export default function ProgramLayersPanel({
                   </button>
                   <button
                     type="button"
-                    disabled={item.locked || index === items.length - 1 || items[index + 1]?.locked}
+                    disabled={
+                      item.locked ||
+                      index === items.length - 1 ||
+                      items[index + 1]?.locked
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       applyMove(index, index + 1);
@@ -267,7 +292,8 @@ export default function ProgramLayersPanel({
 
       <div className="program-layers-stack-label back">Back</div>
       <div className="program-layers-panel-footer">
-        Editable video layers visible at the current playhead are listed. Open a collapsed compound to edit its internal stack.
+        Editable video layers visible at the current playhead are listed. Open a
+        collapsed compound to edit its internal stack.
       </div>
     </aside>
   );

@@ -24,6 +24,7 @@ import type {
   AudioTimelineClip,
   TimelineTrackId,
   TimelineTrackSettings,
+  VideoMask,
   VideoTimelineClip,
 } from "../../types/timelineModel";
 
@@ -34,6 +35,7 @@ import VideoSubtitleOverlay from "./VideoSubtitleOverlay";
 import ProgramLayersPanel from "./ProgramLayersPanel";
 import ProgramSnapOverlay from "./ProgramSnapOverlay";
 import VideoEffectFilterDefs from "../effects/VideoEffectFilterDefs";
+import ProgramMaskEditor from "../masks/ProgramMaskEditor";
 import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime, videoPlaybackRate } from "../../utils/videoRetime";
 import {
   PROGRAM_FRAME_SNAP_THRESHOLD_PX,
@@ -48,10 +50,16 @@ import {
 } from "../../utils/programSnapping";
 import {
   combinedVignette,
+  enabledVideoEffects,
   hasRasterVideoEffects,
   videoEffectFilterDomId,
   videoEffectsForClipAtTime,
 } from "../../utils/videoEffects";
+import {
+  activeVideoMask,
+  videoMaskCssStyle,
+  type VideoMaskGeometry,
+} from "../../utils/videoMasks";
 import {
   evaluateVideoTransform,
   evaluateVideoTransformProperty,
@@ -69,6 +77,8 @@ export type VideoPlayerHandle = {
   setSkimPreviewTime: (time: number | null) => void;
   /** Current Program Monitor editing-canvas size in CSS pixels. */
   getProgramPreviewSize: () => { width: number; height: number } | null;
+  /** Suggested Program-space mask geometry for the clip at the current frame. */
+  getVideoMaskDefaultGeometry: (clipId: string) => VideoMaskGeometry | null;
 };
 
 type VideoPlayerProps = {
@@ -92,6 +102,12 @@ type VideoPlayerProps = {
   onVideoLayerChange?: (id: string, direction: "forward" | "backward", atTime: number) => void;
   onVideoLayerReorder?: (orderedClipIdsTopToBottom: string[], atTime: number) => boolean | void;
   onOpenVideoEffects?: (id: string) => void;
+  onOpenVideoMasks?: (id: string) => void;
+  editingMask?: { ownerKind: "video" | "adjustment"; ownerId: string; mask: VideoMask; locked: boolean; label: string } | null;
+  onEditingMaskChange?: (mask: VideoMask) => void;
+  onVideoMaskChange?: (id: string, mask: VideoMask | undefined) => void;
+  onMaskEditStart?: () => void;
+  onMaskEditEnd?: () => void;
   onVideoTransformChange?: (
     id: string,
     transform: {
@@ -675,6 +691,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   onVideoLayerChange,
   onVideoLayerReorder,
   onOpenVideoEffects,
+  onOpenVideoMasks,
+  editingMask,
+  onEditingMaskChange,
+  onVideoMaskChange,
+  onMaskEditStart,
+  onMaskEditEnd,
   onVideoTransformChange,
   onApplyVideoCropToTrack,
   proxyPathsBySource = {},
@@ -695,6 +717,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const [videoDimensions, setVideoDimensions] = useState<
     Record<VideoTrackId, VideoDimensions>
   >({});
+  const videoDimensionsRef = useRef<Record<VideoTrackId, VideoDimensions>>({});
   const [shellDimensions, setShellDimensions] = useState<ShellDimensions>({
     width: 0,
     height: 0,
@@ -748,6 +771,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
   const isProgramVideoClipInteractive = (clip: VideoTimelineClip) =>
     !interactiveVideoClipIdSet || interactiveVideoClipIdSet.has(clip.id);
 
+  videoDimensionsRef.current = videoDimensions;
+
+  const unmaskedAdjustmentLayers = useMemo(
+    () => adjustmentLayers.filter((layer) => !activeVideoMask(layer.mask)),
+    [adjustmentLayers],
+  );
+
   useImperativeHandle(ref, () => ({
     setSkimPreviewTime: (time: number | null) => {
       if (isPlayingRef.current || time === null || !Number.isFinite(time)) {
@@ -764,6 +794,35 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         return null;
       }
       return { width: rect.width, height: rect.height };
+    },
+    getVideoMaskDefaultGeometry: (clipId: string) => {
+      const clip = videoClipsRef.current.find((item) => item.id === clipId);
+      const rect = shellRef.current?.getBoundingClientRect();
+
+      if (!clip || !rect || rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+
+      const dimensions =
+        videoDimensionsRef.current[clip.trackId as VideoTrackId] ??
+        ({ width: 16, height: 9 } satisfies VideoDimensions);
+      const bounds = programBoundsForClip(
+        clip,
+        dimensions,
+        { width: rect.width, height: rect.height },
+        displayTimeRef.current,
+      );
+
+      const visibleWidth = Math.max(1, bounds.right - bounds.left);
+      const visibleHeight = Math.max(1, bounds.bottom - bounds.top);
+      const insetScale = 0.7;
+
+      return {
+        positionX: (bounds.centerX / rect.width) * 100,
+        positionY: (bounds.centerY / rect.height) * 100,
+        width: (visibleWidth / rect.width) * 100 * insetScale,
+        height: (visibleHeight / rect.height) * 100 * insetScale,
+      };
     },
   }), []);
 
@@ -1764,6 +1823,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const startY = event.clientY;
     const startPositionX = (selectedDisplayClip ?? selectedActiveClip).positionX ?? 0;
     const startPositionY = (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
+    // Masks v1.1: a normal Program move carries the clip mask by the exact
+    // same snapped translation, preserving its placement relative to the
+    // footage. Hold Command when the drag begins to move only the video.
+    const startFollowingMask =
+      selectedActiveClip.mask && !event.metaKey && onVideoMaskChange
+        ? { ...selectedActiveClip.mask }
+        : null;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== event.pointerId) {
@@ -1893,6 +1959,26 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         positionX: nextPositionX,
         positionY: nextPositionY,
       });
+
+      if (startFollowingMask && onVideoMaskChange) {
+        onVideoMaskChange(selectedActiveClip.id, {
+          ...startFollowingMask,
+          positionX: Math.max(
+            -100,
+            Math.min(
+              200,
+              startFollowingMask.positionX + nextPositionX - startPositionX,
+            ),
+          ),
+          positionY: Math.max(
+            -100,
+            Math.min(
+              200,
+              startFollowingMask.positionY + nextPositionY - startPositionY,
+            ),
+          ),
+        });
+      }
     };
 
     const handlePointerUp = () => {
@@ -2379,6 +2465,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         action: () => onOpenVideoEffects?.(clip.id),
       },
       {
+        id: `program-video.${clip.id}.masks`,
+        text: "Masks…",
+        enabled: !!onOpenVideoMasks,
+        action: () => onOpenVideoMasks?.(clip.id),
+      },
+      {
         id: `program-video.${clip.id}.layer`,
         text: "Layer",
         enabled: canBringForward || canSendBackward,
@@ -2544,6 +2636,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
           </button>
         )}
 
+        {primaryVideoUrl && selectedActiveClip && (
+          <button
+            type="button"
+            className="program-effects-button"
+            onClick={() => onOpenVideoMasks?.(selectedActiveClip.id)}
+            title="Open Masks for selected video"
+          >
+            Masks{selectedActiveClip.mask ? " · 1" : ""}
+          </button>
+        )}
+
         {primaryVideoUrl && (
           <button
             type="button"
@@ -2591,10 +2694,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
               const zIndex = videoTrackIndex(trackId);
               const outgoingEffects = videoEffectsForClipAtTime(
-                dissolve.outgoing, adjustmentLayers, displayTime, trackSettings,
+                dissolve.outgoing, unmaskedAdjustmentLayers, displayTime, trackSettings,
               );
               const incomingEffects = videoEffectsForClipAtTime(
-                dissolve.incoming, adjustmentLayers, displayTime, trackSettings,
+                dissolve.incoming, unmaskedAdjustmentLayers, displayTime, trackSettings,
               );
               const outgoingEffectFilterId = videoEffectFilterDomId(`${dissolve.outgoing.id}-dissolve`);
               const incomingEffectFilterId = videoEffectFilterDomId(`${dissolve.incoming.id}-dissolve`);
@@ -2606,7 +2709,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 : "";
               const adjustmentFilter = adjustmentCssFilter(
                 adjustmentLayersAffectingVideoTrack(
-                  adjustmentLayers, displayTime, trackId, trackSettings,
+                  unmaskedAdjustmentLayers, displayTime, trackId, trackSettings,
                 ),
                 displayTime,
               );
@@ -2642,6 +2745,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     effects={incomingEffects}
                     previewScale={dissolvePreviewScale}
                   />
+                  <div className="program-video-mask-wrapper" style={{ zIndex, ...videoMaskCssStyle(dissolve.outgoing.mask, shellDimensions.width / Math.max(1, shellDimensions.height)) }}>
                   <video
                     key={`${trackId}-dissolve-out:${dissolve.outgoing.id}`}
                     ref={(element) => { dissolveOutgoingRefs.current[trackId] = element; }}
@@ -2654,7 +2758,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     muted
                     preload="auto"
                     style={{
-                      zIndex,
                       ...videoTransformStyle(
                         dissolve.outgoing,
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
@@ -2677,9 +2780,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     <div
                       className="program-video-vignette program-dissolve-layer"
                       aria-hidden="true"
-                      style={{ zIndex, ...outgoingVignetteStyle, opacity: outgoingOpacity }}
+                      style={{ ...outgoingVignetteStyle, opacity: outgoingOpacity }}
                     />
                   )}
+                  </div>
+                  <div className="program-video-mask-wrapper" style={{ zIndex, ...videoMaskCssStyle(dissolve.incoming.mask, shellDimensions.width / Math.max(1, shellDimensions.height)) }}>
                   <video
                     key={`${trackId}-dissolve-in:${dissolve.incoming.id}`}
                     ref={(element) => { dissolveIncomingRefs.current[trackId] = element; }}
@@ -2692,7 +2797,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     muted
                     preload="auto"
                     style={{
-                      zIndex,
                       ...videoTransformStyle(
                         dissolve.incoming,
                         videoDimensions[trackId] ?? { width: 16, height: 9 },
@@ -2715,9 +2819,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     <div
                       className="program-video-vignette program-dissolve-layer"
                       aria-hidden="true"
-                      style={{ zIndex, ...incomingVignetteStyle, opacity: incomingOpacity }}
+                      style={{ ...incomingVignetteStyle, opacity: incomingOpacity }}
                     />
                   )}
+                  </div>
                 </div>
               );
             })}
@@ -2728,14 +2833,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
               if (!clip || !sourceUrl || dissolvesByTrack[trackId]) return null;
 
               const previewEffects = videoEffectsForClipAtTime(
-                clip, adjustmentLayers, displayTime, trackSettings,
+                clip, unmaskedAdjustmentLayers, displayTime, trackSettings,
               );
               const effectFilterId = videoEffectFilterDomId(clip.id);
               const effectFilter = hasRasterVideoEffects(previewEffects)
                 ? `url(#${effectFilterId})`
                 : "";
               const transitionStyle = adjustedVideoTransitionStyle(
-                clip, displayTime, adjustmentLayers, trackSettings,
+                clip, displayTime, unmaskedAdjustmentLayers, trackSettings,
               );
               const vignetteStyle = videoVignetteOverlayStyle(
                 clip,
@@ -2753,6 +2858,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     effects={previewEffects}
                     previewScale={previewScale}
                   />
+                  <div
+                    className="program-video-mask-wrapper"
+                    style={{
+                      zIndex: videoTrackIndex(trackId),
+                      visibility: videoVisibility[trackId] && !isTrackHidden(trackSettings, trackId) ? "visible" : "hidden",
+                      ...videoMaskCssStyle(clip.mask, shellDimensions.width / Math.max(1, shellDimensions.height)),
+                    }}
+                  >
                   <video
                   key={clip.id}
                   ref={(element) => {
@@ -2765,11 +2878,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                   muted
                   preload="auto"
                   style={{
-                    zIndex: videoTrackIndex(trackId),
-                    visibility:
-                      videoVisibility[trackId] && !isTrackHidden(trackSettings, trackId)
-                        ? "visible"
-                        : "hidden",
                     ...videoTransformStyle(
                       clip,
                       videoDimensions[trackId] ?? { width: 16, height: 9 },
@@ -2792,19 +2900,69 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                       className="program-video-vignette"
                       aria-hidden="true"
                       style={{
-                        zIndex: videoTrackIndex(trackId),
-                        visibility:
-                          videoVisibility[trackId] && !isTrackHidden(trackSettings, trackId)
-                            ? "visible"
-                            : "hidden",
                         ...vignetteStyle,
                         opacity: typeof transitionStyle.opacity === "number" ? transitionStyle.opacity : 1,
                       }}
                     />
                   )}
+                  </div>
                 </Fragment>
               );
             })}
+
+            {adjustmentLayers
+              .filter((layer) =>
+                !!activeVideoMask(layer.mask) &&
+                layer.enabled !== false &&
+                displayTime >= layer.timelineStart &&
+                displayTime <= layer.timelineEnd &&
+                trackSettings[layer.trackId]?.deleted !== true &&
+                trackSettings[layer.trackId]?.hidden !== true
+              )
+              .sort((a, b) => videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) || a.timelineStart - b.timelineStart)
+              .map((layer) => {
+                const previewScale = Math.max(0.05, shellDimensions.height / 1080);
+                const effectFunctions = enabledVideoEffects(layer.effects).flatMap((effect) => {
+                  if (effect.kind === "gaussian-blur") return [`blur(${Math.max(0, effect.radius) * previewScale}px)`];
+                  if (effect.kind === "sharpen") return [`contrast(${(1 + Math.max(0, Math.min(100, effect.amount)) * 0.0025).toFixed(4)})`];
+                  return [];
+                });
+                const vignette = combinedVignette(layer.effects);
+                const colorFilter = adjustmentCssFilter([layer], displayTime);
+                const backdropFilter = [colorFilter, ...effectFunctions].filter(Boolean).join(" ");
+                const vignetteSoftness = vignette ? Math.max(0, Math.min(100, vignette.softness)) / 100 : 0;
+                const vignetteClearStop = 18 + vignetteSoftness * 55;
+                const vignetteAlpha = vignette ? Math.max(0, Math.min(1, vignette.amount / 100)) : 0;
+                return (
+                  <div
+                    key={`masked-adjustment:${layer.id}`}
+                    className="program-masked-adjustment-layer"
+                    aria-hidden="true"
+                    style={{
+                      zIndex: videoTrackIndex(layer.trackId) - 0.25,
+                      ...videoMaskCssStyle(layer.mask, shellDimensions.width / Math.max(1, shellDimensions.height)),
+                      WebkitBackdropFilter: backdropFilter || undefined,
+                      backdropFilter: backdropFilter || undefined,
+                      backgroundImage: vignetteAlpha > 0.001
+                        ? `radial-gradient(ellipse at center, rgba(0,0,0,0) ${vignetteClearStop.toFixed(1)}%, rgba(0,0,0,${vignetteAlpha.toFixed(4)}) 100%)`
+                        : undefined,
+                    }}
+                  />
+                );
+              })}
+
+            {editingMask && (
+              <ProgramMaskEditor
+                mask={editingMask.mask}
+                width={shellDimensions.width}
+                height={shellDimensions.height}
+                disabled={editingMask.locked}
+                label={editingMask.ownerKind === "adjustment" ? `Adjustment · ${editingMask.label}` : editingMask.label}
+                onChange={(mask) => onEditingMaskChange?.(mask)}
+                onBeginChange={onMaskEditStart}
+                onEndChange={onMaskEditEnd}
+              />
+            )}
 
             <ProgramSnapOverlay
               width={shellDimensions.width}

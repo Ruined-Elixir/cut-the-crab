@@ -8,6 +8,7 @@ import type {
   AdjustmentLayerProperty,
   AudioTimelineClip,
   TimelineTrackSettings,
+  VideoMask,
   VideoTimelineClip,
   VideoTransformKeyframeProperty,
 } from "../types/timelineModel";
@@ -18,13 +19,18 @@ import {
   adjustmentLayerChannel,
   adjustmentLayerPropertyBaseValue,
 } from "../utils/adjustmentLayers";
-import { isFreezeFrameClip, isReverseVideoClip, videoPlaybackRate } from "../utils/videoRetime";
+import {
+  isFreezeFrameClip,
+  isReverseVideoClip,
+  videoPlaybackRate,
+} from "../utils/videoRetime";
 import {
   baseVideoTransformValue,
   hasVideoTransformKeyframes,
   videoTransformChannel,
 } from "../utils/videoTransformKeyframes";
 import { videoEffectFfmpegFilters } from "../utils/videoEffects";
+import { activeVideoMask, normalizeVideoMask } from "../utils/videoMasks";
 
 export type VideoExportProgress = {
   progress: number;
@@ -115,7 +121,6 @@ function normalizeExportFrameSize(
   };
 }
 
-
 function exportViewportForFrameSize(frameSize: ExportFrameSize) {
   const normalized = normalizeExportFrameSize(frameSize);
   return programViewportRectForAspect(
@@ -125,9 +130,7 @@ function exportViewportForFrameSize(frameSize: ExportFrameSize) {
   );
 }
 
-function previewCompositionSize(
-  previewSize?: ExportProgramPreviewSize,
-) {
+function previewCompositionSize(previewSize?: ExportProgramPreviewSize) {
   const width = previewSize?.width ?? ASS_WIDTH;
   const height = previewSize?.height ?? ASS_HEIGHT;
   const valid =
@@ -233,15 +236,12 @@ function clipDuration(clip: VideoTimelineClip) {
   return Math.max(0.001, clip.timelineEnd - clip.timelineStart);
 }
 
-function transitionDuration(
-  clip: VideoTimelineClip,
-  edge: "in" | "out",
-) {
+function transitionDuration(clip: VideoTimelineClip, edge: "in" | "out") {
   const duration = clipDuration(clip);
   const requested =
     edge === "in"
-      ? clip.transitionInDuration ?? 0.5
-      : clip.transitionOutDuration ?? 0.5;
+      ? (clip.transitionInDuration ?? 0.5)
+      : (clip.transitionOutDuration ?? 0.5);
 
   return clamp(requested, 0.1, Math.min(5, duration / 2));
 }
@@ -262,11 +262,13 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
     });
   }
 
-  const tracks = [...new Set(
-    videoClips
-      .map((clip) => clip.trackId)
-      .filter((trackId) => /^video-\d+$/.test(trackId)),
-  )].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
+  const tracks = [
+    ...new Set(
+      videoClips
+        .map((clip) => clip.trackId)
+        .filter((trackId) => /^video-\d+$/.test(trackId)),
+    ),
+  ].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
 
   for (const trackId of tracks) {
     const clips = videoClips
@@ -310,14 +312,22 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
       const incomingRate = videoPlaybackRate(incoming);
       const outgoingSourceHalf = half * outgoingRate;
       const incomingSourceHalf = half * incomingRate;
-      const outgoingSourceDuration = outgoing.sourceDuration ?? outgoing.sourceOut;
-      const incomingSourceDuration = incoming.sourceDuration ?? incoming.sourceOut;
+      const outgoingSourceDuration =
+        outgoing.sourceDuration ?? outgoing.sourceOut;
+      const incomingSourceDuration =
+        incoming.sourceDuration ?? incoming.sourceOut;
 
       const hasOutgoingHandle =
-        outgoing.sourceOut + outgoingSourceHalf <= outgoingSourceDuration + EPSILON;
-      const hasIncomingHandle = incoming.sourceIn - incomingSourceHalf >= -EPSILON;
+        outgoing.sourceOut + outgoingSourceHalf <=
+        outgoingSourceDuration + EPSILON;
+      const hasIncomingHandle =
+        incoming.sourceIn - incomingSourceHalf >= -EPSILON;
 
-      if (!hasOutgoingHandle || !hasIncomingHandle || incomingSourceDuration <= 0) {
+      if (
+        !hasOutgoingHandle ||
+        !hasIncomingHandle ||
+        incomingSourceDuration <= 0
+      ) {
         continue;
       }
 
@@ -334,7 +344,10 @@ function buildRenderWindows(videoClips: VideoTimelineClip[]) {
         duration,
       };
 
-      incomingWindow.sourceIn = Math.max(0, incoming.sourceIn - incomingSourceHalf);
+      incomingWindow.sourceIn = Math.max(
+        0,
+        incoming.sourceIn - incomingSourceHalf,
+      );
       incomingWindow.timelineStart = Math.max(0, incoming.timelineStart - half);
       incomingWindow.transitionInCross = {
         start: 0,
@@ -412,12 +425,71 @@ function subtitlesForExportRange(
       return [];
     }
 
-    return [{
-      ...subtitle,
-      startTime: start - range.start,
-      endTime: end - range.start,
-    }];
+    return [
+      {
+        ...subtitle,
+        startTime: start - range.start,
+        endTime: end - range.start,
+      },
+    ];
   });
+}
+
+function appendStaticMaskSource(
+  filterParts: string[],
+  mask: VideoMask,
+  width: number,
+  height: number,
+  duration: number,
+  label: string,
+) {
+  const normalized = normalizeVideoMask(mask)!;
+  const cx = (normalized.positionX / 100) * width;
+  const cy = (normalized.positionY / 100) * height;
+  const maskWidth = Math.max(1, (normalized.width / 100) * width);
+  const maskHeight = Math.max(1, (normalized.height / 100) * height);
+  const feather = Math.max(0, normalized.feather) * (height / 1080);
+  const halfW = maskWidth / 2;
+  const halfH = maskHeight / 2;
+  const shapeExpression =
+    normalized.shape === "ellipse"
+      ? `if(lte(pow((X-${n(cx, 5)})/${n(Math.max(0.5, halfW), 5)}\\,2)+pow((Y-${n(cy, 5)})/${n(Math.max(0.5, halfH), 5)}\\,2)\\,1)\\,255\\,0)`
+      : `if(between(X\\,${n(cx - halfW, 5)}\\,${n(cx + halfW, 5)})*between(Y\\,${n(cy - halfH, 5)}\\,${n(cy + halfH, 5)})\\,255\\,0)`;
+  const filters = [
+    `geq=lum='${shapeExpression}'`,
+    ...(feather > 0.001 ? [`gblur=sigma=${n(feather, 4)}`] : []),
+    ...(normalized.invert ? ["negate"] : []),
+    `tpad=stop_mode=clone:stop_duration=${n(duration, 3)}`,
+    `trim=duration=${n(duration, 3)}`,
+    "setpts=PTS-STARTPTS",
+  ];
+  filterParts.push(
+    `color=c=black:s=${width}x${height}:r=${OUTPUT_FPS}:d=${n(1 / OUTPUT_FPS, 6)},format=gray,${filters.join(",")}[${label}]`,
+  );
+}
+
+function appendMaskToRgba(
+  filterParts: string[],
+  inputLabel: string,
+  maskLabel: string,
+  stage: number,
+) {
+  const colorLabel = `vmaskcolor${stage}`;
+  const alphaSourceLabel = `vmaskalphasrc${stage}`;
+  const alphaLabel = `vmaskalpha${stage}`;
+  const multipliedLabel = `vmaskmul${stage}`;
+  const outputLabel = `vmasked${stage}`;
+  filterParts.push(
+    `[${inputLabel}]format=rgba,split=2[${colorLabel}][${alphaSourceLabel}]`,
+  );
+  filterParts.push(`[${alphaSourceLabel}]alphaextract[${alphaLabel}]`);
+  filterParts.push(
+    `[${alphaLabel}][${maskLabel}]blend=all_mode=multiply[${multipliedLabel}]`,
+  );
+  filterParts.push(
+    `[${colorLabel}][${multipliedLabel}]alphamerge[${outputLabel}]`,
+  );
+  return outputLabel;
 }
 
 function buildTimelineFilterGraph(
@@ -468,18 +540,23 @@ function buildTimelineFilterGraph(
 
   const renderableClips = [...videoClips]
     .filter((clip) => /^video-\d+$/.test(clip.trackId))
-    .sort((a, b) =>
-      videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
-      a.timelineStart - b.timelineStart
+    .sort(
+      (a, b) =>
+        videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
+        a.timelineStart - b.timelineStart,
     );
 
   const standaloneAudioClips = [...audioClips]
-    .filter((clip) =>
-      /^audio-\d+$/.test(clip.trackId) &&
-      !trackSettings[clip.trackId]?.deleted &&
-      !trackSettings[clip.trackId]?.linkedTrackId
+    .filter(
+      (clip) =>
+        /^audio-\d+$/.test(clip.trackId) &&
+        !trackSettings[clip.trackId]?.deleted &&
+        !trackSettings[clip.trackId]?.linkedTrackId,
     )
-    .sort((a, b) => a.trackId.localeCompare(b.trackId) || a.timelineStart - b.timelineStart);
+    .sort(
+      (a, b) =>
+        a.trackId.localeCompare(b.trackId) || a.timelineStart - b.timelineStart,
+    );
 
   const inputPaths = [
     ...renderableClips.map((clip) => clip.sourcePath),
@@ -525,7 +602,10 @@ function buildTimelineFilterGraph(
 
     const videoFilters: string[] = [];
     if (isFreezeFrameClip(clip)) {
-      const frameTime = Math.max(0, clip.freezeFrameSourceTime ?? window.sourceIn);
+      const frameTime = Math.max(
+        0,
+        clip.freezeFrameSourceTime ?? window.sourceIn,
+      );
       const frameEnd = frameTime + 1 / OUTPUT_FPS;
       videoFilters.push(
         `trim=start=${n(frameTime, 6)}:end=${n(frameEnd, 6)}`,
@@ -539,7 +619,8 @@ function buildTimelineFilterGraph(
         `trim=start=${n(window.sourceIn)}:end=${n(window.sourceOut)}`,
         "setpts=PTS-STARTPTS",
       );
-      if (isReverseVideoClip(clip)) videoFilters.push("reverse", "setpts=PTS-STARTPTS");
+      if (isReverseVideoClip(clip))
+        videoFilters.push("reverse", "setpts=PTS-STARTPTS");
       videoFilters.push(`setpts=(PTS-STARTPTS)/${n(playbackRate, 6)}`);
     }
     videoFilters.push(
@@ -622,9 +703,7 @@ function buildTimelineFilterGraph(
     );
 
     if (videoFadeInDuration > 0.001) {
-      videoFilters.push(
-        `fade=t=in:st=0:d=${n(videoFadeInDuration)}:alpha=1`,
-      );
+      videoFilters.push(`fade=t=in:st=0:d=${n(videoFadeInDuration)}:alpha=1`);
     }
 
     if (videoFadeOutDuration > 0.001) {
@@ -682,26 +761,32 @@ function buildTimelineFilterGraph(
   let currentVideoLabel = "basev";
   let compositeStage = 0;
   const overlayLabelByClipId = new Map<string, string>();
-  orderedVideoClips.forEach((clip, index) => overlayLabelByClipId.set(clip.id, overlayLabels[index]));
+  orderedVideoClips.forEach((clip, index) =>
+    overlayLabelByClipId.set(clip.id, overlayLabels[index]),
+  );
 
-  const compositionTrackIds = [...new Set([
-    ...orderedVideoClips.map((clip) => clip.trackId),
-    ...adjustmentLayers
-      .filter((layer) =>
-        /^video-\d+$/.test(layer.trackId) &&
-        trackSettings[layer.trackId]?.deleted !== true &&
-        trackSettings[layer.trackId]?.hidden !== true
-      )
-      .map((layer) => layer.trackId),
-  ])].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
+  const compositionTrackIds = [
+    ...new Set([
+      ...orderedVideoClips.map((clip) => clip.trackId),
+      ...adjustmentLayers
+        .filter(
+          (layer) =>
+            /^video-\d+$/.test(layer.trackId) &&
+            trackSettings[layer.trackId]?.deleted !== true &&
+            trackSettings[layer.trackId]?.hidden !== true,
+        )
+        .map((layer) => layer.trackId),
+    ]),
+  ].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
 
   for (const trackId of compositionTrackIds) {
     const trackAdjustments = adjustmentLayers
-      .filter((layer) =>
-        layer.trackId === trackId &&
-        layer.enabled !== false &&
-        trackSettings[layer.trackId]?.deleted !== true &&
-        trackSettings[layer.trackId]?.hidden !== true
+      .filter(
+        (layer) =>
+          layer.trackId === trackId &&
+          layer.enabled !== false &&
+          trackSettings[layer.trackId]?.deleted !== true &&
+          trackSettings[layer.trackId]?.hidden !== true,
       )
       .sort((a, b) => a.timelineStart - b.timelineStart);
 
@@ -712,11 +797,23 @@ function buildTimelineFilterGraph(
     for (const layer of trackAdjustments) {
       const opacity = ffmpegAdjustmentPropertyExpression(layer, "opacity");
       const exposure = ffmpegAdjustmentPropertyExpression(layer, "exposure");
-      const contrastControl = ffmpegAdjustmentPropertyExpression(layer, "contrast");
-      const saturationControl = ffmpegAdjustmentPropertyExpression(layer, "saturation");
-      const temperature = ffmpegAdjustmentPropertyExpression(layer, "temperature");
+      const contrastControl = ffmpegAdjustmentPropertyExpression(
+        layer,
+        "contrast",
+      );
+      const saturationControl = ffmpegAdjustmentPropertyExpression(
+        layer,
+        "saturation",
+      );
+      const temperature = ffmpegAdjustmentPropertyExpression(
+        layer,
+        "temperature",
+      );
       const tint = ffmpegAdjustmentPropertyExpression(layer, "tint");
-      const highlights = ffmpegAdjustmentPropertyExpression(layer, "highlights");
+      const highlights = ffmpegAdjustmentPropertyExpression(
+        layer,
+        "highlights",
+      );
       const shadows = ffmpegAdjustmentPropertyExpression(layer, "shadows");
       const whites = ffmpegAdjustmentPropertyExpression(layer, "whites");
       const blacks = ffmpegAdjustmentPropertyExpression(layer, "blacks");
@@ -731,21 +828,66 @@ function buildTimelineFilterGraph(
       const gammaG = `clip(1-((${tint})/100)*0.12*${strength},0.5,2)`;
       const gammaB = `clip(1+(-(((${temperature})/100)*0.14)+((${tint})/100)*0.07)*${strength},0.5,2)`;
       const enable = `between(t,${n(layer.timelineStart, 6)},${n(layer.timelineEnd, 6)})`;
-      const nextLabel = `vadj${compositeStage++}`;
+      const layerMask = activeVideoMask(layer.mask);
+      const originalBeforeLayer = currentVideoLabel;
+      let adjustmentInputLabel = currentVideoLabel;
+      let baseBranchLabel: string | null = null;
 
+      if (layerMask) {
+        baseBranchLabel = `vadjbase${compositeStage++}`;
+        const workBranchLabel = `vadjwork${compositeStage++}`;
+        filterParts.push(
+          `[${currentVideoLabel}]split=2[${baseBranchLabel}][${workBranchLabel}]`,
+        );
+        adjustmentInputLabel = workBranchLabel;
+      }
+
+      const nextLabel = `vadj${compositeStage++}`;
       filterParts.push(
-        `[${currentVideoLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${nextLabel}]`,
+        `[${adjustmentInputLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${nextLabel}]`,
       );
       currentVideoLabel = nextLabel;
 
-      for (const effectFilter of videoEffectFfmpegFilters(layer.effects, enable)) {
+      for (const effectFilter of videoEffectFfmpegFilters(
+        layer.effects,
+        enable,
+      )) {
         const effectLabel = `vfx${compositeStage++}`;
-        filterParts.push(`[${currentVideoLabel}]${effectFilter}[${effectLabel}]`);
+        filterParts.push(
+          `[${currentVideoLabel}]${effectFilter}[${effectLabel}]`,
+        );
         currentVideoLabel = effectLabel;
+      }
+
+      if (layerMask && baseBranchLabel) {
+        const maskLabel = `vadjmasksource${compositeStage++}`;
+        appendStaticMaskSource(
+          filterParts,
+          layerMask,
+          compositionWidth,
+          compositionHeight,
+          safeDuration,
+          maskLabel,
+        );
+        const maskedLabel = appendMaskToRgba(
+          filterParts,
+          currentVideoLabel,
+          maskLabel,
+          compositeStage++,
+        );
+        const mergedLabel = `vadjmaskedmerge${compositeStage++}`;
+        filterParts.push(
+          `[${baseBranchLabel}][${maskedLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${mergedLabel}]`,
+        );
+        currentVideoLabel = mergedLabel;
+      } else if (originalBeforeLayer === currentVideoLabel) {
+        currentVideoLabel = originalBeforeLayer;
       }
     }
 
-    const trackClips = orderedVideoClips.filter((clip) => clip.trackId === trackId);
+    const trackClips = orderedVideoClips.filter(
+      (clip) => clip.trackId === trackId,
+    );
     for (const clip of trackClips) {
       const overlayLabel = overlayLabelByClipId.get(clip.id);
       if (!overlayLabel) continue;
@@ -764,9 +906,39 @@ function buildTimelineFilterGraph(
       const x = `(main_w-overlay_w)/2+((${positionXExpression})/100)*main_w`;
       const y = `(main_h-overlay_h)/2+((${positionYExpression})/100)*main_h`;
 
-      filterParts.push(
-        `[${currentVideoLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
-      );
+      const clipMask = activeVideoMask(clip.mask);
+      if (clipMask) {
+        const transparentLabel = `vtransparent${compositeStage++}`;
+        const placedLabel = `vplaced${compositeStage++}`;
+        const maskLabel = `vmasksource${compositeStage++}`;
+        filterParts.push(
+          `color=c=black@0:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(safeDuration, 3)},format=rgba[${transparentLabel}]`,
+        );
+        filterParts.push(
+          `[${transparentLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${placedLabel}]`,
+        );
+        appendStaticMaskSource(
+          filterParts,
+          clipMask,
+          compositionWidth,
+          compositionHeight,
+          safeDuration,
+          maskLabel,
+        );
+        const maskedLabel = appendMaskToRgba(
+          filterParts,
+          placedLabel,
+          maskLabel,
+          compositeStage++,
+        );
+        filterParts.push(
+          `[${currentVideoLabel}][${maskedLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
+        );
+      } else {
+        filterParts.push(
+          `[${currentVideoLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
+        );
+      }
       currentVideoLabel = nextLabel;
     }
   }
@@ -806,7 +978,11 @@ function buildTimelineFilterGraph(
   for (const clip of renderableClips) {
     if (isFreezeFrameClip(clip)) continue;
     const audioTrackId = linkedAudioTrackId(clip.trackId, trackSettings);
-    if (!audioTrackId || audioTrackMuted(audioTrackId, trackSettings) || clip.audioMuted) {
+    if (
+      !audioTrackId ||
+      audioTrackMuted(audioTrackId, trackSettings) ||
+      clip.audioMuted
+    ) {
       continue;
     }
 
@@ -924,9 +1100,7 @@ export async function exportStyledVideo(
   );
 
   const outputPath = await save({
-    title: normalizedRange
-      ? "Export Selected Range"
-      : "Export Edited Timeline",
+    title: normalizedRange ? "Export Selected Range" : "Export Edited Timeline",
     filters: [
       {
         name: "MP4 Video",
@@ -971,12 +1145,14 @@ export async function exportStyledVideo(
   const unlisten = await listen<VideoExportProgress>(
     "video-export-progress",
     (event) => {
-      const payload = normalizedRange && event.payload.status === "Rendering edited timeline..."
-        ? {
-            ...event.payload,
-            status: "Rendering selected range...",
-          }
-        : event.payload;
+      const payload =
+        normalizedRange &&
+        event.payload.status === "Rendering edited timeline..."
+          ? {
+              ...event.payload,
+              status: "Rendering selected range...",
+            }
+          : event.payload;
 
       options.onProgress?.(payload);
     },

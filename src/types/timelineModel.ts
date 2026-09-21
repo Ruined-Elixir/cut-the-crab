@@ -1,20 +1,9 @@
-export type TimelineTrackKind =
-  | "video"
-  | "subtitle"
-  | "audio";
+export type TimelineTrackKind = "video" | "subtitle" | "audio";
 
-export type TimelineClipKind =
-  | "video"
-  | "subtitle"
-  | "audio";
+export type TimelineClipKind = "video" | "subtitle" | "audio";
 
 export type TimelineTrackId =
-  | "video-1"
-  | "video-2"
-  | "subtitle-1"
-  | "audio-1"
-  | "audio-2"
-  | string;
+  "video-1" | "video-2" | "subtitle-1" | "audio-1" | "audio-2" | string;
 
 export type TimelineClipBase = {
   id: string;
@@ -26,11 +15,24 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+export type VideoMaskShape = "rectangle" | "ellipse";
 
-export type VideoEffectKind =
-  | "gaussian-blur"
-  | "sharpen"
-  | "vignette";
+export type VideoMask = {
+  id: string;
+  enabled: boolean;
+  shape: VideoMaskShape;
+  invert: boolean;
+  /** Program-space center position in percent of the full Program canvas. */
+  positionX: number;
+  positionY: number;
+  /** Program-space size in percent of the full Program canvas. */
+  width: number;
+  height: number;
+  /** Feather radius in canonical 1080p Program-space pixels. */
+  feather: number;
+};
+
+export type VideoEffectKind = "gaussian-blur" | "sharpen" | "vignette";
 
 export type GaussianBlurVideoEffect = {
   id: string;
@@ -59,9 +61,7 @@ export type VignetteVideoEffect = {
 };
 
 export type VideoEffectInstance =
-  | GaussianBlurVideoEffect
-  | SharpenVideoEffect
-  | VignetteVideoEffect;
+  GaussianBlurVideoEffect | SharpenVideoEffect | VignetteVideoEffect;
 
 export type AdjustmentLayerProperty =
   | "opacity"
@@ -115,15 +115,12 @@ export type AdjustmentLayerClip = {
   keyframes?: AdjustmentLayerKeyframes;
   /** Ordered reusable effects stack. */
   effects?: VideoEffectInstance[];
+  /** Optional Program-space mask restricting this Adjustment Layer. */
+  mask?: VideoMask;
 };
 
-
 export type VideoTransformKeyframeProperty =
-  | "positionX"
-  | "positionY"
-  | "scale"
-  | "rotation"
-  | "opacity";
+  "positionX" | "positionY" | "scale" | "rotation" | "opacity";
 
 export type VideoTransformKeyframe = {
   /** Time in seconds relative to the clip's timelineStart. */
@@ -186,6 +183,8 @@ export type VideoTimelineClip = TimelineClipBase & {
   compoundMemberCount?: number;
   /** Ordered reusable effects stack. */
   effects?: VideoEffectInstance[];
+  /** Optional Program-space mask applied after clip transform/compositing. */
+  mask?: VideoMask;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {
@@ -212,9 +211,7 @@ export type AudioTimelineClip = TimelineClipBase & {
 };
 
 export type TimelineClip =
-  | VideoTimelineClip
-  | SubtitleTimelineClip
-  | AudioTimelineClip;
+  VideoTimelineClip | SubtitleTimelineClip | AudioTimelineClip;
 
 export type TimelineTrack = {
   id: TimelineTrackId;
@@ -246,6 +243,16 @@ export const DEFAULT_TIMELINE_TRACK_SETTINGS: TimelineTrackSettings = {
   "video-2": { locked: false, hidden: false, linkedTrackId: "audio-2" },
   "video-1": { locked: false, hidden: false, linkedTrackId: "audio-1" },
   "subtitle-1": { locked: false, hidden: false },
-  "audio-1": { locked: true, muted: false, solo: false, linkedTrackId: "video-1" },
-  "audio-2": { locked: true, muted: false, solo: false, linkedTrackId: "video-2" },
+  "audio-1": {
+    locked: true,
+    muted: false,
+    solo: false,
+    linkedTrackId: "video-1",
+  },
+  "audio-2": {
+    locked: true,
+    muted: false,
+    solo: false,
+    linkedTrackId: "video-2",
+  },
 };

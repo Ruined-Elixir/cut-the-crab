@@ -10,7 +10,11 @@ import {
 
 import SubtitlesOctopus from "@biliblitz/libass-wasm";
 
-import { getSubtitleTrackId, type Subtitle, type SubtitleStyle } from "../../types/subtitle";
+import {
+  getSubtitleTrackId,
+  type Subtitle,
+  type SubtitleStyle,
+} from "../../types/subtitle";
 
 import SubtitleStyleContextMenu, {
   type SubtitleStyleScope,
@@ -153,8 +157,11 @@ function VideoSubtitleOverlay({
   const [draftPosition, setDraftPosition] = useState<DraftPosition | null>(
     null,
   );
-  const [subtitleSnapGuides, setSubtitleSnapGuides] = useState<ProgramSnapGuide[]>([]);
-  const [subtitleMoveSnappingActive, setSubtitleMoveSnappingActive] = useState(false);
+  const [subtitleSnapGuides, setSubtitleSnapGuides] = useState<
+    ProgramSnapGuide[]
+  >([]);
+  const [subtitleMoveSnappingActive, setSubtitleMoveSnappingActive] =
+    useState(false);
 
   const styleScopeRef = useRef<SubtitleStyleScope>("current");
 
@@ -174,10 +181,7 @@ function VideoSubtitleOverlay({
   const draftPositionRef = useRef<DraftPosition | null>(null);
 
   const interactiveSubtitleIdSet = useMemo(
-    () =>
-      interactiveSubtitleIds
-        ? new Set(interactiveSubtitleIds)
-        : null,
+    () => (interactiveSubtitleIds ? new Set(interactiveSubtitleIds) : null),
     [interactiveSubtitleIds],
   );
 
@@ -217,12 +221,7 @@ function VideoSubtitleOverlay({
       const bIndex = Number(getSubtitleTrackId(b).split("-")[1] ?? 1);
       return bIndex - aIndex;
     })[0];
-  }, [
-    currentTime,
-    interactiveSubtitleIdSet,
-    selectedSubtitleId,
-    subtitles,
-  ]);
+  }, [currentTime, interactiveSubtitleIdSet, selectedSubtitleId, subtitles]);
 
   const isEditing = !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
 

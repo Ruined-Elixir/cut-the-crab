@@ -6,7 +6,10 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import type { VideoEffectInstance, VideoEffectKind } from "../../types/timelineModel";
+import type {
+  VideoEffectInstance,
+  VideoEffectKind,
+} from "../../types/timelineModel";
 import {
   VIDEO_EFFECT_LABELS,
   createVideoEffect,
@@ -45,7 +48,9 @@ function clampPanelPosition(position: Position): Position {
     y: Math.max(
       8,
       Math.min(
-        window.innerHeight - Math.min(PANEL_HEIGHT, window.innerHeight - 16) - 8,
+        window.innerHeight -
+          Math.min(PANEL_HEIGHT, window.innerHeight - 16) -
+          8,
         position.y,
       ),
     ),
@@ -85,7 +90,9 @@ function EffectSlider({
   onBeginContinuousChange?: () => void;
   onEndContinuousChange?: () => void;
 }) {
-  const [draftValue, setDraftValue] = useState(() => formatNumericValue(value, step));
+  const [draftValue, setDraftValue] = useState(() =>
+    formatNumericValue(value, step),
+  );
   const numericEditingRef = useRef(false);
   const cancelNumericEditRef = useRef(false);
   const rangePointerActiveRef = useRef(false);
@@ -97,13 +104,16 @@ function EffectSlider({
     }
   }, [step, value]);
 
-  const clampValue = (candidate: number) => Math.max(min, Math.min(max, candidate));
+  const clampValue = (candidate: number) =>
+    Math.max(min, Math.min(max, candidate));
 
   const quantizeValue = (candidate: number) => {
     const clamped = clampValue(candidate);
     const steps = Math.round((clamped - min) / step);
     const quantized = min + steps * step;
-    return Number(clampValue(quantized).toFixed(Math.max(0, numberPrecision(step))));
+    return Number(
+      clampValue(quantized).toFixed(Math.max(0, numberPrecision(step))),
+    );
   };
 
   const beginPointerInteraction = () => {
@@ -262,7 +272,9 @@ function EffectControls({
 }: {
   effect: VideoEffectInstance;
   disabled?: boolean;
-  onPatch: (patch: Partial<{ radius: number; amount: number; softness: number }>) => void;
+  onPatch: (
+    patch: Partial<{ radius: number; amount: number; softness: number }>,
+  ) => void;
   onBeginContinuousChange?: () => void;
   onEndContinuousChange?: () => void;
 }) {
@@ -345,9 +357,19 @@ export default function EffectsStackPanel({
     y: 78,
   }));
   const [draggedEffectId, setDraggedEffectId] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<{ id: string; placement: DropPlacement } | null>(null);
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
-  const dragOriginRef = useRef<{ x: number; y: number; panelX: number; panelY: number } | null>(null);
+  const [dragOver, setDragOver] = useState<{
+    id: string;
+    placement: DropPlacement;
+  } | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const dragOriginRef = useRef<{
+    x: number;
+    y: number;
+    panelX: number;
+    panelY: number;
+  } | null>(null);
   const continuousChangeActiveRef = useRef(false);
   const endContinuousChangeRef = useRef(onEndContinuousChange);
   endContinuousChangeRef.current = onEndContinuousChange;
@@ -365,7 +387,8 @@ export default function EffectsStackPanel({
   };
 
   useEffect(() => {
-    const handleResize = () => setPosition((current) => clampPanelPosition(current));
+    const handleResize = () =>
+      setPosition((current) => clampPanelPosition(current));
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -380,15 +403,18 @@ export default function EffectsStackPanel({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose, open]);
 
-  useEffect(() => () => {
-    if (continuousChangeActiveRef.current) {
-      continuousChangeActiveRef.current = false;
-      endContinuousChangeRef.current?.();
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (continuousChangeActiveRef.current) {
+        continuousChangeActiveRef.current = false;
+        endContinuousChangeRef.current?.();
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const ids = new Set(effects.map((effect) => effect.id));
@@ -400,7 +426,9 @@ export default function EffectsStackPanel({
 
   if (!open) return null;
 
-  const activeCount = effects.filter((effect) => effect.enabled !== false).length;
+  const activeCount = effects.filter(
+    (effect) => effect.enabled !== false,
+  ).length;
   const bypassedCount = effects.length - activeCount;
 
   const beginDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -423,10 +451,12 @@ export default function EffectsStackPanel({
     const handleMove = (moveEvent: MouseEvent) => {
       const origin = dragOriginRef.current;
       if (!origin) return;
-      setPosition(clampPanelPosition({
-        x: origin.panelX + moveEvent.clientX - origin.x,
-        y: origin.panelY + moveEvent.clientY - origin.y,
-      }));
+      setPosition(
+        clampPanelPosition({
+          x: origin.panelX + moveEvent.clientX - origin.x,
+          y: origin.panelY + moveEvent.clientY - origin.y,
+        }),
+      );
     };
 
     const handleUp = () => {
@@ -451,7 +481,12 @@ export default function EffectsStackPanel({
 
   const patchEffect = (
     id: string,
-    patch: Partial<{ enabled: boolean; radius: number; amount: number; softness: number }>,
+    patch: Partial<{
+      enabled: boolean;
+      radius: number;
+      amount: number;
+      softness: number;
+    }>,
     discrete = false,
   ) => {
     if (disabled) return;
@@ -494,7 +529,10 @@ export default function EffectsStackPanel({
     commitDiscrete(next);
   };
 
-  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>, targetId: string) => {
+  const handleDragOver = (
+    event: ReactDragEvent<HTMLDivElement>,
+    targetId: string,
+  ) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     if (!draggedEffectId || draggedEffectId === targetId) {
@@ -502,13 +540,15 @@ export default function EffectsStackPanel({
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
-    const placement: DropPlacement = event.clientY < rect.top + rect.height / 2
-      ? "before"
-      : "after";
+    const placement: DropPlacement =
+      event.clientY < rect.top + rect.height / 2 ? "before" : "after";
     setDragOver({ id: targetId, placement });
   };
 
-  const handleDrop = (event: ReactDragEvent<HTMLDivElement>, targetId: string) => {
+  const handleDrop = (
+    event: ReactDragEvent<HTMLDivElement>,
+    targetId: string,
+  ) => {
     event.preventDefault();
     if (disabled || !draggedEffectId || draggedEffectId === targetId) {
       setDraggedEffectId(null);
@@ -516,7 +556,9 @@ export default function EffectsStackPanel({
       return;
     }
     const placement = dragOver?.id === targetId ? dragOver.placement : "before";
-    commitDiscrete(reorderVideoEffects(effects, draggedEffectId, targetId, placement));
+    commitDiscrete(
+      reorderVideoEffects(effects, draggedEffectId, targetId, placement),
+    );
     setDraggedEffectId(null);
     setDragOver(null);
   };
@@ -530,9 +572,12 @@ export default function EffectsStackPanel({
     });
   };
 
-  const collapseAll = () => setCollapsedIds(new Set(effects.map((effect) => effect.id)));
+  const collapseAll = () =>
+    setCollapsedIds(new Set(effects.map((effect) => effect.id)));
   const expandAll = () => setCollapsedIds(new Set());
-  const allCollapsed = effects.length > 0 && effects.every((effect) => collapsedIds.has(effect.id));
+  const allCollapsed =
+    effects.length > 0 &&
+    effects.every((effect) => collapsedIds.has(effect.id));
 
   return (
     <aside
@@ -545,21 +590,53 @@ export default function EffectsStackPanel({
           <div className="effects-stack-title-row">
             <strong>Effects</strong>
             {effects.length > 0 && (
-              <span className="effects-stack-count" title={`${activeCount} active${bypassedCount ? `, ${bypassedCount} bypassed` : ""}`}>
+              <span
+                className="effects-stack-count"
+                title={`${activeCount} active${bypassedCount ? `, ${bypassedCount} bypassed` : ""}`}
+              >
                 {activeCount}/{effects.length}
               </span>
             )}
           </div>
-          <small>{targetName}{targetDetail ? ` · ${targetDetail}` : ""}</small>
+          <small>
+            {targetName}
+            {targetDetail ? ` · ${targetDetail}` : ""}
+          </small>
         </div>
-        <button type="button" className="effects-stack-close" onClick={onClose} aria-label="Close Effects" title="Close">×</button>
+        <button
+          type="button"
+          className="effects-stack-close"
+          onClick={onClose}
+          aria-label="Close Effects"
+          title="Close"
+        >
+          ×
+        </button>
       </div>
 
       <div className="effects-stack-toolbar">
         <div className="effects-stack-addbar" aria-label="Add effect">
-          <button type="button" disabled={disabled} onClick={() => addEffect("gaussian-blur")}>+ Blur</button>
-          <button type="button" disabled={disabled} onClick={() => addEffect("sharpen")}>+ Sharpen</button>
-          <button type="button" disabled={disabled} onClick={() => addEffect("vignette")}>+ Vignette</button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => addEffect("gaussian-blur")}
+          >
+            + Blur
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => addEffect("sharpen")}
+          >
+            + Sharpen
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => addEffect("vignette")}
+          >
+            + Vignette
+          </button>
         </div>
         <div className="effects-stack-stack-actions">
           <button
@@ -570,8 +647,23 @@ export default function EffectsStackPanel({
           >
             {allCollapsed ? "Expand" : "Collapse"}
           </button>
-          <button type="button" disabled={disabled || effects.length === 0} onClick={resetAllEffects} title="Reset all effect parameters">Reset all</button>
-          <button type="button" className="danger" disabled={disabled || effects.length === 0} onClick={clearAllEffects} title="Remove all effects (Undo restores them)">Clear</button>
+          <button
+            type="button"
+            disabled={disabled || effects.length === 0}
+            onClick={resetAllEffects}
+            title="Reset all effect parameters"
+          >
+            Reset all
+          </button>
+          <button
+            type="button"
+            className="danger"
+            disabled={disabled || effects.length === 0}
+            onClick={clearAllEffects}
+            title="Remove all effects (Undo restores them)"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
@@ -580,7 +672,10 @@ export default function EffectsStackPanel({
           <div className="effects-stack-empty">
             <span className="effects-stack-empty-icon">FX</span>
             <strong>No effects yet</strong>
-            <span>Add Blur, Sharpen, or Vignette. Effects are processed from top to bottom.</span>
+            <span>
+              Add Blur, Sharpen, or Vignette. Effects are processed from top to
+              bottom.
+            </span>
           </div>
         ) : (
           effects.map((effect, index) => {
@@ -594,12 +689,19 @@ export default function EffectsStackPanel({
                   effect.enabled === false ? "bypassed" : "",
                   draggedEffectId === effect.id ? "dragging" : "",
                   isDropTarget ? `drop-${dragOver?.placement}` : "",
-                ].filter(Boolean).join(" ")}
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onDragOver={(event) => handleDragOver(event, effect.id)}
                 onDragLeave={(event) => {
                   const related = event.relatedTarget;
-                  if (!(related instanceof Node) || !event.currentTarget.contains(related)) {
-                    setDragOver((current) => current?.id === effect.id ? null : current);
+                  if (
+                    !(related instanceof Node) ||
+                    !event.currentTarget.contains(related)
+                  ) {
+                    setDragOver((current) =>
+                      current?.id === effect.id ? null : current,
+                    );
                   }
                 }}
                 onDrop={(event) => handleDrop(event, effect.id)}
@@ -636,9 +738,19 @@ export default function EffectsStackPanel({
                     type="button"
                     className={`effect-stack-power ${effect.enabled === false ? "off" : "on"}`}
                     disabled={disabled}
-                    onClick={() => patchEffect(effect.id, { enabled: effect.enabled === false }, true)}
+                    onClick={() =>
+                      patchEffect(
+                        effect.id,
+                        { enabled: effect.enabled === false },
+                        true,
+                      )
+                    }
                     aria-pressed={effect.enabled !== false}
-                    title={effect.enabled === false ? "Enable effect" : "Bypass effect"}
+                    title={
+                      effect.enabled === false
+                        ? "Enable effect"
+                        : "Bypass effect"
+                    }
                   >
                     ◉
                   </button>
@@ -650,15 +762,51 @@ export default function EffectsStackPanel({
                     aria-expanded={!collapsed}
                   >
                     <strong>{VIDEO_EFFECT_LABELS[effect.kind]}</strong>
-                    <small>{effect.enabled === false ? "Bypassed" : videoEffectSummary(effect)}</small>
+                    <small>
+                      {effect.enabled === false
+                        ? "Bypassed"
+                        : videoEffectSummary(effect)}
+                    </small>
                   </button>
 
                   <span className="effect-stack-order">{index + 1}</span>
 
-                  <button type="button" className="effect-stack-icon-button" disabled={disabled} onClick={() => resetEffect(effect.id)} title="Reset effect">↺</button>
-                  <button type="button" className="effect-stack-icon-button" disabled={disabled} onClick={() => duplicateEffect(effect.id)} title="Duplicate effect">⧉</button>
-                  <button type="button" className="effect-stack-move" disabled={disabled || index === 0} onClick={() => moveEffect(effect.id, "up")} title="Move effect up">↑</button>
-                  <button type="button" className="effect-stack-move" disabled={disabled || index === effects.length - 1} onClick={() => moveEffect(effect.id, "down")} title="Move effect down">↓</button>
+                  <button
+                    type="button"
+                    className="effect-stack-icon-button"
+                    disabled={disabled}
+                    onClick={() => resetEffect(effect.id)}
+                    title="Reset effect"
+                  >
+                    ↺
+                  </button>
+                  <button
+                    type="button"
+                    className="effect-stack-icon-button"
+                    disabled={disabled}
+                    onClick={() => duplicateEffect(effect.id)}
+                    title="Duplicate effect"
+                  >
+                    ⧉
+                  </button>
+                  <button
+                    type="button"
+                    className="effect-stack-move"
+                    disabled={disabled || index === 0}
+                    onClick={() => moveEffect(effect.id, "up")}
+                    title="Move effect up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="effect-stack-move"
+                    disabled={disabled || index === effects.length - 1}
+                    onClick={() => moveEffect(effect.id, "down")}
+                    title="Move effect down"
+                  >
+                    ↓
+                  </button>
                   <button
                     type="button"
                     className="effect-stack-remove"
@@ -666,7 +814,9 @@ export default function EffectsStackPanel({
                     onClick={() => removeEffect(effect.id)}
                     title="Remove effect"
                     aria-label={`Remove ${VIDEO_EFFECT_LABELS[effect.kind]}`}
-                  >×</button>
+                  >
+                    ×
+                  </button>
                 </div>
 
                 {!collapsed && (
@@ -694,7 +844,9 @@ export default function EffectsStackPanel({
               ? "Effects are previewed live and included in export"
               : `${activeCount} active${bypassedCount ? ` · ${bypassedCount} bypassed` : ""} · drag ⠿ to reorder`}
         </span>
-        {!disabled && effects.length > 0 && <span>Undo restores removed/reset effects</span>}
+        {!disabled && effects.length > 0 && (
+          <span>Undo restores removed/reset effects</span>
+        )}
       </div>
     </aside>
   );

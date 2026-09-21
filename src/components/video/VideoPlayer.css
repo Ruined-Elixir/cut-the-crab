@@ -523,3 +523,34 @@
 .program-effects-button:hover:not(:disabled) { background:var(--control-fill-hover);color:var(--label) }
 .program-effects-button:disabled { opacity:.42;cursor:default }
 .program-video-vignette { will-change:transform,opacity;transform-origin:center center }
+
+/* Masks v1.1 */
+.program-video-mask-wrapper {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  contain: paint;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: clip-path, -webkit-mask-image, mask-image;
+}
+
+.program-video-mask-wrapper > .video-element {
+  pointer-events: auto;
+  z-index: 0 !important;
+}
+
+.program-video-mask-wrapper > .program-video-vignette {
+  z-index: 0 !important;
+}
+
+.program-masked-adjustment-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  contain: paint;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: clip-path, -webkit-mask-image, mask-image, backdrop-filter;
+  background-color: rgba(0, 0, 0, 0.001);
+}

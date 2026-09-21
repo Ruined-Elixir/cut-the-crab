@@ -9,7 +9,9 @@ export function clampVideoClipGroupMoveDelta(
     return 0;
   }
 
-  const minimumStart = Math.min(...selectedClips.map((clip) => clip.timelineStart));
+  const minimumStart = Math.min(
+    ...selectedClips.map((clip) => clip.timelineStart),
+  );
   let delta = Math.max(-minimumStart, requestedDelta);
 
   if (delta > 0) {

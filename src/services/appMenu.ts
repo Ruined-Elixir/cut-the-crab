@@ -6,9 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 export const APP_MENU_COMMAND_EVENT = "app-menu-command";
 
 export type TranscriptionPreset =
-  | "whisper-base"
-  | "whisper-small"
-  | "sensevoice";
+  "whisper-base" | "whisper-small" | "sensevoice";
 
 export type TranscriptionMenuTarget = {
   clipId: string;
@@ -50,8 +48,7 @@ export type ClipTranscriptionMenuCommand =
   `transcription.clip:${TranscriptionPreset}:${string}`;
 
 export type AppMenuCommand =
-  | StaticAppMenuCommand
-  | ClipTranscriptionMenuCommand;
+  StaticAppMenuCommand | ClipTranscriptionMenuCommand;
 
 export function parseClipTranscriptionCommand(command: AppMenuCommand) {
   if (!command.startsWith("transcription.clip:")) {

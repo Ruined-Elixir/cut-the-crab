@@ -35,8 +35,7 @@ function SubtitleGenerationModal({
   const isDownloadingModel =
     isGenerating && safeDownloadPercent > 0 && safeDownloadPercent < 100;
 
-  const showDeterminateProgress =
-    isDownloadingModel || engine === "whisper";
+  const showDeterminateProgress = isDownloadingModel || engine === "whisper";
 
   const primaryProgress = isDownloadingModel
     ? safeDownloadPercent
@@ -70,11 +69,16 @@ function SubtitleGenerationModal({
           .join(" ")}
       >
         {!generationError && (
-          <div className="subtitle-generation-modal-spinner" aria-hidden="true" />
+          <div
+            className="subtitle-generation-modal-spinner"
+            aria-hidden="true"
+          />
         )}
 
         <h2 id="subtitle-generation-modal-title">
-          {generationError ? "Subtitle generation failed" : "Generating subtitles"}
+          {generationError
+            ? "Subtitle generation failed"
+            : "Generating subtitles"}
         </h2>
 
         <p

@@ -1,7 +1,4 @@
-import {
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { Subtitle } from "../../types/subtitle";
 import type { TimelineTrack, TimelineTrackId } from "../../types/timelineModel";
@@ -12,10 +9,7 @@ import {
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
-export type SubtitleSelectionMode =
-  | "single"
-  | "toggle"
-  | "range";
+export type SubtitleSelectionMode = "single" | "toggle" | "range";
 
 type SubtitleTrackProps = {
   duration: number;
@@ -27,14 +21,8 @@ type SubtitleTrackProps = {
   playheadTime: number;
 
   onSeek?: (time: number) => void;
-  onSubtitleSelect?: (
-    id: string,
-    mode?: SubtitleSelectionMode,
-  ) => void;
-  onSubtitleMove?: (
-    id: string,
-    newStartTime: number,
-  ) => void;
+  onSubtitleSelect?: (id: string, mode?: SubtitleSelectionMode) => void;
+  onSubtitleMove?: (id: string, newStartTime: number) => void;
   onSubtitleMoveToTrack?: (
     id: string,
     targetTrackId: TimelineTrackId,
@@ -60,10 +48,7 @@ type SubtitleTrackProps = {
 const MIN_SUBTITLE_DURATION = 0.1;
 const SNAP_TOLERANCE_PX = 12;
 
-function getSnapTolerance(
-  trackWidth: number,
-  duration: number,
-) {
+function getSnapTolerance(trackWidth: number, duration: number) {
   if (trackWidth <= 0 || duration <= 0) {
     return 0;
   }
@@ -71,10 +56,7 @@ function getSnapTolerance(
   return (SNAP_TOLERANCE_PX / trackWidth) * duration;
 }
 
-type SnapTargetType =
-  | "marker"
-  | "playhead"
-  | "subtitle";
+type SnapTargetType = "marker" | "playhead" | "subtitle";
 
 type SnapTarget = {
   time: number;
@@ -87,12 +69,10 @@ function getSnapTargets(
   markerTimes: number[],
   playheadTime: number,
 ) {
-  const targets: SnapTarget[] = markerTimes.map(
-    (time) => ({
-      time,
-      type: "marker",
-    }),
-  );
+  const targets: SnapTarget[] = markerTimes.map((time) => ({
+    time,
+    type: "marker",
+  }));
 
   if (Number.isFinite(playheadTime)) {
     targets.push({
@@ -130,9 +110,7 @@ function findSnapTarget(
   let bestDistance = tolerance;
 
   for (const target of targets) {
-    const distance = Math.abs(
-      target.time - value,
-    );
+    const distance = Math.abs(target.time - value);
 
     if (distance <= bestDistance) {
       best = target;
@@ -143,10 +121,7 @@ function findSnapTarget(
   return best;
 }
 
-function getOtherSubtitles(
-  subtitles: Subtitle[],
-  id: string,
-) {
+function getOtherSubtitles(subtitles: Subtitle[], id: string) {
   return subtitles
     .filter((subtitle) => subtitle.id !== id)
     .sort((a, b) => a.startTime - b.startTime);
@@ -169,15 +144,11 @@ function clampMoveAgainstCollisions(
   for (const other of others) {
     const end = start + subtitleDuration;
 
-    if (
-      end <= other.startTime ||
-      start >= other.endTime
-    ) {
+    if (end <= other.startTime || start >= other.endTime) {
       continue;
     }
 
-    const pushLeft =
-      other.startTime - subtitleDuration;
+    const pushLeft = other.startTime - subtitleDuration;
     const pushRight = other.endTime;
 
     start =
@@ -186,10 +157,7 @@ function clampMoveAgainstCollisions(
         ? pushLeft
         : pushRight;
 
-    start = Math.max(
-      0,
-      Math.min(duration - subtitleDuration, start),
-    );
+    start = Math.max(0, Math.min(duration - subtitleDuration, start));
   }
 
   return start;
@@ -203,27 +171,18 @@ function clampGroupMove(
   duration: number,
 ) {
   const selectedSet = new Set(selectedIds);
-  const selected = subtitles.filter((subtitle) =>
-    selectedSet.has(subtitle.id),
-  );
+  const selected = subtitles.filter((subtitle) => selectedSet.has(subtitle.id));
 
-  const anchor = selected.find(
-    (subtitle) => subtitle.id === anchorId,
-  );
+  const anchor = selected.find((subtitle) => subtitle.id === anchorId);
 
   if (!anchor || selected.length === 0) {
     return requestedAnchorStart;
   }
 
-  const requestedDelta =
-    requestedAnchorStart - anchor.startTime;
+  const requestedDelta = requestedAnchorStart - anchor.startTime;
 
-  const minStart = Math.min(
-    ...selected.map((subtitle) => subtitle.startTime),
-  );
-  const maxEnd = Math.max(
-    ...selected.map((subtitle) => subtitle.endTime),
-  );
+  const minStart = Math.min(...selected.map((subtitle) => subtitle.startTime));
+  const maxEnd = Math.max(...selected.map((subtitle) => subtitle.endTime));
 
   let minimumDelta = -minStart;
   let maximumDelta = duration - maxEnd;
@@ -264,9 +223,7 @@ function clampGroupMove(
   return anchor.startTime + safeDelta;
 }
 
-function selectionModeFromEvent(
-  event: ReactMouseEvent,
-): SubtitleSelectionMode {
+function selectionModeFromEvent(event: ReactMouseEvent): SubtitleSelectionMode {
   if (event.shiftKey) {
     return "range";
   }
@@ -298,10 +255,8 @@ function SubtitleTrack({
   onRevealSubtitle,
   showLabel = true,
 }: SubtitleTrackProps) {
-  const [draggingSubtitleIds, setDraggingSubtitleIds] =
-    useState<string[]>([]);
-  const [snapIndicator, setSnapIndicator] =
-    useState<SnapTarget | null>(null);
+  const [draggingSubtitleIds, setDraggingSubtitleIds] = useState<string[]>([]);
+  const [snapIndicator, setSnapIndicator] = useState<SnapTarget | null>(null);
 
   const startMove = (
     event: ReactMouseEvent<HTMLDivElement>,
@@ -311,9 +266,7 @@ function SubtitleTrack({
 
     if (
       track.locked ||
-      (event.target as HTMLElement).closest(
-        ".subtitle-resize-handle",
-      )
+      (event.target as HTMLElement).closest(".subtitle-resize-handle")
     ) {
       return;
     }
@@ -323,11 +276,7 @@ function SubtitleTrack({
      * Waiting for the click keeps Cmd/Ctrl toggle and Shift range
      * selection predictable.
      */
-    if (
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey
-    ) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey) {
       return;
     }
 
@@ -341,8 +290,7 @@ function SubtitleTrack({
       return;
     }
 
-    const isAlreadySelected =
-      selectedSubtitleIds.includes(subtitle.id);
+    const isAlreadySelected = selectedSubtitleIds.includes(subtitle.id);
 
     const trackSubtitleIds = new Set(subtitles.map((item) => item.id));
     const selectedIdsOnTrack = selectedSubtitleIds.filter((id) =>
@@ -368,28 +316,17 @@ function SubtitleTrack({
 
     const startX = event.clientX;
     const originalStart = subtitle.startTime;
-    const subtitleDuration =
-      subtitle.endTime - subtitle.startTime;
-    const trackWidth =
-      trackElement.getBoundingClientRect().width;
-    const snapTolerance = getSnapTolerance(
-      trackWidth,
-      duration,
-    );
+    const subtitleDuration = subtitle.endTime - subtitle.startTime;
+    const trackWidth = trackElement.getBoundingClientRect().width;
+    const snapTolerance = getSnapTolerance(trackWidth, duration);
     let latestStart = originalStart;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / trackWidth) *
-        duration;
+      const deltaTime = ((moveEvent.clientX - startX) / trackWidth) * duration;
 
       let newStart = originalStart + deltaTime;
 
-      const startSnap = findSnapTarget(
-        newStart,
-        snapTargets,
-        snapTolerance,
-      );
+      const startSnap = findSnapTarget(newStart, snapTargets, snapTolerance);
 
       const endSnap = findSnapTarget(
         newStart + subtitleDuration,
@@ -402,21 +339,14 @@ function SubtitleTrack({
         : Number.POSITIVE_INFINITY;
 
       const endDistance = endSnap
-        ? Math.abs(
-            endSnap.time -
-              (newStart + subtitleDuration),
-          )
+        ? Math.abs(endSnap.time - (newStart + subtitleDuration))
         : Number.POSITIVE_INFINITY;
 
-      if (
-        startSnap &&
-        startDistance <= endDistance
-      ) {
+      if (startSnap && startDistance <= endDistance) {
         newStart = startSnap.time;
         setSnapIndicator(startSnap);
       } else if (endSnap) {
-        newStart =
-          endSnap.time - subtitleDuration;
+        newStart = endSnap.time - subtitleDuration;
         setSnapIndicator(endSnap);
       } else {
         setSnapIndicator(null);
@@ -432,11 +362,7 @@ function SubtitleTrack({
         );
 
         latestStart = safeAnchorStart;
-        onSubtitleGroupMove?.(
-          groupIds,
-          subtitle.id,
-          safeAnchorStart,
-        );
+        onSubtitleGroupMove?.(groupIds, subtitle.id, safeAnchorStart);
 
         return;
       }
@@ -450,10 +376,7 @@ function SubtitleTrack({
       );
 
       latestStart = newStart;
-      onSubtitleMove?.(
-        subtitle.id,
-        newStart,
-      );
+      onSubtitleMove?.(subtitle.id, newStart);
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
@@ -466,48 +389,26 @@ function SubtitleTrack({
           .find(
             (element) =>
               element instanceof HTMLElement &&
-              element.matches(
-                ".subtitle-track[data-subtitle-track-id]",
-              ),
+              element.matches(".subtitle-track[data-subtitle-track-id]"),
           );
 
         if (target instanceof HTMLElement) {
           const targetTrackId = target.dataset.subtitleTrackId;
           const targetLocked = target.dataset.trackLocked === "true";
 
-          if (
-            targetTrackId &&
-            targetTrackId !== track.id &&
-            !targetLocked
-          ) {
-            onSubtitleMoveToTrack?.(
-              subtitle.id,
-              targetTrackId,
-              latestStart,
-            );
+          if (targetTrackId && targetTrackId !== track.id && !targetLocked) {
+            onSubtitleMoveToTrack?.(subtitle.id, targetTrackId, latestStart);
             onTrackActivate?.(targetTrackId);
           }
         }
       }
 
-      window.removeEventListener(
-        "mousemove",
-        handleMouseMove,
-      );
-      window.removeEventListener(
-        "mouseup",
-        handleMouseUp,
-      );
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
 
-    window.addEventListener(
-      "mousemove",
-      handleMouseMove,
-    );
-    window.addEventListener(
-      "mouseup",
-      handleMouseUp,
-    );
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   };
 
   const startResize = (
@@ -522,17 +423,13 @@ function SubtitleTrack({
     event.preventDefault();
     event.stopPropagation();
 
-    const trackElement =
-      event.currentTarget.parentElement?.parentElement;
+    const trackElement = event.currentTarget.parentElement?.parentElement;
 
     if (!trackElement || duration <= 0) {
       return;
     }
 
-    onSubtitleSelect?.(
-      subtitle.id,
-      "single",
-    );
+    onSubtitleSelect?.(subtitle.id, "single");
 
     setDraggingSubtitleIds([subtitle.id]);
 
@@ -546,53 +443,26 @@ function SubtitleTrack({
     const startX = event.clientX;
     const originalStart = subtitle.startTime;
     const originalEnd = subtitle.endTime;
-    const trackWidth =
-      trackElement.getBoundingClientRect().width;
-    const snapTolerance = getSnapTolerance(
-      trackWidth,
-      duration,
-    );
+    const trackWidth = trackElement.getBoundingClientRect().width;
+    const snapTolerance = getSnapTolerance(trackWidth, duration);
 
-    const others = getOtherSubtitles(
-      subtitles,
-      subtitle.id,
-    );
+    const others = getOtherSubtitles(subtitles, subtitle.id);
 
     const previousSubtitle = [...others]
-      .filter(
-        (item) =>
-          item.endTime <= originalStart,
-      )
-      .sort(
-        (a, b) => b.endTime - a.endTime,
-      )[0];
+      .filter((item) => item.endTime <= originalStart)
+      .sort((a, b) => b.endTime - a.endTime)[0];
 
     const nextSubtitle = others
-      .filter(
-        (item) =>
-          item.startTime >= originalEnd,
-      )
-      .sort(
-        (a, b) => a.startTime - b.startTime,
-      )[0];
+      .filter((item) => item.startTime >= originalEnd)
+      .sort((a, b) => a.startTime - b.startTime)[0];
 
-    const handleMouseMove = (
-      moveEvent: MouseEvent,
-    ) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) /
-          trackWidth) *
-        duration;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaTime = ((moveEvent.clientX - startX) / trackWidth) * duration;
 
       if (edge === "left") {
-        let newStart =
-          originalStart + deltaTime;
+        let newStart = originalStart + deltaTime;
 
-        const startSnap = findSnapTarget(
-          newStart,
-          snapTargets,
-          snapTolerance,
-        );
+        const startSnap = findSnapTarget(newStart, snapTargets, snapTolerance);
 
         if (startSnap) {
           setSnapIndicator(startSnap);
@@ -601,32 +471,18 @@ function SubtitleTrack({
           setSnapIndicator(null);
         }
 
-        newStart = Math.max(
-          previousSubtitle?.endTime ?? 0,
-          newStart,
-        );
+        newStart = Math.max(previousSubtitle?.endTime ?? 0, newStart);
 
-        newStart = Math.min(
-          originalEnd - MIN_SUBTITLE_DURATION,
-          newStart,
-        );
+        newStart = Math.min(originalEnd - MIN_SUBTITLE_DURATION, newStart);
 
-        onSubtitleResize?.(
-          subtitle.id,
-          newStart,
-          originalEnd,
-        );
+        onSubtitleResize?.(subtitle.id, newStart, originalEnd);
 
         return;
       }
 
       let newEnd = originalEnd + deltaTime;
 
-      const endSnap = findSnapTarget(
-        newEnd,
-        snapTargets,
-        snapTolerance,
-      );
+      const endSnap = findSnapTarget(newEnd, snapTargets, snapTolerance);
 
       if (endSnap) {
         setSnapIndicator(endSnap);
@@ -635,90 +491,63 @@ function SubtitleTrack({
         setSnapIndicator(null);
       }
 
-      newEnd = Math.min(
-        nextSubtitle?.startTime ?? duration,
-        newEnd,
-      );
+      newEnd = Math.min(nextSubtitle?.startTime ?? duration, newEnd);
 
-      newEnd = Math.max(
-        originalStart + MIN_SUBTITLE_DURATION,
-        newEnd,
-      );
+      newEnd = Math.max(originalStart + MIN_SUBTITLE_DURATION, newEnd);
 
-      onSubtitleResize?.(
-        subtitle.id,
-        originalStart,
-        newEnd,
-      );
+      onSubtitleResize?.(subtitle.id, originalStart, newEnd);
     };
 
     const handleMouseUp = () => {
       setDraggingSubtitleIds([]);
       setSnapIndicator(null);
 
-      window.removeEventListener(
-        "mousemove",
-        handleMouseMove,
-      );
-      window.removeEventListener(
-        "mouseup",
-        handleMouseUp,
-      );
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
 
-    window.addEventListener(
-      "mousemove",
-      handleMouseMove,
-    );
-    window.addEventListener(
-      "mouseup",
-      handleMouseUp,
-    );
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   };
 
-  const handleTrackClick = (
-    event: ReactMouseEvent<HTMLDivElement>,
-  ) => {
+  const handleTrackClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     onTrackActivate?.(track.id);
 
-    if (
-      duration <= 0 ||
-      event.detail > 1
-    ) {
+    if (duration <= 0 || event.detail > 1) {
       return;
     }
 
-    const rect =
-      event.currentTarget.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
 
-    const ratio =
-      (event.clientX - rect.left) /
-      rect.width;
+    const ratio = (event.clientX - rect.left) / rect.width;
 
-    onSeek?.(
-      Math.max(
-        0,
-        Math.min(duration, ratio * duration),
-      ),
-    );
+    onSeek?.(Math.max(0, Math.min(duration, ratio * duration)));
   };
 
   return (
-    <div className={`timeline-row timeline-subtitle-row ${showLabel ? "" : "track-only"}`.trim()}>
+    <div
+      className={`timeline-row timeline-subtitle-row ${showLabel ? "" : "track-only"}`.trim()}
+    >
       {showLabel && (
-      <TimelineTrackLabel
-        shortLabel={track.shortLabel}
-        name={track.name}
-        locked={track.locked}
-        hidden={track.hidden}
-        canHide
-        onToggleLock={() => onToggleLock?.(track.id)}
-        onToggleHidden={() => onToggleHidden?.(track.id)}
-      />
+        <TimelineTrackLabel
+          shortLabel={track.shortLabel}
+          name={track.name}
+          locked={track.locked}
+          hidden={track.hidden}
+          canHide
+          onToggleLock={() => onToggleLock?.(track.id)}
+          onToggleHidden={() => onToggleHidden?.(track.id)}
+        />
       )}
 
       <div
-        className={["subtitle-track", track.locked ? "locked" : "", track.hidden ? "track-hidden" : ""].filter(Boolean).join(" ")}
+        className={[
+          "subtitle-track",
+          track.locked ? "locked" : "",
+          track.hidden ? "track-hidden" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         data-subtitle-track-id={track.id}
         data-track-locked={track.locked ? "true" : "false"}
         onClick={handleTrackClick}
@@ -739,27 +568,16 @@ function SubtitleTrack({
         )}
 
         {subtitles.map((subtitle) => {
-          const left =
-            duration > 0
-              ? (subtitle.startTime / duration) *
-                100
-              : 0;
+          const left = duration > 0 ? (subtitle.startTime / duration) * 100 : 0;
 
           const width =
             duration > 0
-              ? ((subtitle.endTime -
-                  subtitle.startTime) /
-                  duration) *
-                100
+              ? ((subtitle.endTime - subtitle.startTime) / duration) * 100
               : 0;
 
-          const isSelected =
-            selectedSubtitleIds.includes(
-              subtitle.id,
-            );
+          const isSelected = selectedSubtitleIds.includes(subtitle.id);
 
-          const isPrimary =
-            selectedSubtitleId === subtitle.id;
+          const isPrimary = selectedSubtitleId === subtitle.id;
 
           return (
             <div
@@ -768,9 +586,7 @@ function SubtitleTrack({
                 "subtitle-clip",
                 isSelected ? "selected" : "",
                 isPrimary ? "primary-selected" : "",
-                draggingSubtitleIds.includes(subtitle.id)
-                  ? "dragging"
-                  : "",
+                draggingSubtitleIds.includes(subtitle.id) ? "dragging" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -792,56 +608,34 @@ function SubtitleTrack({
                     action: () => onRevealSubtitle(subtitle),
                   },
                 ]).catch((error) => {
-                  console.error("Failed to show native subtitle context menu:", error);
+                  console.error(
+                    "Failed to show native subtitle context menu:",
+                    error,
+                  );
                 });
               }}
               onClick={(event) => {
                 event.stopPropagation();
                 onTrackActivate?.(track.id);
 
-                onSubtitleSelect?.(
-                  subtitle.id,
-                  selectionModeFromEvent(event),
-                );
+                onSubtitleSelect?.(subtitle.id, selectionModeFromEvent(event));
 
-                if (
-                  !event.metaKey &&
-                  !event.ctrlKey &&
-                  !event.shiftKey
-                ) {
-                  onSeek?.(
-                    subtitle.startTime,
-                  );
+                if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                  onSeek?.(subtitle.startTime);
                 }
               }}
-              onMouseDown={(event) =>
-                startMove(event, subtitle)
-              }
+              onMouseDown={(event) => startMove(event, subtitle)}
             >
               <div
                 className="subtitle-resize-handle left"
-                onMouseDown={(event) =>
-                  startResize(
-                    event,
-                    subtitle,
-                    "left",
-                  )
-                }
+                onMouseDown={(event) => startResize(event, subtitle, "left")}
               />
 
-              <span className="subtitle-clip-text">
-                {subtitle.text}
-              </span>
+              <span className="subtitle-clip-text">{subtitle.text}</span>
 
               <div
                 className="subtitle-resize-handle right"
-                onMouseDown={(event) =>
-                  startResize(
-                    event,
-                    subtitle,
-                    "right",
-                  )
-                }
+                onMouseDown={(event) => startResize(event, subtitle, "right")}
               />
             </div>
           );

@@ -6,7 +6,11 @@ import type {
   VideoTimelineClip,
 } from "../types/timelineModel";
 import { sliceVideoTransformKeyframes } from "./videoTransformKeyframes";
-import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime } from "./videoRetime";
+import {
+  isFreezeFrameClip,
+  isReverseVideoClip,
+  timelineTimeToSourceTime,
+} from "./videoRetime";
 
 export type TimelineRange = {
   start: number;
@@ -51,10 +55,7 @@ function normalizeRange(range: TimelineRange): TimelineRange | null {
   return { start, end };
 }
 
-function isTrackLocked(
-  trackId: string,
-  trackSettings: TimelineTrackSettings,
-) {
+function isTrackLocked(trackId: string, trackSettings: TimelineTrackSettings) {
   return trackSettings[trackId]?.locked === true;
 }
 
@@ -81,10 +82,7 @@ function clampVideoDurations(clip: VideoTimelineClip): VideoTimelineClip {
     MIN_FRAGMENT_DURATION,
     clip.timelineEnd - clip.timelineStart,
   );
-  const maxTransitionDuration = Math.max(
-    0.1,
-    Math.min(5, duration / 2),
-  );
+  const maxTransitionDuration = Math.max(0.1, Math.min(5, duration / 2));
 
   return {
     ...clip,
@@ -115,10 +113,7 @@ function clampVideoDurations(clip: VideoTimelineClip): VideoTimelineClip {
   };
 }
 
-function leftVideoFragment(
-  clip: VideoTimelineClip,
-  timelineEnd: number,
-) {
+function leftVideoFragment(clip: VideoTimelineClip, timelineEnd: number) {
   const sourceSplit = timelineTimeToSourceTime(clip, timelineEnd);
   const reverse = isReverseVideoClip(clip);
   const freeze = isFreezeFrameClip(clip);
@@ -170,10 +165,7 @@ function rightVideoFragment(
   });
 }
 
-function shiftVideoClip(
-  clip: VideoTimelineClip,
-  delta: number,
-) {
+function shiftVideoClip(clip: VideoTimelineClip, delta: number) {
   return {
     ...clip,
     timelineStart: Math.max(0, clip.timelineStart + delta),
@@ -301,13 +293,15 @@ function editAudioClips(
         sourceOut,
         fadeOutDuration: 0,
       };
-      if (left.timelineEnd - left.timelineStart >= MIN_FRAGMENT_DURATION) next.push(left);
+      if (left.timelineEnd - left.timelineStart >= MIN_FRAGMENT_DURATION)
+        next.push(left);
     }
 
     if (hasRight) {
       const sourceIn = clip.sourceIn + (range.end - clip.timelineStart);
       const rightStart = mode === "extract" ? range.start : range.end;
-      const rightEnd = mode === "extract" ? clip.timelineEnd - duration : clip.timelineEnd;
+      const rightEnd =
+        mode === "extract" ? clip.timelineEnd - duration : clip.timelineEnd;
       const right: AudioTimelineClip = {
         ...clip,
         id: hasLeft ? crypto.randomUUID() : clip.id,
@@ -316,7 +310,8 @@ function editAudioClips(
         sourceIn,
         fadeInDuration: 0,
       };
-      if (right.timelineEnd - right.timelineStart >= MIN_FRAGMENT_DURATION) next.push(right);
+      if (right.timelineEnd - right.timelineStart >= MIN_FRAGMENT_DURATION)
+        next.push(right);
     }
   }
 
@@ -392,9 +387,7 @@ function editSubtitles(
     if (hasRight) {
       const rightStart = mode === "extract" ? range.start : range.end;
       const rightEnd =
-        mode === "extract"
-          ? subtitle.endTime - duration
-          : subtitle.endTime;
+        mode === "extract" ? subtitle.endTime - duration : subtitle.endTime;
       const right = {
         ...subtitle,
         id: hasLeft ? crypto.randomUUID() : subtitle.id,
@@ -476,24 +469,9 @@ export function applyTimelineRangeEdit({
     };
   }
 
-  const videoResult = editVideoClips(
-    videoClips,
-    range,
-    mode,
-    trackSettings,
-  );
-  const audioResult = editAudioClips(
-    audioClips,
-    range,
-    mode,
-    trackSettings,
-  );
-  const subtitleResult = editSubtitles(
-    subtitles,
-    range,
-    mode,
-    trackSettings,
-  );
+  const videoResult = editVideoClips(videoClips, range, mode, trackSettings);
+  const audioResult = editAudioClips(audioClips, range, mode, trackSettings);
+  const subtitleResult = editSubtitles(subtitles, range, mode, trackSettings);
   const markerResult = editMarkers(markers, range, mode);
 
   return {

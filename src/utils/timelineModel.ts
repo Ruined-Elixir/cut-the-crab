@@ -20,7 +20,9 @@ type BuildTimelineModelOptions = {
 
 const TRACK_ID_PATTERN = /^(video|subtitle|audio)-(\d+)$/;
 
-export function timelineTrackKindFromId(trackId: string): TimelineTrackKind | null {
+export function timelineTrackKindFromId(
+  trackId: string,
+): TimelineTrackKind | null {
   const match = TRACK_ID_PATTERN.exec(trackId);
   if (!match) return null;
   return match[1] as TimelineTrackKind;
@@ -44,7 +46,10 @@ export function nextTimelineTrackId(
   const activeIds = new Set<string>();
 
   for (const id of Object.keys(DEFAULT_TIMELINE_TRACK_SETTINGS)) {
-    if (timelineTrackKindFromId(id) === kind && trackSettings[id]?.deleted !== true) {
+    if (
+      timelineTrackKindFromId(id) === kind &&
+      trackSettings[id]?.deleted !== true
+    ) {
       activeIds.add(id);
     }
   }
@@ -57,13 +62,15 @@ export function nextTimelineTrackId(
 
   if (kind === "video") {
     for (const clip of videoClips) {
-      if (trackSettings[clip.trackId]?.deleted !== true) activeIds.add(clip.trackId);
+      if (trackSettings[clip.trackId]?.deleted !== true)
+        activeIds.add(clip.trackId);
     }
   }
 
   if (kind === "audio") {
     for (const clip of audioClips) {
-      if (trackSettings[clip.trackId]?.deleted !== true) activeIds.add(clip.trackId);
+      if (trackSettings[clip.trackId]?.deleted !== true)
+        activeIds.add(clip.trackId);
     }
   }
 
@@ -72,7 +79,9 @@ export function nextTimelineTrackId(
   return timelineTrackId(kind, index);
 }
 
-export function defaultTrackControlState(kind: TimelineTrackKind): TimelineTrackControlState {
+export function defaultTrackControlState(
+  kind: TimelineTrackKind,
+): TimelineTrackControlState {
   if (kind === "audio") {
     // Standalone audio tracks are directly editable. Linked audio tracks are
     // created explicitly with locked=true by App.
@@ -82,10 +91,14 @@ export function defaultTrackControlState(kind: TimelineTrackKind): TimelineTrack
   return { locked: false, hidden: false };
 }
 
-function getTrackSettings(trackId: string, trackSettings?: TimelineTrackSettings) {
+function getTrackSettings(
+  trackId: string,
+  trackSettings?: TimelineTrackSettings,
+) {
   const kind = timelineTrackKindFromId(trackId) ?? "video";
   return {
-    ...(DEFAULT_TIMELINE_TRACK_SETTINGS[trackId] ?? defaultTrackControlState(kind)),
+    ...(DEFAULT_TIMELINE_TRACK_SETTINGS[trackId] ??
+      defaultTrackControlState(kind)),
     ...(trackSettings?.[trackId] ?? {}),
   };
 }
@@ -132,13 +145,19 @@ function collectTrackIds(
   }
 
   for (const clip of videoClips) {
-    if (timelineTrackKindFromId(clip.trackId) === "video" && trackSettings?.[clip.trackId]?.deleted !== true) {
+    if (
+      timelineTrackKindFromId(clip.trackId) === "video" &&
+      trackSettings?.[clip.trackId]?.deleted !== true
+    ) {
       ids.add(clip.trackId);
     }
   }
 
   for (const clip of audioClips) {
-    if (timelineTrackKindFromId(clip.trackId) === "audio" && trackSettings?.[clip.trackId]?.deleted !== true) {
+    if (
+      timelineTrackKindFromId(clip.trackId) === "audio" &&
+      trackSettings?.[clip.trackId]?.deleted !== true
+    ) {
       ids.add(clip.trackId);
     }
   }
@@ -225,13 +244,17 @@ export function buildTimelineModel({
     const index = timelineTrackIndexFromId(id);
     const settings = getTrackSettings(id, trackSettings);
     const linkedVideoTrackId =
-      settings.linkedTrackId && timelineTrackKindFromId(settings.linkedTrackId) === "video"
+      settings.linkedTrackId &&
+      timelineTrackKindFromId(settings.linkedTrackId) === "video"
         ? settings.linkedTrackId
         : undefined;
 
     const linked = linkedVideoTrackId
       ? videoClips
-          .filter((clip) => clip.trackId === linkedVideoTrackId && !clip.compoundDisplay)
+          .filter(
+            (clip) =>
+              clip.trackId === linkedVideoTrackId && !clip.compoundDisplay,
+          )
           .map((clip) => linkedAudioClip(clip, id))
       : [];
     const standalone = audioClips.filter((clip) => clip.trackId === id);
@@ -249,7 +272,9 @@ export function buildTimelineModel({
       locked: settings.locked,
       muted: settings.muted,
       solo: settings.solo,
-      clips: [...linked, ...standalone].sort((a, b) => a.timelineStart - b.timelineStart),
+      clips: [...linked, ...standalone].sort(
+        (a, b) => a.timelineStart - b.timelineStart,
+      ),
     };
   });
 

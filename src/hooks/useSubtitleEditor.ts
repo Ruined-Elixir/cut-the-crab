@@ -49,10 +49,7 @@ function clampStartAgainstTrackCollisions(
 ) {
   let start = Math.max(
     0,
-    Math.min(
-      Math.max(0, timelineDuration - subtitleDuration),
-      requestedStart,
-    ),
+    Math.min(Math.max(0, timelineDuration - subtitleDuration), requestedStart),
   );
 
   const obstacles = subtitles
@@ -79,10 +76,7 @@ function clampStartAgainstTrackCollisions(
 
     start = Math.max(
       0,
-      Math.min(
-        Math.max(0, timelineDuration - subtitleDuration),
-        candidate,
-      ),
+      Math.min(Math.max(0, timelineDuration - subtitleDuration), candidate),
     );
   }
 
@@ -135,7 +129,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
           : [...current, id];
 
         setSelectedSubtitleId(
-          next.includes(id) ? id : next[next.length - 1] ?? null,
+          next.includes(id) ? id : (next[next.length - 1] ?? null),
         );
 
         return next;
@@ -212,7 +206,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     const nextPrimaryId =
       primaryId && uniqueIds.includes(primaryId)
         ? primaryId
-        : uniqueIds[0] ?? null;
+        : (uniqueIds[0] ?? null);
 
     setSelectedSubtitleIds(uniqueIds);
     setSelectedSubtitleId(nextPrimaryId);
@@ -246,14 +240,14 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
       const unselected = current.filter(
         (subtitle) => !selectedIds.has(subtitle.id),
       );
-      const minStart = Math.min(...selected.map((subtitle) => subtitle.startTime));
+      const minStart = Math.min(
+        ...selected.map((subtitle) => subtitle.startTime),
+      );
       const maxEnd = Math.max(...selected.map((subtitle) => subtitle.endTime));
 
       let minimumDelta = -minStart;
       let maximumDelta =
-        videoDuration > 0
-          ? videoDuration - maxEnd
-          : Number.POSITIVE_INFINITY;
+        videoDuration > 0 ? videoDuration - maxEnd : Number.POSITIVE_INFINITY;
 
       if (requestedDelta > 0) {
         for (const moving of selected) {
@@ -331,9 +325,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   ) => {
     setSubtitles((current) =>
       current.map((subtitle) =>
-        subtitle.id === id
-          ? { ...subtitle, positionX, positionY }
-          : subtitle,
+        subtitle.id === id ? { ...subtitle, positionX, positionY } : subtitle,
       ),
     );
   };

@@ -272,10 +272,11 @@ export function toggleVideoTransformKeyframeAtTime(
     // Removing the only keyframe should preserve the visible value instead of
     // snapping all the way back to an older static base value.
     ...(channel.length === 0 ? { [property]: removedValue } : {}),
-    transformKeyframes:
-      Object.values(nextKeyframes).some((items) => items && items.length > 0)
-        ? nextKeyframes
-        : undefined,
+    transformKeyframes: Object.values(nextKeyframes).some(
+      (items) => items && items.length > 0,
+    )
+      ? nextKeyframes
+      : undefined,
   };
 }
 
@@ -287,7 +288,12 @@ export function setVideoTransformPropertyAtTime(
 ): VideoTimelineClip {
   const nextValue = clampVideoTransformValue(property, value);
   if (hasVideoTransformKeyframes(clip, property)) {
-    return upsertVideoTransformKeyframe(clip, property, timelineTime, nextValue);
+    return upsertVideoTransformKeyframe(
+      clip,
+      property,
+      timelineTime,
+      nextValue,
+    );
   }
 
   return { ...clip, [property]: nextValue };
@@ -301,10 +307,19 @@ function ensureBoundaryKeyframe(
   result: VideoTransformKeyframe[],
 ) {
   if (!hasVideoTransformKeyframes(clip, property)) return;
-  if (result.some((keyframe) => Math.abs(keyframe.time - nextLocalTime) <= EPSILON)) return;
+  if (
+    result.some(
+      (keyframe) => Math.abs(keyframe.time - nextLocalTime) <= EPSILON,
+    )
+  )
+    return;
   result.push({
     time: nextLocalTime,
-    value: evaluateVideoTransformPropertyAtLocalTime(clip, property, originalLocalTime),
+    value: evaluateVideoTransformPropertyAtLocalTime(
+      clip,
+      property,
+      originalLocalTime,
+    ),
   });
 }
 
@@ -318,8 +333,14 @@ export function sliceVideoTransformKeyframes(
   retainedTimelineEnd: number,
 ): VideoTransformKeyframes | undefined {
   const originalDuration = Math.max(0, clip.timelineEnd - clip.timelineStart);
-  const startOffset = Math.max(0, Math.min(originalDuration, retainedTimelineStart - clip.timelineStart));
-  const endOffset = Math.max(startOffset, Math.min(originalDuration, retainedTimelineEnd - clip.timelineStart));
+  const startOffset = Math.max(
+    0,
+    Math.min(originalDuration, retainedTimelineStart - clip.timelineStart),
+  );
+  const endOffset = Math.max(
+    startOffset,
+    Math.min(originalDuration, retainedTimelineEnd - clip.timelineStart),
+  );
   const nextDuration = Math.max(0, endOffset - startOffset);
   const result: VideoTransformKeyframes = {};
   let hasAny = false;
@@ -372,11 +393,15 @@ export function mergeVideoTransformKeyframes(
 
   for (const property of VIDEO_TRANSFORM_KEYFRAME_PROPERTIES) {
     const leftChannel = videoTransformChannel(left, property);
-    const rightChannel = videoTransformChannel(right, property).map((keyframe) => ({
-      time: keyframe.time + leftDuration,
-      value: keyframe.value,
-    }));
-    const combined = [...leftChannel, ...rightChannel].sort((a, b) => a.time - b.time);
+    const rightChannel = videoTransformChannel(right, property).map(
+      (keyframe) => ({
+        time: keyframe.time + leftDuration,
+        value: keyframe.value,
+      }),
+    );
+    const combined = [...leftChannel, ...rightChannel].sort(
+      (a, b) => a.time - b.time,
+    );
     const deduped: VideoTransformKeyframe[] = [];
     for (const keyframe of combined) {
       const previous = deduped[deduped.length - 1];
@@ -418,7 +443,10 @@ export function retimeVideoTransformKeyframes(
 ): VideoTransformKeyframes | undefined {
   if (!keyframes) return undefined;
   if (oldDuration <= EPSILON || newDuration <= EPSILON) {
-    return normalizeVideoTransformKeyframes(keyframes, Math.max(0, newDuration));
+    return normalizeVideoTransformKeyframes(
+      keyframes,
+      Math.max(0, newDuration),
+    );
   }
 
   const ratio = newDuration / oldDuration;

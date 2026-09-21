@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import type {
   AdjustmentLayerClip,
@@ -24,6 +29,7 @@ type AdjustmentLayerPanelProps = {
   onChange: (id: string, patch: Partial<AdjustmentLayerClip>) => void;
   onSeek?: (time: number) => void;
   onOpenEffects?: () => void;
+  onOpenMasks?: () => void;
 };
 
 type Position = { x: number; y: number };
@@ -34,7 +40,15 @@ const PANEL_HEIGHT = 640;
 function clampPanelPosition(position: Position): Position {
   return {
     x: Math.max(8, Math.min(window.innerWidth - PANEL_WIDTH - 8, position.x)),
-    y: Math.max(8, Math.min(window.innerHeight - Math.min(PANEL_HEIGHT, window.innerHeight - 16) - 8, position.y)),
+    y: Math.max(
+      8,
+      Math.min(
+        window.innerHeight -
+          Math.min(PANEL_HEIGHT, window.innerHeight - 16) -
+          8,
+        position.y,
+      ),
+    ),
   };
 }
 
@@ -70,7 +84,9 @@ function AdjustmentSlider({
   onNextKeyframe: () => void;
 }) {
   return (
-    <div className={`adjustment-control-row ${animated ? "animated" : ""}`.trim()}>
+    <div
+      className={`adjustment-control-row ${animated ? "animated" : ""}`.trim()}
+    >
       <span className="adjustment-control-label">{label}</span>
       <input
         type="range"
@@ -80,8 +96,14 @@ function AdjustmentSlider({
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      <output>{Number.isInteger(value) ? value : value.toFixed(1)}{suffix}</output>
-      <div className="adjustment-keyframe-controls" aria-label={`${label} keyframes`}>
+      <output>
+        {Number.isInteger(value) ? value : value.toFixed(1)}
+        {suffix}
+      </output>
+      <div
+        className="adjustment-keyframe-controls"
+        aria-label={`${label} keyframes`}
+      >
         <button
           type="button"
           className="adjustment-keyframe-nav"
@@ -96,7 +118,11 @@ function AdjustmentSlider({
           type="button"
           className={`adjustment-keyframe-toggle ${keyedHere ? "active" : ""} ${animated ? "channel-active" : ""}`.trim()}
           onClick={onToggleKeyframe}
-          title={keyedHere ? "Remove keyframe at playhead" : "Add keyframe at playhead"}
+          title={
+            keyedHere
+              ? "Remove keyframe at playhead"
+              : "Add keyframe at playhead"
+          }
           aria-label={`${keyedHere ? "Remove" : "Add"} ${label} keyframe at playhead`}
         >
           ◆
@@ -124,15 +150,22 @@ export default function AdjustmentLayerPanel({
   onChange,
   onSeek,
   onOpenEffects,
+  onOpenMasks,
 }: AdjustmentLayerPanelProps) {
   const [position, setPosition] = useState<Position>(() => ({
     x: Math.max(12, window.innerWidth - PANEL_WIDTH - 24),
     y: 78,
   }));
-  const dragOriginRef = useRef<{ x: number; y: number; panelX: number; panelY: number } | null>(null);
+  const dragOriginRef = useRef<{
+    x: number;
+    y: number;
+    panelX: number;
+    panelY: number;
+  } | null>(null);
 
   useEffect(() => {
-    const handleResize = () => setPosition((current) => clampPanelPosition(current));
+    const handleResize = () =>
+      setPosition((current) => clampPanelPosition(current));
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -149,7 +182,11 @@ export default function AdjustmentLayerPanel({
   if (!open || !layer) return null;
 
   const beginDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || (event.target as HTMLElement).closest("button, input")) return;
+    if (
+      event.button !== 0 ||
+      (event.target as HTMLElement).closest("button, input")
+    )
+      return;
     event.preventDefault();
     dragOriginRef.current = {
       x: event.clientX,
@@ -161,10 +198,12 @@ export default function AdjustmentLayerPanel({
     const handleMove = (moveEvent: MouseEvent) => {
       const origin = dragOriginRef.current;
       if (!origin) return;
-      setPosition(clampPanelPosition({
-        x: origin.panelX + moveEvent.clientX - origin.x,
-        y: origin.panelY + moveEvent.clientY - origin.y,
-      }));
+      setPosition(
+        clampPanelPosition({
+          x: origin.panelX + moveEvent.clientX - origin.x,
+          y: origin.panelY + moveEvent.clientY - origin.y,
+        }),
+      );
     };
 
     const handleUp = () => {
@@ -177,15 +216,21 @@ export default function AdjustmentLayerPanel({
     window.addEventListener("mouseup", handleUp);
   };
 
-  const reset = () => onChange(layer.id, {
-    ...DEFAULT_ADJUSTMENT_LAYER_VALUES,
-    keyframes: undefined,
-  });
+  const reset = () =>
+    onChange(layer.id, {
+      ...DEFAULT_ADJUSTMENT_LAYER_VALUES,
+      keyframes: undefined,
+    });
 
   const changeProperty = (property: AdjustmentLayerProperty, value: number) => {
     const channel = adjustmentLayerChannel(layer, property);
     if (channel.length > 0) {
-      const next = setAdjustmentPropertyKeyframe(layer, property, currentTime, value);
+      const next = setAdjustmentPropertyKeyframe(
+        layer,
+        property,
+        currentTime,
+        value,
+      );
       onChange(layer.id, { keyframes: next.keyframes });
       return;
     }
@@ -194,9 +239,17 @@ export default function AdjustmentLayerPanel({
   };
 
   const toggleKeyframe = (property: AdjustmentLayerProperty) => {
-    const currentValue = evaluateAdjustmentLayerProperty(layer, property, currentTime);
+    const currentValue = evaluateAdjustmentLayerProperty(
+      layer,
+      property,
+      currentTime,
+    );
     if (adjustmentKeyframeAtTime(layer, property, currentTime)) {
-      const next = removeAdjustmentPropertyKeyframe(layer, property, currentTime);
+      const next = removeAdjustmentPropertyKeyframe(
+        layer,
+        property,
+        currentTime,
+      );
       const patch: Partial<AdjustmentLayerClip> = { keyframes: next.keyframes };
       if (adjustmentLayerChannel(next, property).length === 0) {
         Object.assign(patch, { [property]: currentValue });
@@ -205,7 +258,12 @@ export default function AdjustmentLayerPanel({
       return;
     }
 
-    const next = setAdjustmentPropertyKeyframe(layer, property, currentTime, currentValue);
+    const next = setAdjustmentPropertyKeyframe(
+      layer,
+      property,
+      currentTime,
+      currentValue,
+    );
     onChange(layer.id, { keyframes: next.keyframes });
   };
 
@@ -216,9 +274,16 @@ export default function AdjustmentLayerPanel({
     const channel = adjustmentLayerChannel(layer, property);
     if (channel.length === 0) return;
     const relativeTime = currentTime - layer.timelineStart;
-    const candidate = direction === "previous"
-      ? [...channel].reverse().find((key) => key.time < relativeTime - ADJUSTMENT_KEYFRAME_EPSILON)
-      : channel.find((key) => key.time > relativeTime + ADJUSTMENT_KEYFRAME_EPSILON);
+    const candidate =
+      direction === "previous"
+        ? [...channel]
+            .reverse()
+            .find(
+              (key) => key.time < relativeTime - ADJUSTMENT_KEYFRAME_EPSILON,
+            )
+        : channel.find(
+            (key) => key.time > relativeTime + ADJUSTMENT_KEYFRAME_EPSILON,
+          );
     if (candidate) onSeek?.(layer.timelineStart + candidate.time);
   };
 
@@ -243,8 +308,12 @@ export default function AdjustmentLayerPanel({
         suffix={suffix}
         animated={channel.length > 0}
         keyedHere={!!adjustmentKeyframeAtTime(layer, property, currentTime)}
-        canGoPrevious={channel.some((key) => key.time < relativeTime - ADJUSTMENT_KEYFRAME_EPSILON)}
-        canGoNext={channel.some((key) => key.time > relativeTime + ADJUSTMENT_KEYFRAME_EPSILON)}
+        canGoPrevious={channel.some(
+          (key) => key.time < relativeTime - ADJUSTMENT_KEYFRAME_EPSILON,
+        )}
+        canGoNext={channel.some(
+          (key) => key.time > relativeTime + ADJUSTMENT_KEYFRAME_EPSILON,
+        )}
         onChange={(value) => changeProperty(property, value)}
         onToggleKeyframe={() => toggleKeyframe(property)}
         onPreviousKeyframe={() => seekKeyframe(property, "previous")}
@@ -253,7 +322,8 @@ export default function AdjustmentLayerPanel({
     );
   };
 
-  const playheadInside = currentTime >= layer.timelineStart && currentTime <= layer.timelineEnd;
+  const playheadInside =
+    currentTime >= layer.timelineStart && currentTime <= layer.timelineEnd;
 
   return (
     <aside
@@ -265,11 +335,19 @@ export default function AdjustmentLayerPanel({
         <div>
           <strong>{layer.name}</strong>
           <small>
-            {layer.trackId.replace("video-", "V")} · {(layer.timelineEnd - layer.timelineStart).toFixed(2)}s
-            {playheadInside ? ` · ${Math.max(0, currentTime - layer.timelineStart).toFixed(2)}s` : " · playhead outside layer"}
+            {layer.trackId.replace("video-", "V")} ·{" "}
+            {(layer.timelineEnd - layer.timelineStart).toFixed(2)}s
+            {playheadInside
+              ? ` · ${Math.max(0, currentTime - layer.timelineStart).toFixed(2)}s`
+              : " · playhead outside layer"}
           </small>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close adjustment controls" title="Close">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close adjustment controls"
+          title="Close"
+        >
           ×
         </button>
       </div>
@@ -279,15 +357,30 @@ export default function AdjustmentLayerPanel({
           <input
             type="checkbox"
             checked={layer.enabled !== false}
-            onChange={(event) => onChange(layer.id, { enabled: event.target.checked })}
+            onChange={(event) =>
+              onChange(layer.id, { enabled: event.target.checked })
+            }
           />
           <span>Enable Adjustment Layer</span>
         </label>
         <div className="adjustment-toolbar-actions">
-          <button type="button" className="adjustment-effects-button" onClick={onOpenEffects}>
+          <button
+            type="button"
+            className="adjustment-effects-button"
+            onClick={onOpenEffects}
+          >
             Effects{layer.effects?.length ? ` · ${layer.effects.length}` : "…"}
           </button>
-          <span className="adjustment-keyframe-legend"><b>◆</b> keyframes</span>
+          <button
+            type="button"
+            className="adjustment-effects-button"
+            onClick={onOpenMasks}
+          >
+            Masks{layer.mask ? " · 1" : "…"}
+          </button>
+          <span className="adjustment-keyframe-legend">
+            <b>◆</b> keyframes
+          </span>
         </div>
       </div>
 
@@ -333,7 +426,9 @@ export default function AdjustmentLayerPanel({
 
       <div className="adjustment-layer-panel-footer">
         <span>Move the playhead, then ◆ to add/remove a keyframe.</span>
-        <button type="button" onClick={reset}>Reset</button>
+        <button type="button" onClick={reset}>
+          Reset
+        </button>
       </div>
     </aside>
   );

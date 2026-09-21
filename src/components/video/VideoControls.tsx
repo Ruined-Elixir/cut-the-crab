@@ -42,7 +42,8 @@ function VideoControls({
 }: VideoControlsProps) {
   const safeDuration = Math.max(0, duration || 0);
   const safeCurrentTime = Math.max(0, Math.min(currentTime, safeDuration));
-  const progress = safeDuration > 0 ? (safeCurrentTime / safeDuration) * 100 : 0;
+  const progress =
+    safeDuration > 0 ? (safeCurrentTime / safeDuration) * 100 : 0;
 
   const scrubberStyle = {
     "--video-progress": `${progress}%`,

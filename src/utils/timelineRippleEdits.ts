@@ -1,10 +1,18 @@
-import type { TimelineTrackId, VideoTimelineClip } from "../types/timelineModel";
+import type {
+  TimelineTrackId,
+  VideoTimelineClip,
+} from "../types/timelineModel";
 import {
   mergeVideoTransformKeyframes,
   sliceVideoTransformKeyframes,
 } from "./videoTransformKeyframes";
-import { isFreezeFrameClip, isReverseVideoClip, timelineTimeToSourceTime } from "./videoRetime";
+import {
+  isFreezeFrameClip,
+  isReverseVideoClip,
+  timelineTimeToSourceTime,
+} from "./videoRetime";
 import { videoEffectStacksEqual } from "./videoEffects";
+import { videoMasksEqual } from "./videoMasks";
 
 const EPSILON = 0.000001;
 
@@ -44,11 +52,16 @@ function sameContinuousClipProperties(
     left.sourceName === right.sourceName &&
     optionalNumberEqual(left.sourceDuration, right.sourceDuration, -1) &&
     optionalNumberEqual(left.playbackRate, right.playbackRate, 1) &&
-    (left.playbackDirection ?? "forward") === (right.playbackDirection ?? "forward") &&
-    ((left.freezeFrameSourceTime === undefined && right.freezeFrameSourceTime === undefined) ||
+    (left.playbackDirection ?? "forward") ===
+      (right.playbackDirection ?? "forward") &&
+    ((left.freezeFrameSourceTime === undefined &&
+      right.freezeFrameSourceTime === undefined) ||
       (left.freezeFrameSourceTime !== undefined &&
         right.freezeFrameSourceTime !== undefined &&
-        almostEqual(left.freezeFrameSourceTime, right.freezeFrameSourceTime))) &&
+        almostEqual(
+          left.freezeFrameSourceTime,
+          right.freezeFrameSourceTime,
+        ))) &&
     optionalNumberEqual(left.positionX, right.positionX, 0) &&
     optionalNumberEqual(left.positionY, right.positionY, 0) &&
     optionalNumberEqual(left.scale, right.scale, 100) &&
@@ -60,7 +73,8 @@ function sameContinuousClipProperties(
     optionalNumberEqual(left.cropLeft, right.cropLeft, 0) &&
     optionalNumberEqual(left.audioVolume, right.audioVolume, 100) &&
     (left.audioMuted ?? false) === (right.audioMuted ?? false) &&
-    videoEffectStacksEqual(left.effects, right.effects)
+    videoEffectStacksEqual(left.effects, right.effects) &&
+    videoMasksEqual(left.mask, right.mask)
   );
 }
 
@@ -110,10 +124,7 @@ function canAutoHealSourcePair(
   );
 }
 
-function canAutoHealPair(
-  left: VideoTimelineClip,
-  right: VideoTimelineClip,
-) {
+function canAutoHealPair(left: VideoTimelineClip, right: VideoTimelineClip) {
   return (
     almostEqual(left.timelineEnd, right.timelineStart) &&
     canAutoHealSourcePair(left, right)
@@ -223,7 +234,9 @@ function canRestoreFreezeSourcePair(
   const isLegacyUnmarkedFreeze =
     left.rippleAutoHealOutBoundaryId === undefined &&
     right.rippleAutoHealInBoundaryId === undefined;
-  const sourceBoundary = isReverseVideoClip(left) ? left.sourceIn : left.sourceOut;
+  const sourceBoundary = isReverseVideoClip(left)
+    ? left.sourceIn
+    : left.sourceOut;
 
   return (
     (hasExpectedMarkers || isLegacyUnmarkedFreeze) &&
@@ -343,7 +356,11 @@ export function deleteVideoClipsWithFreezeAutoRestore(
       );
     }
 
-    if (!left || !right || !canRestoreFreezeSourcePair(left, freeze, right, expectedBoundaryId)) {
+    if (
+      !left ||
+      !right ||
+      !canRestoreFreezeSourcePair(left, freeze, right, expectedBoundaryId)
+    ) {
       continue;
     }
 
@@ -393,7 +410,9 @@ export function deleteVideoClipsWithFreezeAutoRestore(
       a.freeze.trackId.localeCompare(b.freeze.trackId),
   );
 
-  const triplesByLeftId = new Map(triples.map((triple) => [triple.left.id, triple]));
+  const triplesByLeftId = new Map(
+    triples.map((triple) => [triple.left.id, triple]),
+  );
   const consumedIds = new Set<string>();
   for (const triple of triples) {
     consumedIds.add(triple.freeze.id);
@@ -633,15 +652,21 @@ export function rippleInsertVideoClipGroup(
     trackId: canRetargetSingleTrack ? options.requestedTrackId! : clip.trackId,
   }));
 
-  const originalGroupStart = Math.min(...prepared.map((clip) => clip.timelineStart));
-  const originalGroupEnd = Math.max(...prepared.map((clip) => clip.timelineEnd));
-  const openedDuration = Math.max(EPSILON, originalGroupEnd - originalGroupStart);
+  const originalGroupStart = Math.min(
+    ...prepared.map((clip) => clip.timelineStart),
+  );
+  const originalGroupEnd = Math.max(
+    ...prepared.map((clip) => clip.timelineEnd),
+  );
+  const openedDuration = Math.max(
+    EPSILON,
+    originalGroupEnd - originalGroupStart,
+  );
   const groupStart = Math.max(0, requestedTimelineStart);
   const groupEnd = groupStart + openedDuration;
   const destinationTracks = new Set(prepared.map((clip) => clip.trackId));
   const createId = options.createId ?? (() => crypto.randomUUID());
-  const createSplitId =
-    options.createSplitId ?? (() => crypto.randomUUID());
+  const createSplitId = options.createSplitId ?? (() => crypto.randomUUID());
 
   const opened: VideoTimelineClip[] = [];
 
@@ -686,9 +711,7 @@ export function rippleInsertVideoClipGroup(
     const relativeEnd = clip.timelineEnd - originalGroupStart;
     insertedIds.push(id);
 
-    const base = options.preserveIds
-      ? clip
-      : stripRippleAutoHealMetadata(clip);
+    const base = options.preserveIds ? clip : stripRippleAutoHealMetadata(clip);
 
     return {
       ...base,
@@ -732,9 +755,14 @@ export function rippleMoveVideoClipGroup(
     return originClips;
   }
 
-  const movingGroupStart = Math.min(...moving.map((clip) => clip.timelineStart));
+  const movingGroupStart = Math.min(
+    ...moving.map((clip) => clip.timelineStart),
+  );
   const movingGroupEnd = Math.max(...moving.map((clip) => clip.timelineEnd));
-  const movingGroupDuration = Math.max(EPSILON, movingGroupEnd - movingGroupStart);
+  const movingGroupDuration = Math.max(
+    EPSILON,
+    movingGroupEnd - movingGroupStart,
+  );
   const anchorOffset = anchor.timelineStart - movingGroupStart;
   const requestedGroupStart = Math.max(0, requestedAnchorStart - anchorOffset);
   const sourceTracks = new Set(moving.map((clip) => clip.trackId));
@@ -771,14 +799,9 @@ export function rippleMoveVideoClipGroup(
       return clip;
     });
 
-  return rippleInsertVideoClipGroup(
-    closedSource,
-    moving,
-    requestedGroupStart,
-    {
-      requestedTrackId: options.requestedTrackId,
-      preserveIds: true,
-      createSplitId: options.createSplitId,
-    },
-  ).clips;
+  return rippleInsertVideoClipGroup(closedSource, moving, requestedGroupStart, {
+    requestedTrackId: options.requestedTrackId,
+    preserveIds: true,
+    createSplitId: options.createSplitId,
+  }).clips;
 }

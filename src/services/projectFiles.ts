@@ -14,6 +14,7 @@ import type {
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoEffectInstance,
+  VideoMask,
   VideoTimelineClip,
   VideoTransformKeyframeProperty,
   VideoTransformKeyframes,
@@ -25,13 +26,14 @@ import {
 } from "../utils/adjustmentLayers";
 import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
 import { normalizeVideoEffects } from "../utils/videoEffects";
+import { normalizeVideoMask } from "../utils/videoMasks";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 23;
+export const CURRENT_PROJECT_VERSION = 24;
 
 export type SubtitleProject = {
   version: number;
@@ -105,13 +107,14 @@ function parseVideoTransformKeyframes(
         time: asNumber(item.time, Number.NaN),
         value: asNumber(item.value, Number.NaN),
       }))
-      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
+      .filter(
+        (item) => Number.isFinite(item.time) && Number.isFinite(item.value),
+      );
     if (channel.length > 0) parsed[property] = channel;
   }
 
   return normalizeVideoTransformKeyframes(parsed, clipDuration);
 }
-
 
 function parseAdjustmentKeyframes(
   value: unknown,
@@ -129,7 +132,9 @@ function parseAdjustmentKeyframes(
         time: asNumber(item.time, Number.NaN),
         value: asNumber(item.value, Number.NaN),
       }))
-      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
+      .filter(
+        (item) => Number.isFinite(item.time) && Number.isFinite(item.value),
+      );
     if (channel.length > 0) parsed[property] = channel;
   }
 
@@ -143,9 +148,10 @@ function parseVideoEffects(value: unknown): VideoEffectInstance[] | undefined {
   for (let index = 0; index < value.length; index += 1) {
     const raw = value[index];
     if (!isRecord(raw)) continue;
-    const id = typeof raw.id === "string" && raw.id.length > 0
-      ? raw.id
-      : `effect-${index}-${crypto.randomUUID()}`;
+    const id =
+      typeof raw.id === "string" && raw.id.length > 0
+        ? raw.id
+        : `effect-${index}-${crypto.randomUUID()}`;
     const enabled = asOptionalBoolean(raw.enabled) ?? true;
 
     if (raw.kind === "gaussian-blur") {
@@ -182,6 +188,27 @@ function parseVideoEffects(value: unknown): VideoEffectInstance[] | undefined {
   return normalizeVideoEffects(parsed);
 }
 
+function parseVideoMask(value: unknown): VideoMask | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const parsed: VideoMask = {
+    id:
+      typeof value.id === "string" && value.id.length > 0
+        ? value.id
+        : `mask-${crypto.randomUUID()}`,
+    enabled: asOptionalBoolean(value.enabled) ?? true,
+    shape: value.shape === "ellipse" ? "ellipse" : "rectangle",
+    invert: asOptionalBoolean(value.invert) ?? false,
+    positionX: asNumber(value.positionX, 50),
+    positionY: asNumber(value.positionY, 50),
+    width: asNumber(value.width, 50),
+    height: asNumber(value.height, 50),
+    feather: asNumber(value.feather, 0),
+  };
+
+  return normalizeVideoMask(parsed);
+}
+
 function parseTextAlign(value: unknown): SubtitleTextAlign | undefined {
   if (value === "left" || value === "center" || value === "right") {
     return value;
@@ -202,7 +229,6 @@ function parseLanguages(value: unknown): ProjectLanguage[] {
   );
 }
 
-
 function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
   const normalized: TimelineTrackSettings = {
     ...DEFAULT_TIMELINE_TRACK_SETTINGS,
@@ -221,7 +247,7 @@ function normalizeTrackSettings(value: unknown): TimelineTrackSettings {
       locked:
         typeof trackValue.locked === "boolean"
           ? trackValue.locked
-          : normalized[trackId]?.locked ?? false,
+          : (normalized[trackId]?.locked ?? false),
       muted:
         typeof trackValue.muted === "boolean"
           ? trackValue.muted
@@ -323,19 +349,12 @@ function normalizeVideoClip(
     return null;
   }
 
-  const timelineStart = asNumber(
-    value.timelineStart,
-    0,
-  );
-  const timelineEnd = asNumber(
-    value.timelineEnd,
-    timelineStart,
-  );
+  const timelineStart = asNumber(value.timelineStart, 0);
+  const timelineEnd = asNumber(value.timelineEnd, timelineStart);
   const sourceIn = asNumber(value.sourceIn, 0);
   const sourceOut = asNumber(
     value.sourceOut,
-    sourceIn +
-      (timelineEnd - timelineStart),
+    sourceIn + (timelineEnd - timelineStart),
   );
 
   if (
@@ -348,38 +367,34 @@ function normalizeVideoClip(
   }
 
   const sourcePath =
-    typeof value.sourcePath === "string" &&
-    value.sourcePath.length > 0
+    typeof value.sourcePath === "string" && value.sourcePath.length > 0
       ? value.sourcePath
       : fallbackVideoPath;
 
   return {
     id:
-      typeof value.id === "string" &&
-      value.id.length > 0
+      typeof value.id === "string" && value.id.length > 0
         ? value.id
         : `video-clip-${index}-${crypto.randomUUID()}`,
     kind: "video",
-    trackId:
-      typeof value.trackId === "string"
-        ? value.trackId
-        : "video-1",
+    trackId: typeof value.trackId === "string" ? value.trackId : "video-1",
     sourceId:
-      typeof value.sourceId === "string" &&
-      value.sourceId.length > 0
+      typeof value.sourceId === "string" && value.sourceId.length > 0
         ? value.sourceId
         : sourcePath,
     sourcePath,
     sourceName:
-      typeof value.sourceName === "string" &&
-      value.sourceName.length > 0
+      typeof value.sourceName === "string" && value.sourceName.length > 0
         ? value.sourceName
         : defaultTitleFromVideoPath(sourcePath),
     sourceIn,
     sourceOut,
     sourceDuration: asOptionalNumber(value.sourceDuration),
-    playbackRate: normalizeVideoPlaybackRate(asOptionalNumber(value.playbackRate)),
-    playbackDirection: value.playbackDirection === "reverse" ? "reverse" : "forward",
+    playbackRate: normalizeVideoPlaybackRate(
+      asOptionalNumber(value.playbackRate),
+    ),
+    playbackDirection:
+      value.playbackDirection === "reverse" ? "reverse" : "forward",
     freezeFrameSourceTime: asOptionalNumber(value.freezeFrameSourceTime),
     positionX: asOptionalNumber(value.positionX) ?? 0,
     positionY: asOptionalNumber(value.positionY) ?? 0,
@@ -391,40 +406,65 @@ function normalizeVideoClip(
       timelineEnd - timelineStart,
     ),
     effects: parseVideoEffects(value.effects),
+    mask: parseVideoMask(value.mask),
     cropTop: Math.max(0, Math.min(49, asNumber(value.cropTop, 0))),
     cropRight: Math.max(0, Math.min(49, asNumber(value.cropRight, 0))),
     cropBottom: Math.max(0, Math.min(49, asNumber(value.cropBottom, 0))),
     cropLeft: Math.max(0, Math.min(49, asNumber(value.cropLeft, 0))),
     transitionInType:
-      value.transitionInType === "cross-dissolve" || value.transitionInType === "fade-black"
+      value.transitionInType === "cross-dissolve" ||
+      value.transitionInType === "fade-black"
         ? value.transitionInType
         : "none",
-    transitionInDuration: Math.max(0.1, Math.min(5, asNumber(value.transitionInDuration, 0.5))),
+    transitionInDuration: Math.max(
+      0.1,
+      Math.min(5, asNumber(value.transitionInDuration, 0.5)),
+    ),
     transitionOutType:
-      value.transitionOutType === "cross-dissolve" || value.transitionOutType === "fade-black"
+      value.transitionOutType === "cross-dissolve" ||
+      value.transitionOutType === "fade-black"
         ? value.transitionOutType
         : "none",
-    transitionOutDuration: Math.max(0.1, Math.min(5, asNumber(value.transitionOutDuration, 0.5))),
+    transitionOutDuration: Math.max(
+      0.1,
+      Math.min(5, asNumber(value.transitionOutDuration, 0.5)),
+    ),
     videoFadeInDuration: Math.max(
       0,
-      Math.min(timelineEnd - timelineStart, asNumber(value.videoFadeInDuration, 0)),
+      Math.min(
+        timelineEnd - timelineStart,
+        asNumber(value.videoFadeInDuration, 0),
+      ),
     ),
     videoFadeOutDuration: Math.max(
       0,
-      Math.min(timelineEnd - timelineStart, asNumber(value.videoFadeOutDuration, 0)),
+      Math.min(
+        timelineEnd - timelineStart,
+        asNumber(value.videoFadeOutDuration, 0),
+      ),
     ),
     audioVolume: Math.max(0, Math.min(100, asNumber(value.audioVolume, 100))),
     audioMuted: value.audioMuted === true,
     audioFadeInDuration: Math.max(
       0,
-      Math.min(timelineEnd - timelineStart, asNumber(value.audioFadeInDuration, 0)),
+      Math.min(
+        timelineEnd - timelineStart,
+        asNumber(value.audioFadeInDuration, 0),
+      ),
     ),
     audioFadeOutDuration: Math.max(
       0,
-      Math.min(timelineEnd - timelineStart, asNumber(value.audioFadeOutDuration, 0)),
+      Math.min(
+        timelineEnd - timelineStart,
+        asNumber(value.audioFadeOutDuration, 0),
+      ),
     ),
-    rippleAutoHealInBoundaryId: asOptionalString(value.rippleAutoHealInBoundaryId),
-    rippleAutoHealOutBoundaryId: asOptionalString(value.rippleAutoHealOutBoundaryId),
+    rippleAutoHealInBoundaryId: asOptionalString(
+      value.rippleAutoHealInBoundaryId,
+    ),
+    rippleAutoHealOutBoundaryId: asOptionalString(
+      value.rippleAutoHealOutBoundaryId,
+    ),
     compoundId: asOptionalString(value.compoundId),
     compoundName: asOptionalString(value.compoundName),
     compoundAnchor: asOptionalBoolean(value.compoundAnchor),
@@ -442,28 +482,53 @@ function normalizeAudioClip(
   const timelineStart = asNumber(value.timelineStart, 0);
   const timelineEnd = asNumber(value.timelineEnd, timelineStart);
   const sourceIn = asNumber(value.sourceIn, 0);
-  const sourceOut = asNumber(value.sourceOut, sourceIn + (timelineEnd - timelineStart));
-  const sourcePath = typeof value.sourcePath === "string" ? value.sourcePath : "";
+  const sourceOut = asNumber(
+    value.sourceOut,
+    sourceIn + (timelineEnd - timelineStart),
+  );
+  const sourcePath =
+    typeof value.sourcePath === "string" ? value.sourcePath : "";
 
-  if (!sourcePath || timelineStart < 0 || timelineEnd <= timelineStart || sourceIn < 0 || sourceOut <= sourceIn) {
+  if (
+    !sourcePath ||
+    timelineStart < 0 ||
+    timelineEnd <= timelineStart ||
+    sourceIn < 0 ||
+    sourceOut <= sourceIn
+  ) {
     return null;
   }
 
   const duration = timelineEnd - timelineStart;
   return {
-    id: typeof value.id === "string" && value.id ? value.id : `audio-clip-${index}-${crypto.randomUUID()}`,
+    id:
+      typeof value.id === "string" && value.id
+        ? value.id
+        : `audio-clip-${index}-${crypto.randomUUID()}`,
     kind: "audio",
     trackId: typeof value.trackId === "string" ? value.trackId : "audio-1",
-    sourceId: typeof value.sourceId === "string" && value.sourceId ? value.sourceId : sourcePath,
+    sourceId:
+      typeof value.sourceId === "string" && value.sourceId
+        ? value.sourceId
+        : sourcePath,
     sourcePath,
-    sourceName: typeof value.sourceName === "string" && value.sourceName ? value.sourceName : (sourcePath.split(/[\\/]/).pop() ?? "Audio"),
+    sourceName:
+      typeof value.sourceName === "string" && value.sourceName
+        ? value.sourceName
+        : (sourcePath.split(/[\\/]/).pop() ?? "Audio"),
     sourceIn,
     sourceOut,
     sourceDuration: asOptionalNumber(value.sourceDuration),
     volume: Math.max(0, Math.min(100, asNumber(value.volume, 100))),
     muted: value.muted === true,
-    fadeInDuration: Math.max(0, Math.min(duration, asNumber(value.fadeInDuration, 0))),
-    fadeOutDuration: Math.max(0, Math.min(duration, asNumber(value.fadeOutDuration, 0))),
+    fadeInDuration: Math.max(
+      0,
+      Math.min(duration, asNumber(value.fadeInDuration, 0)),
+    ),
+    fadeOutDuration: Math.max(
+      0,
+      Math.min(duration, asNumber(value.fadeOutDuration, 0)),
+    ),
     compoundId: asOptionalString(value.compoundId),
     timelineStart,
     timelineEnd,
@@ -478,19 +543,26 @@ function normalizeAdjustmentLayer(
 
   const timelineStart = Math.max(0, asNumber(value.timelineStart, 0));
   const timelineEnd = asNumber(value.timelineEnd, timelineStart + 5);
-  const trackId = typeof value.trackId === "string" && /^video-\d+$/.test(value.trackId)
-    ? value.trackId
-    : "video-1";
+  const trackId =
+    typeof value.trackId === "string" && /^video-\d+$/.test(value.trackId)
+      ? value.trackId
+      : "video-1";
 
   if (timelineEnd - timelineStart < 0.1) return null;
 
   const duration = timelineEnd - timelineStart;
 
   return {
-    id: typeof value.id === "string" && value.id ? value.id : `adjustment-${index}-${crypto.randomUUID()}`,
+    id:
+      typeof value.id === "string" && value.id
+        ? value.id
+        : `adjustment-${index}-${crypto.randomUUID()}`,
     kind: "adjustment",
     trackId,
-    name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : `Adjustment Layer ${index + 1}`,
+    name:
+      typeof value.name === "string" && value.name.trim()
+        ? value.name.trim()
+        : `Adjustment Layer ${index + 1}`,
     timelineStart,
     timelineEnd,
     enabled: asOptionalBoolean(value.enabled) ?? true,
@@ -506,6 +578,7 @@ function normalizeAdjustmentLayer(
     blacks: Math.max(-100, Math.min(100, asNumber(value.blacks, 0))),
     keyframes: parseAdjustmentKeyframes(value.keyframes, duration),
     effects: parseVideoEffects(value.effects),
+    mask: parseVideoMask(value.mask),
   };
 }
 
@@ -533,7 +606,8 @@ function normalizeMediaAsset(
     name:
       typeof value.name === "string" && value.name.length > 0
         ? value.name
-        : path.split(/[\\/]/).pop() ?? (value.kind === "audio" ? "Audio" : "Video"),
+        : (path.split(/[\\/]/).pop() ??
+          (value.kind === "audio" ? "Audio" : "Video")),
     duration: Math.max(0, asNumber(value.duration, 0)),
   };
 }
@@ -584,24 +658,9 @@ function normalizeProject(
 
   const videoClips = Array.isArray(value.videoClips)
     ? value.videoClips
-        .map((clip, index) =>
-          normalizeVideoClip(
-            clip,
-            index,
-            videoPath,
-          ),
-        )
-        .filter(
-          (
-            clip,
-          ): clip is VideoTimelineClip =>
-            clip !== null,
-        )
-        .sort(
-          (a, b) =>
-            a.timelineStart -
-            b.timelineStart,
-        )
+        .map((clip, index) => normalizeVideoClip(clip, index, videoPath))
+        .filter((clip): clip is VideoTimelineClip => clip !== null)
+        .sort((a, b) => a.timelineStart - b.timelineStart)
     : [];
 
   const audioClips = Array.isArray(value.audioClips)
@@ -622,7 +681,11 @@ function normalizeProject(
 
   for (const layer of adjustmentLayers) {
     if (!normalizedTrackSettings[layer.trackId]) {
-      normalizedTrackSettings[layer.trackId] = { locked: false, hidden: false, linkedTrackId: null };
+      normalizedTrackSettings[layer.trackId] = {
+        locked: false,
+        hidden: false,
+        linkedTrackId: null,
+      };
     }
   }
 
@@ -640,7 +703,11 @@ function normalizeProject(
   // turning it into explicit links during migration. v15+ stores the links.
   if (version < 15) {
     const videoTrackIds = new Set<string>([
-      ...Object.keys(normalizedTrackSettings).filter((id) => /^video-\d+$/.test(id) && normalizedTrackSettings[id]?.deleted !== true),
+      ...Object.keys(normalizedTrackSettings).filter(
+        (id) =>
+          /^video-\d+$/.test(id) &&
+          normalizedTrackSettings[id]?.deleted !== true,
+      ),
       ...videoClips.map((clip) => clip.trackId),
     ]);
 
@@ -650,11 +717,17 @@ function normalizeProject(
       const audioTrackId = `audio-${match[1]}`;
       if (normalizedTrackSettings[audioTrackId]?.deleted === true) continue;
       normalizedTrackSettings[videoTrackId] = {
-        ...(normalizedTrackSettings[videoTrackId] ?? { locked: false, hidden: false }),
+        ...(normalizedTrackSettings[videoTrackId] ?? {
+          locked: false,
+          hidden: false,
+        }),
         linkedTrackId: audioTrackId,
       };
       normalizedTrackSettings[audioTrackId] = {
-        ...(normalizedTrackSettings[audioTrackId] ?? { locked: true, muted: false }),
+        ...(normalizedTrackSettings[audioTrackId] ?? {
+          locked: true,
+          muted: false,
+        }),
         locked: true,
         linkedTrackId: videoTrackId,
       };
@@ -664,8 +737,7 @@ function normalizeProject(
   return {
     version: CURRENT_PROJECT_VERSION,
     projectId:
-      typeof value.projectId === "string" &&
-      value.projectId.trim().length > 0
+      typeof value.projectId === "string" && value.projectId.trim().length > 0
         ? value.projectId
         : fallbackProjectId,
     videoPath,
@@ -714,11 +786,7 @@ export async function loadMatchingProjectFile(
       throw new Error("Project file contains invalid JSON.");
     }
 
-    return normalizeProject(
-      parsed,
-      projectId,
-      videoPath,
-    );
+    return normalizeProject(parsed, projectId, videoPath);
   } catch (error) {
     console.error("Failed to load subtitle project:", error);
     return null;

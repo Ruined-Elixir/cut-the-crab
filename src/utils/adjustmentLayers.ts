@@ -134,7 +134,10 @@ export function normalizeAdjustmentKeyframes(
     const deduped: AdjustmentLayerKeyframe[] = [];
     for (const key of sorted) {
       const previous = deduped[deduped.length - 1];
-      if (previous && Math.abs(previous.time - key.time) <= ADJUSTMENT_KEYFRAME_EPSILON) {
+      if (
+        previous &&
+        Math.abs(previous.time - key.time) <= ADJUSTMENT_KEYFRAME_EPSILON
+      ) {
         deduped[deduped.length - 1] = key;
       } else {
         deduped.push(key);
@@ -191,7 +194,8 @@ function evaluateChannel(
   fallback: number,
 ) {
   if (channel.length === 0) return fallback;
-  if (channel.length === 1 || relativeTime <= channel[0].time) return channel[0].value;
+  if (channel.length === 1 || relativeTime <= channel[0].time)
+    return channel[0].value;
 
   const last = channel[channel.length - 1];
   if (relativeTime >= last.time) return last.value;
@@ -201,7 +205,10 @@ function evaluateChannel(
     const right = channel[index + 1];
     if (relativeTime > right.time) continue;
     const span = Math.max(0.000001, right.time - left.time);
-    const progress = Math.max(0, Math.min(1, (relativeTime - left.time) / span));
+    const progress = Math.max(
+      0,
+      Math.min(1, (relativeTime - left.time) / span),
+    );
     return left.value + (right.value - left.value) * progress;
   }
 
@@ -219,7 +226,10 @@ export function evaluateAdjustmentLayerProperty(
 
   const relativeTime = Math.max(
     0,
-    Math.min(adjustmentLayerDuration(layer), timelineTime - layer.timelineStart),
+    Math.min(
+      adjustmentLayerDuration(layer),
+      timelineTime - layer.timelineStart,
+    ),
   );
   return clampAdjustmentProperty(
     property,
@@ -227,7 +237,10 @@ export function evaluateAdjustmentLayerProperty(
   );
 }
 
-export type EvaluatedAdjustmentLayerValues = Record<AdjustmentLayerProperty, number>;
+export type EvaluatedAdjustmentLayerValues = Record<
+  AdjustmentLayerProperty,
+  number
+>;
 
 export function evaluatedAdjustmentLayerValues(
   layer: AdjustmentLayerClip,
@@ -259,7 +272,10 @@ export function setAdjustmentPropertyKeyframe(
   value: number,
 ): AdjustmentLayerClip {
   const duration = adjustmentLayerDuration(layer);
-  const relativeTime = Math.max(0, Math.min(duration, timelineTime - layer.timelineStart));
+  const relativeTime = Math.max(
+    0,
+    Math.min(duration, timelineTime - layer.timelineStart),
+  );
   const channel = [...adjustmentLayerChannel(layer, property)];
   const nextKey = {
     time: relativeTime,
@@ -291,21 +307,25 @@ export function removeAdjustmentPropertyKeyframe(
   const channel = adjustmentLayerChannel(layer, property).filter(
     (key) => Math.abs(key.time - relativeTime) > ADJUSTMENT_KEYFRAME_EPSILON,
   );
-  const nextKeyframes: AdjustmentLayerKeyframes = { ...(layer.keyframes ?? {}) };
+  const nextKeyframes: AdjustmentLayerKeyframes = {
+    ...(layer.keyframes ?? {}),
+  };
 
   if (channel.length > 0) nextKeyframes[property] = channel;
   else delete nextKeyframes[property];
 
   return normalizedAdjustmentLayer({
     ...layer,
-    keyframes: Object.keys(nextKeyframes).length > 0 ? nextKeyframes : undefined,
+    keyframes:
+      Object.keys(nextKeyframes).length > 0 ? nextKeyframes : undefined,
   });
 }
 
 export function allAdjustmentLayerKeyframeTimes(layer: AdjustmentLayerClip) {
   const times = new Set<number>();
   for (const property of ADJUSTMENT_LAYER_PROPERTIES) {
-    for (const key of adjustmentLayerChannel(layer, property)) times.add(key.time);
+    for (const key of adjustmentLayerChannel(layer, property))
+      times.add(key.time);
   }
   return [...times].sort((a, b) => a - b);
 }
@@ -318,7 +338,8 @@ export function adjustmentLayerKeyframeCountAtTime(
   for (const property of ADJUSTMENT_LAYER_PROPERTIES) {
     if (
       adjustmentLayerChannel(layer, property).some(
-        (key) => Math.abs(key.time - relativeTime) <= ADJUSTMENT_KEYFRAME_EPSILON,
+        (key) =>
+          Math.abs(key.time - relativeTime) <= ADJUSTMENT_KEYFRAME_EPSILON,
       )
     ) {
       count += 1;
@@ -346,7 +367,11 @@ export function trimAdjustmentLayerKeyframes(
     const channel: AdjustmentLayerKeyframe[] = [
       {
         time: 0,
-        value: evaluateAdjustmentLayerProperty(layer, property, newTimelineStart),
+        value: evaluateAdjustmentLayerProperty(
+          layer,
+          property,
+          newTimelineStart,
+        ),
       },
       ...originalChannel
         .map((key) => ({
@@ -459,21 +484,27 @@ export function adjustmentFilterParameters(
 
     brightness *= Math.max(
       0.05,
-      1 + values.exposure * 0.12 * strength + values.whites * 0.0016 * strength + values.blacks * 0.0009 * strength,
+      1 +
+        values.exposure * 0.12 * strength +
+        values.whites * 0.0016 * strength +
+        values.blacks * 0.0009 * strength,
     );
     contrast *= Math.max(
       0.05,
-      1 + (values.contrast / 100) * 0.75 * strength + values.whites * 0.0012 * strength - values.blacks * 0.0010 * strength,
+      1 +
+        (values.contrast / 100) * 0.75 * strength +
+        values.whites * 0.0012 * strength -
+        values.blacks * 0.001 * strength,
     );
-    saturation *= Math.max(
-      0,
-      1 + (values.saturation / 100 - 1) * strength,
-    );
+    saturation *= Math.max(0, 1 + (values.saturation / 100 - 1) * strength);
 
     const shadowAmount = (values.shadows / 100) * strength;
     const highlightAmount = (values.highlights / 100) * strength;
     gamma *= Math.max(0.4, 1 + shadowAmount * 0.5 - highlightAmount * 0.18);
-    gammaWeight *= Math.max(0.1, Math.min(1, 1 - Math.max(0, shadowAmount) * 0.55));
+    gammaWeight *= Math.max(
+      0.1,
+      Math.min(1, 1 - Math.max(0, shadowAmount) * 0.55),
+    );
 
     const tempAmount = (values.temperature / 100) * strength;
     const tintAmount = (values.tint / 100) * strength;
@@ -507,16 +538,18 @@ export function adjustmentCssFilter(
   const parameters = adjustmentFilterParameters(layers, timelineTime);
   const temperatureAmount = Math.abs(parameters.temperature);
   const tintAmount = Math.abs(parameters.tint);
-  const temperatureFilter = temperatureAmount < 0.001
-    ? ""
-    : parameters.temperature > 0
-      ? ` sepia(${(temperatureAmount * 0.28).toFixed(4)}) hue-rotate(-12deg) saturate(${(1 + temperatureAmount * 0.18).toFixed(4)})`
-      : ` sepia(${(temperatureAmount * 0.22).toFixed(4)}) hue-rotate(168deg) saturate(${(1 + temperatureAmount * 0.12).toFixed(4)})`;
-  const tintFilter = tintAmount < 0.001
-    ? ""
-    : parameters.tint > 0
-      ? ` sepia(${(tintAmount * 0.12).toFixed(4)}) hue-rotate(286deg) saturate(${(1 + tintAmount * 0.08).toFixed(4)})`
-      : ` sepia(${(tintAmount * 0.10).toFixed(4)}) hue-rotate(74deg) saturate(${(1 + tintAmount * 0.06).toFixed(4)})`;
+  const temperatureFilter =
+    temperatureAmount < 0.001
+      ? ""
+      : parameters.temperature > 0
+        ? ` sepia(${(temperatureAmount * 0.28).toFixed(4)}) hue-rotate(-12deg) saturate(${(1 + temperatureAmount * 0.18).toFixed(4)})`
+        : ` sepia(${(temperatureAmount * 0.22).toFixed(4)}) hue-rotate(168deg) saturate(${(1 + temperatureAmount * 0.12).toFixed(4)})`;
+  const tintFilter =
+    tintAmount < 0.001
+      ? ""
+      : parameters.tint > 0
+        ? ` sepia(${(tintAmount * 0.12).toFixed(4)}) hue-rotate(286deg) saturate(${(1 + tintAmount * 0.08).toFixed(4)})`
+        : ` sepia(${(tintAmount * 0.1).toFixed(4)}) hue-rotate(74deg) saturate(${(1 + tintAmount * 0.06).toFixed(4)})`;
 
   // CSS has no direct shadows/highlights/white/black controls. Their tonal
   // contribution is folded into brightness/contrast above; FFmpeg export uses

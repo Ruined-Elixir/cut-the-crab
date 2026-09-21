@@ -19,6 +19,7 @@ import ExportSettingsModal from "./components/export/ExportSettingsModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";
 import AdjustmentLayerPanel from "./components/adjustments/AdjustmentLayerPanel";
 import EffectsStackPanel from "./components/effects/EffectsStackPanel";
+import MasksPanel from "./components/masks/MasksPanel";
 
 import { useEditorHistory } from "./hooks/useEditorHistory";
 import { useSubtitleEditor } from "./hooks/useSubtitleEditor";
@@ -69,6 +70,7 @@ import type {
   TimelineTrackKind,
   TimelineTrackSettings,
   VideoEffectInstance,
+  VideoMask,
   VideoTimelineClip,
 } from "./types/timelineModel";
 import type {
@@ -148,6 +150,8 @@ type EffectsPanelTarget = {
   kind: "video" | "adjustment";
   id: string;
 };
+
+type MasksPanelTarget = EffectsPanelTarget;
 
 const AUTOSAVE_DEBOUNCE_MS = 200;
 
@@ -524,6 +528,7 @@ function App() {
   const [selectedAdjustmentLayerId, setSelectedAdjustmentLayerId] = useState<string | null>(null);
   const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
   const [effectsPanelTarget, setEffectsPanelTarget] = useState<EffectsPanelTarget | null>(null);
+  const [masksPanelTarget, setMasksPanelTarget] = useState<MasksPanelTarget | null>(null);
 
   // ==========================================================================
   // Video export UI
@@ -650,6 +655,7 @@ function App() {
     insertVideoFreezeFrame,
     updateVideoClipTransform,
     updateVideoClipEffects,
+    updateVideoClipMask,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
     updateVideoClipOpacityFade,
@@ -787,6 +793,13 @@ function App() {
     ? adjustmentLayers.find((layer) => layer.id === effectsPanelTarget.id) ?? null
     : null;
 
+  const masksPanelVideoClip = masksPanelTarget?.kind === "video"
+    ? videoClips.find((clip) => clip.id === masksPanelTarget.id) ?? null
+    : null;
+  const masksPanelAdjustmentLayer = masksPanelTarget?.kind === "adjustment"
+    ? adjustmentLayers.find((layer) => layer.id === masksPanelTarget.id) ?? null
+    : null;
+
   useEffect(() => {
     if (!effectsPanelTarget) return;
     const exists = effectsPanelTarget.kind === "video"
@@ -817,6 +830,29 @@ function App() {
     selectedVideoClipId,
     videoClips,
   ]);
+
+  useEffect(() => {
+    if (!masksPanelTarget) return;
+    const exists = masksPanelTarget.kind === "video"
+      ? videoClips.some((clip) => clip.id === masksPanelTarget.id)
+      : adjustmentLayers.some((layer) => layer.id === masksPanelTarget.id);
+    if (!exists) setMasksPanelTarget(null);
+  }, [adjustmentLayers, masksPanelTarget, videoClips]);
+
+  useEffect(() => {
+    if (!masksPanelTarget) return;
+    if (selectedAdjustmentLayerId && adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
+      if (masksPanelTarget.kind !== "adjustment" || masksPanelTarget.id !== selectedAdjustmentLayerId) {
+        setMasksPanelTarget({ kind: "adjustment", id: selectedAdjustmentLayerId });
+      }
+      return;
+    }
+    if (selectedVideoClipId && videoClips.some((clip) => clip.id === selectedVideoClipId)) {
+      if (masksPanelTarget.kind !== "video" || masksPanelTarget.id !== selectedVideoClipId) {
+        setMasksPanelTarget({ kind: "video", id: selectedVideoClipId });
+      }
+    }
+  }, [adjustmentLayers, masksPanelTarget, selectedAdjustmentLayerId, selectedVideoClipId, videoClips]);
 
   useEffect(() => {
     if (selectedAdjustmentLayerId && !adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
@@ -877,6 +913,26 @@ function App() {
     updateAdjustmentLayer(target.id, {
       effects: effects.length > 0 ? effects.map((effect) => ({ ...effect })) : undefined,
     });
+  };
+
+  const openVideoMasks = (id: string) => {
+    if (!videoClips.some((clip) => clip.id === id)) return;
+    setMasksPanelTarget({ kind: "video", id });
+  };
+
+  const openAdjustmentMasks = (id: string) => {
+    if (!adjustmentLayers.some((layer) => layer.id === id)) return;
+    setMasksPanelTarget({ kind: "adjustment", id });
+  };
+
+  const updateMasksPanelMask = (mask: VideoMask | undefined) => {
+    const target = masksPanelTarget;
+    if (!target) return;
+    if (target.kind === "video") {
+      updateVideoClipMask(target.id, mask);
+      return;
+    }
+    updateAdjustmentLayer(target.id, { mask: mask ? { ...mask } : undefined });
   };
 
   const createAdjustmentLayer = () => {
@@ -2386,6 +2442,19 @@ function App() {
     }
 
     updateVideoClipTransform(id, transform, currentTime);
+  };
+
+  const handleVideoMaskChange = (
+    id: string,
+    mask: VideoMask | undefined,
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    updateVideoClipMask(id, mask);
   };
 
   const handleApplyVideoCropToTrack = (id: string) => {
@@ -4594,6 +4663,18 @@ function App() {
             onVideoLayerReorder={handleProgramVideoLayerReorder}
             onVideoTransformChange={handleVideoTransformChange}
             onOpenVideoEffects={openVideoEffects}
+            onOpenVideoMasks={openVideoMasks}
+            editingMask={
+              masksPanelVideoClip?.mask
+                ? { ownerKind: "video", ownerId: masksPanelVideoClip.id, mask: masksPanelVideoClip.mask, locked: Boolean(trackSettings[masksPanelVideoClip.trackId]?.locked), label: masksPanelVideoClip.sourceName }
+                : masksPanelAdjustmentLayer?.mask
+                  ? { ownerKind: "adjustment", ownerId: masksPanelAdjustmentLayer.id, mask: masksPanelAdjustmentLayer.mask, locked: Boolean(trackSettings[masksPanelAdjustmentLayer.trackId]?.locked), label: masksPanelAdjustmentLayer.name }
+                  : null
+            }
+            onEditingMaskChange={(mask) => updateMasksPanelMask(mask)}
+            onVideoMaskChange={handleVideoMaskChange}
+            onMaskEditStart={beginHistoryTransaction}
+            onMaskEditEnd={() => window.requestAnimationFrame(() => endHistoryTransaction())}
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
@@ -4748,6 +4829,9 @@ function App() {
         onOpenEffects={() => {
           if (selectedAdjustmentLayerId) openAdjustmentEffects(selectedAdjustmentLayerId);
         }}
+        onOpenMasks={() => {
+          if (selectedAdjustmentLayerId) openAdjustmentMasks(selectedAdjustmentLayerId);
+        }}
       />
 
       <EffectsStackPanel
@@ -4779,6 +4863,40 @@ function App() {
         }}
         onDiscreteChange={markNextChangeImmediate}
         onClose={() => setEffectsPanelTarget(null)}
+      />
+
+      <MasksPanel
+        open={masksPanelTarget !== null}
+        targetName={masksPanelVideoClip?.sourceName ?? masksPanelAdjustmentLayer?.name ?? "Masks"}
+        targetDetail={
+          masksPanelVideoClip
+            ? masksPanelVideoClip.trackId.replace("video-", "V")
+            : masksPanelAdjustmentLayer
+              ? masksPanelAdjustmentLayer.trackId.replace("video-", "V")
+              : undefined
+        }
+        ownerKind={masksPanelTarget?.kind}
+        mask={masksPanelVideoClip?.mask ?? masksPanelAdjustmentLayer?.mask}
+        disabled={Boolean(
+          masksPanelVideoClip
+            ? trackSettings[masksPanelVideoClip.trackId]?.locked
+            : masksPanelAdjustmentLayer
+              ? trackSettings[masksPanelAdjustmentLayer.trackId]?.locked
+              : false
+        )}
+        onChange={updateMasksPanelMask}
+        getDefaultGeometry={
+          masksPanelTarget?.kind === "video"
+            ? () =>
+                videoPlayerRef.current?.getVideoMaskDefaultGeometry(
+                  masksPanelTarget.id,
+                ) ?? null
+            : undefined
+        }
+        onBeginContinuousChange={beginHistoryTransaction}
+        onEndContinuousChange={() => window.requestAnimationFrame(() => endHistoryTransaction())}
+        onDiscreteChange={markNextChangeImmediate}
+        onClose={() => setMasksPanelTarget(null)}
       />
 
       {(isGenerating || generationError) && (

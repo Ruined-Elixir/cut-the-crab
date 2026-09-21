@@ -36,7 +36,9 @@ export type ProgramSnapLine = {
 };
 
 // Existing Program Monitor alignment points remain available as a fallback.
-export const PROGRAM_SNAP_POINTS = [10, 25, 33.3333, 50, 66.6667, 75, 90] as const;
+export const PROGRAM_SNAP_POINTS = [
+  10, 25, 33.3333, 50, 66.6667, 75, 90,
+] as const;
 
 export const PROGRAM_SNAP_THRESHOLD_PX = 7;
 export const PROGRAM_OBJECT_SNAP_THRESHOLD_PX = 5;
@@ -67,7 +69,8 @@ export function programViewportRectForAspect(
 ): ProgramViewportRect {
   const width = Math.max(1, sourceWidth);
   const height = Math.max(1, sourceHeight);
-  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : PROGRAM_BASE_ASPECT;
+  const safeAspect =
+    Number.isFinite(aspect) && aspect > 0 ? aspect : PROGRAM_BASE_ASPECT;
   const sourceAspect = width / height;
 
   if (safeAspect <= sourceAspect) {
@@ -177,11 +180,19 @@ export function programFrameSnapLines(
     axis === "x"
       ? [
           { positionPx: 0, targetId: "player-edge", targetKind: "player-edge" },
-          { positionPx: width, targetId: "player-edge", targetKind: "player-edge" },
+          {
+            positionPx: width,
+            targetId: "player-edge",
+            targetKind: "player-edge",
+          },
         ]
       : [
           { positionPx: 0, targetId: "player-edge", targetKind: "player-edge" },
-          { positionPx: height, targetId: "player-edge", targetKind: "player-edge" },
+          {
+            positionPx: height,
+            targetId: "player-edge",
+            targetKind: "player-edge",
+          },
         ];
 
   const aspectLines = aspectRects.flatMap<ProgramSnapLine>((rect) =>
@@ -224,7 +235,7 @@ export function snapProgramPercent(
   let closestDistancePx = Number.POSITIVE_INFINITY;
 
   for (const point of PROGRAM_SNAP_POINTS) {
-    const distancePx = Math.abs(valuePercent - point) * axisSizePx / 100;
+    const distancePx = (Math.abs(valuePercent - point) * axisSizePx) / 100;
 
     if (distancePx < closestDistancePx) {
       closest = point;
@@ -238,7 +249,12 @@ export function snapProgramPercent(
 
   return {
     value: closest,
-    guide: { axis, percent: closest, targetId: `layout-${closest}`, targetKind: "layout" },
+    guide: {
+      axis,
+      percent: closest,
+      targetId: `layout-${closest}`,
+      targetKind: "layout",
+    },
   };
 }
 

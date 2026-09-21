@@ -28,18 +28,14 @@ function SubtitleInspector({
   onStyleChange,
 }: SubtitleInspectorProps) {
   const fontSize = subtitle?.fontSize ?? 24;
-  const fontFamily =
-    subtitle?.fontFamily ?? DEFAULT_ASS_FONT_FAMILY;
+  const fontFamily = subtitle?.fontFamily ?? DEFAULT_ASS_FONT_FAMILY;
   const color = subtitle?.color ?? "#ffffff";
-  const backgroundColor =
-    subtitle?.backgroundColor ?? "transparent";
+  const backgroundColor = subtitle?.backgroundColor ?? "transparent";
   const isBold = subtitle?.isBold ?? false;
   const isUnderlined = subtitle?.isUnderlined ?? false;
   const textAlign = subtitle?.textAlign ?? "center";
 
-  const [fontSizeInput, setFontSizeInput] = useState(
-    String(fontSize),
-  );
+  const [fontSizeInput, setFontSizeInput] = useState(String(fontSize));
 
   useEffect(() => {
     setFontSizeInput(String(fontSize));
@@ -57,10 +53,7 @@ function SubtitleInspector({
       return;
     }
 
-    const next = Math.max(
-      10,
-      Math.min(96, Math.round(parsed)),
-    );
+    const next = Math.max(10, Math.min(96, Math.round(parsed)));
 
     setFontSizeInput(String(next));
 
@@ -79,9 +72,7 @@ function SubtitleInspector({
       >
         <div className="subtitle-inspector-heading">
           <div>
-            <span className="subtitle-inspector-eyebrow">
-              Inspector
-            </span>
+            <span className="subtitle-inspector-eyebrow">Inspector</span>
 
             <h3>No Selection</h3>
           </div>
@@ -89,13 +80,7 @@ function SubtitleInspector({
 
         <div className="subtitle-inspector-empty-state">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect
-              x="4"
-              y="5"
-              width="16"
-              height="14"
-              rx="2.5"
-            />
+            <rect x="4" y="5" width="16" height="14" rx="2.5" />
             <path d="M8 10h8M8 14h5" />
           </svg>
 
@@ -105,10 +90,7 @@ function SubtitleInspector({
     );
   }
 
-  const duration = Math.max(
-    0,
-    subtitle.endTime - subtitle.startTime,
-  );
+  const duration = Math.max(0, subtitle.endTime - subtitle.startTime);
 
   const selectionLabel =
     selectedCount > 1
@@ -116,15 +98,10 @@ function SubtitleInspector({
       : "1 Subtitle Selected";
 
   return (
-    <section
-      className="subtitle-inspector"
-      aria-label="Subtitle inspector"
-    >
+    <section className="subtitle-inspector" aria-label="Subtitle inspector">
       <div className="subtitle-inspector-heading">
         <div>
-          <span className="subtitle-inspector-eyebrow">
-            Inspector
-          </span>
+          <span className="subtitle-inspector-eyebrow">Inspector</span>
 
           <h3>Subtitle</h3>
         </div>
@@ -140,9 +117,7 @@ function SubtitleInspector({
             <span>Text</span>
 
             {selectedCount > 1 && (
-              <span className="inspector-section-note">
-                Primary only
-              </span>
+              <span className="inspector-section-note">Primary only</span>
             )}
           </div>
 
@@ -150,12 +125,7 @@ function SubtitleInspector({
             className="inspector-textarea"
             value={subtitle.text}
             rows={3}
-            onChange={(event) =>
-              onTextChange(
-                subtitle.id,
-                event.target.value,
-              )
-            }
+            onChange={(event) => onTextChange(subtitle.id, event.target.value)}
           />
         </section>
 
@@ -165,23 +135,17 @@ function SubtitleInspector({
           </div>
 
           <div className="inspector-property-grid">
-            <span className="inspector-property-label">
-              Start
-            </span>
+            <span className="inspector-property-label">Start</span>
             <span className="inspector-time-value">
               {formatSubtitleTime(subtitle.startTime)}
             </span>
 
-            <span className="inspector-property-label">
-              End
-            </span>
+            <span className="inspector-property-label">End</span>
             <span className="inspector-time-value">
               {formatSubtitleTime(subtitle.endTime)}
             </span>
 
-            <span className="inspector-property-label">
-              Duration
-            </span>
+            <span className="inspector-property-label">Duration</span>
             <span className="inspector-time-value">
               {duration.toFixed(3)} s
             </span>
@@ -200,9 +164,7 @@ function SubtitleInspector({
           </div>
 
           <div className="inspector-property-grid">
-            <label className="inspector-property-label">
-              Font
-            </label>
+            <label className="inspector-property-label">Font</label>
 
             <select
               className="inspector-control"
@@ -224,9 +186,7 @@ function SubtitleInspector({
               ))}
             </select>
 
-            <label className="inspector-property-label">
-              Size
-            </label>
+            <label className="inspector-property-label">Size</label>
 
             <div className="inspector-number-wrap">
               <input
@@ -236,9 +196,7 @@ function SubtitleInspector({
                 max={96}
                 step={1}
                 value={fontSizeInput}
-                onChange={(event) =>
-                  setFontSizeInput(event.target.value)
-                }
+                onChange={(event) => setFontSizeInput(event.target.value)}
                 onBlur={commitFontSize}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -258,9 +216,7 @@ function SubtitleInspector({
               <span>pt</span>
             </div>
 
-            <span className="inspector-property-label">
-              Text
-            </span>
+            <span className="inspector-property-label">Text</span>
 
             <label className="inspector-color-control">
               <input
@@ -276,9 +232,7 @@ function SubtitleInspector({
               <span>{color.toUpperCase()}</span>
             </label>
 
-            <span className="inspector-property-label">
-              Background
-            </span>
+            <span className="inspector-property-label">Background</span>
 
             <div className="inspector-background-control">
               <label className="inspector-color-control">
@@ -291,8 +245,7 @@ function SubtitleInspector({
                   }
                   onChange={(event) =>
                     onStyleChange(subtitle.id, {
-                      backgroundColor:
-                        event.target.value,
+                      backgroundColor: event.target.value,
                     })
                   }
                 />
@@ -323,10 +276,7 @@ function SubtitleInspector({
           <div className="inspector-formatting-row">
             <button
               type="button"
-              className={[
-                "inspector-format-button",
-                isBold ? "active" : "",
-              ]
+              className={["inspector-format-button", isBold ? "active" : ""]
                 .filter(Boolean)
                 .join(" ")}
               aria-pressed={isBold}
@@ -355,68 +305,51 @@ function SubtitleInspector({
                 })
               }
             >
-              <span className="inspector-underline-icon">
-                U
-              </span>
+              <span className="inspector-underline-icon">U</span>
               <span>Underline</span>
             </button>
           </div>
 
           <div className="inspector-alignment-row">
-            <span className="inspector-property-label">
-              Alignment
-            </span>
+            <span className="inspector-property-label">Alignment</span>
 
             <div className="inspector-segmented-control">
-              {(
-                [
-                  "left",
-                  "center",
-                  "right",
-                ] as SubtitleTextAlign[]
-              ).map((alignment) => (
-                <button
-                  key={alignment}
-                  type="button"
-                  className={
-                    textAlign === alignment
-                      ? "active"
-                      : ""
-                  }
-                  aria-label={`${alignment} align`}
-                  aria-pressed={
-                    textAlign === alignment
-                  }
-                  onClick={() =>
-                    onStyleChange(subtitle.id, {
-                      textAlign: alignment,
-                    })
-                  }
-                >
-                  <svg
-                    viewBox="0 0 18 18"
-                    aria-hidden="true"
+              {(["left", "center", "right"] as SubtitleTextAlign[]).map(
+                (alignment) => (
+                  <button
+                    key={alignment}
+                    type="button"
+                    className={textAlign === alignment ? "active" : ""}
+                    aria-label={`${alignment} align`}
+                    aria-pressed={textAlign === alignment}
+                    onClick={() =>
+                      onStyleChange(subtitle.id, {
+                        textAlign: alignment,
+                      })
+                    }
                   >
-                    {alignment === "left" && (
-                      <>
-                        <path d="M3 5h12M3 9h8M3 13h10" />
-                      </>
-                    )}
+                    <svg viewBox="0 0 18 18" aria-hidden="true">
+                      {alignment === "left" && (
+                        <>
+                          <path d="M3 5h12M3 9h8M3 13h10" />
+                        </>
+                      )}
 
-                    {alignment === "center" && (
-                      <>
-                        <path d="M3 5h12M5 9h8M4 13h10" />
-                      </>
-                    )}
+                      {alignment === "center" && (
+                        <>
+                          <path d="M3 5h12M5 9h8M4 13h10" />
+                        </>
+                      )}
 
-                    {alignment === "right" && (
-                      <>
-                        <path d="M3 5h12M7 9h8M5 13h10" />
-                      </>
-                    )}
-                  </svg>
-                </button>
-              ))}
+                      {alignment === "right" && (
+                        <>
+                          <path d="M3 5h12M7 9h8M5 13h10" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                ),
+              )}
             </div>
           </div>
         </section>
@@ -427,24 +360,19 @@ function SubtitleInspector({
           </div>
 
           <div className="inspector-property-grid">
-            <span className="inspector-property-label">
-              X
-            </span>
+            <span className="inspector-property-label">X</span>
             <span className="inspector-readonly-value">
               {(subtitle.positionX ?? 50).toFixed(1)}%
             </span>
 
-            <span className="inspector-property-label">
-              Y
-            </span>
+            <span className="inspector-property-label">Y</span>
             <span className="inspector-readonly-value">
               {(subtitle.positionY ?? 80).toFixed(1)}%
             </span>
           </div>
 
           <p className="inspector-help">
-            Drag the subtitle directly in the Program Monitor
-            to reposition it.
+            Drag the subtitle directly in the Program Monitor to reposition it.
           </p>
         </section>
       </div>

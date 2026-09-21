@@ -72,9 +72,7 @@ function TimelineRuler({
     onSeek?.(ratio * duration);
   };
 
-  const handlePointerDown = (
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (duration <= 0 || event.button !== 0) {
       return;
     }
@@ -84,9 +82,7 @@ function TimelineRuler({
     seekFromPointer(event.currentTarget, event.clientX);
   };
 
-  const handlePointerMove = (
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
       return;
     }
@@ -95,9 +91,7 @@ function TimelineRuler({
     seekFromPointer(event.currentTarget, event.clientX);
   };
 
-  const handlePointerUp = (
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -109,7 +103,9 @@ function TimelineRuler({
       : 0;
 
   return (
-    <div className={`timeline-ruler ${showLabelSpacer ? "" : "track-only"}`.trim()}>
+    <div
+      className={`timeline-ruler ${showLabelSpacer ? "" : "track-only"}`.trim()}
+    >
       {showLabelSpacer && <div className="timeline-ruler-label-spacer" />}
 
       <div

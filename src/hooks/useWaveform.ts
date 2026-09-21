@@ -6,8 +6,7 @@ const WAVEFORM_POINTS = 1200;
 type WaveformMap = Record<string, number[]>;
 
 export function useWaveform() {
-  const [waveformsBySource, setWaveformsBySource] =
-    useState<WaveformMap>({});
+  const [waveformsBySource, setWaveformsBySource] = useState<WaveformMap>({});
   const [isGeneratingWaveform, setIsGeneratingWaveform] = useState(false);
   const [waveformError, setWaveformError] = useState<string | null>(null);
 

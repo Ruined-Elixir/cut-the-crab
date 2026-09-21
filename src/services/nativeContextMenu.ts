@@ -18,8 +18,7 @@ export type NativeContextMenuSubmenuItem = {
 };
 
 export type NativeContextMenuItem =
-  | NativeContextMenuActionItem
-  | NativeContextMenuSubmenuItem;
+  NativeContextMenuActionItem | NativeContextMenuSubmenuItem;
 
 let activeContextMenu: Menu | null = null;
 
@@ -65,7 +64,9 @@ export async function showNativeContextMenu(
     });
   };
 
-  const buildItem = async (item: NativeContextMenuItem): Promise<MenuItem | Submenu> => {
+  const buildItem = async (
+    item: NativeContextMenuItem,
+  ): Promise<MenuItem | Submenu> => {
     if ("items" in item && item.items) {
       const submenuItems = await Promise.all(item.items.map(buildItem));
       return Submenu.new({

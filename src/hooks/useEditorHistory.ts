@@ -1,14 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
-import type { AdjustmentLayerClip, AudioTimelineClip, TimelineTrackSettings, VideoTimelineClip } from "../types/timelineModel";
+import type {
+  AdjustmentLayerClip,
+  AudioTimelineClip,
+  TimelineTrackSettings,
+  VideoTimelineClip,
+} from "../types/timelineModel";
 import { cloneVideoEffects } from "../utils/videoEffects";
 
 export type EditorHistorySnapshot = {
@@ -28,9 +27,7 @@ type UseEditorHistoryOptions = {
   onApply: (snapshot: EditorHistorySnapshot) => void;
 };
 
-function cloneSnapshot(
-  snapshot: EditorHistorySnapshot,
-): EditorHistorySnapshot {
+function cloneSnapshot(snapshot: EditorHistorySnapshot): EditorHistorySnapshot {
   return {
     subtitles: snapshot.subtitles.map((subtitle) => ({
       ...subtitle,
@@ -38,12 +35,10 @@ function cloneSnapshot(
     markers: snapshot.markers.map((marker) => ({
       ...marker,
     })),
-    videoClips: snapshot.videoClips.map(
-      (clip) => ({
-        ...clip,
-        effects: cloneVideoEffects(clip.effects),
-      }),
-    ),
+    videoClips: snapshot.videoClips.map((clip) => ({
+      ...clip,
+      effects: cloneVideoEffects(clip.effects),
+    })),
     audioClips: snapshot.audioClips.map((clip) => ({ ...clip })),
     adjustmentLayers: snapshot.adjustmentLayers.map((layer) => ({
       ...layer,
@@ -77,10 +72,7 @@ export function useEditorHistory({
   maxEntries = 100,
   onApply,
 }: UseEditorHistoryOptions) {
-  const serializedSnapshot = useMemo(
-    () => snapshotKey(snapshot),
-    [snapshot],
-  );
+  const serializedSnapshot = useMemo(() => snapshotKey(snapshot), [snapshot]);
 
   const latestSnapshotRef = useRef(cloneSnapshot(snapshot));
   const latestKeyRef = useRef(serializedSnapshot);
@@ -105,10 +97,7 @@ export function useEditorHistory({
   const [canRedo, setCanRedo] = useState(false);
 
   const syncAvailability = useCallback(() => {
-    setCanUndo(
-      pastRef.current.length > 0 ||
-        pendingStartRef.current !== null,
-    );
+    setCanUndo(pastRef.current.length > 0 || pendingStartRef.current !== null);
     setCanRedo(futureRef.current.length > 0);
   }, []);
 
@@ -142,10 +131,7 @@ export function useEditorHistory({
     pastRef.current.push(cloneSnapshot(pendingStart));
 
     if (pastRef.current.length > maxEntries) {
-      pastRef.current.splice(
-        0,
-        pastRef.current.length - maxEntries,
-      );
+      pastRef.current.splice(0, pastRef.current.length - maxEntries);
     }
 
     baselineRef.current = currentSnapshot;
@@ -154,11 +140,7 @@ export function useEditorHistory({
     futureRef.current = [];
 
     syncAvailability();
-  }, [
-    clearPendingTimer,
-    maxEntries,
-    syncAvailability,
-  ]);
+  }, [clearPendingTimer, maxEntries, syncAvailability]);
 
   const reset = useCallback(
     (nextSnapshot: EditorHistorySnapshot) => {
@@ -252,12 +234,7 @@ export function useEditorHistory({
 
     applyHistorySnapshot(previous);
     syncAvailability();
-  }, [
-    applyHistorySnapshot,
-    commitPending,
-    enabled,
-    syncAvailability,
-  ]);
+  }, [applyHistorySnapshot, commitPending, enabled, syncAvailability]);
 
   const redo = useCallback(() => {
     if (!enabled) {
@@ -273,15 +250,10 @@ export function useEditorHistory({
       return;
     }
 
-    pastRef.current.push(
-      cloneSnapshot(baselineRef.current),
-    );
+    pastRef.current.push(cloneSnapshot(baselineRef.current));
 
     if (pastRef.current.length > maxEntries) {
-      pastRef.current.splice(
-        0,
-        pastRef.current.length - maxEntries,
-      );
+      pastRef.current.splice(0, pastRef.current.length - maxEntries);
     }
 
     applyHistorySnapshot(next);
@@ -301,10 +273,7 @@ export function useEditorHistory({
 
     const suppressedKey = suppressAppliedKeyRef.current;
 
-    if (
-      suppressedKey &&
-      serializedSnapshot === suppressedKey
-    ) {
+    if (suppressedKey && serializedSnapshot === suppressedKey) {
       suppressAppliedKeyRef.current = null;
       baselineRef.current = cloneSnapshot(snapshot);
       baselineKeyRef.current = serializedSnapshot;
@@ -317,9 +286,7 @@ export function useEditorHistory({
     }
 
     if (!pendingStartRef.current) {
-      pendingStartRef.current = cloneSnapshot(
-        baselineRef.current,
-      );
+      pendingStartRef.current = cloneSnapshot(baselineRef.current);
 
       // Any new editorial change invalidates redo immediately.
       futureRef.current = [];
@@ -336,18 +303,12 @@ export function useEditorHistory({
     if (immediateNextChangeRef.current) {
       immediateNextChangeRef.current = false;
 
-      pendingTimerRef.current = window.setTimeout(
-        commitPending,
-        0,
-      );
+      pendingTimerRef.current = window.setTimeout(commitPending, 0);
 
       return;
     }
 
-    pendingTimerRef.current = window.setTimeout(
-      commitPending,
-      coalesceMs,
-    );
+    pendingTimerRef.current = window.setTimeout(commitPending, coalesceMs);
 
     return clearPendingTimer;
   }, [

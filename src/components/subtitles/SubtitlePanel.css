@@ -8,10 +8,8 @@
 
   background: var(--secondary-system-background);
 
-  box-shadow:
-    inset 1px 0 var(--separator-soft);
+  box-shadow: inset 1px 0 var(--separator-soft);
 }
-
 
 .subtitle-panel.inspector-expanded {
   grid-template-rows:
@@ -151,8 +149,7 @@
 .subtitle-search:focus {
   background: rgba(255, 255, 255, 0.1);
 
-  box-shadow:
-    0 0 0 2px rgba(10, 132, 255, 0.4);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.4);
 }
 
 .subtitle-add-button {
@@ -199,7 +196,6 @@
 .subtitle-panel-divider {
   background: var(--separator-soft);
 }
-
 
 /* ==========================================================================
    Collapsible Inspector disclosure
@@ -250,8 +246,7 @@
 }
 
 .subtitle-inspector-disclosure-button:focus-visible {
-  box-shadow:
-    inset 0 0 0 2px rgba(10, 132, 255, 0.42);
+  box-shadow: inset 0 0 0 2px rgba(10, 132, 255, 0.42);
 }
 
 .subtitle-inspector-disclosure-chevron {
@@ -291,13 +286,11 @@
   text-align: center;
 }
 
-.subtitle-panel.inspector-expanded
-  .subtitle-inspector-disclosure {
+.subtitle-panel.inspector-expanded .subtitle-inspector-disclosure {
   overflow: hidden;
 }
 
-.subtitle-panel.inspector-expanded
-  .subtitle-inspector {
+.subtitle-panel.inspector-expanded .subtitle-inspector {
   flex: 1;
   min-height: 0;
 }

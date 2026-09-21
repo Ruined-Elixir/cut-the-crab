@@ -189,8 +189,10 @@ function createDialogue(
   // crop used for video export. Values are intentionally allowed outside the
   // output frame so libass naturally clips subtitles that sit beyond a chosen
   // aspect viewport, exactly like the dashed Program Monitor box.
-  const x = ((sourceX - sourceViewport.left) / sourceViewport.width) * playResWidth;
-  const y = ((sourceY - sourceViewport.top) / sourceViewport.height) * playResHeight;
+  const x =
+    ((sourceX - sourceViewport.left) / sourceViewport.width) * playResWidth;
+  const y =
+    ((sourceY - sourceViewport.top) / sourceViewport.height) * playResHeight;
 
   const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
@@ -222,8 +224,16 @@ export function buildAssTrack(
   const safeSourceViewport: AssSourceViewport = {
     left: Number.isFinite(sourceViewport.left) ? sourceViewport.left : 0,
     top: Number.isFinite(sourceViewport.top) ? sourceViewport.top : 0,
-    width: Math.max(1, Number.isFinite(sourceViewport.width) ? sourceViewport.width : ASS_WIDTH),
-    height: Math.max(1, Number.isFinite(sourceViewport.height) ? sourceViewport.height : ASS_HEIGHT),
+    width: Math.max(
+      1,
+      Number.isFinite(sourceViewport.width) ? sourceViewport.width : ASS_WIDTH,
+    ),
+    height: Math.max(
+      1,
+      Number.isFinite(sourceViewport.height)
+        ? sourceViewport.height
+        : ASS_HEIGHT,
+    ),
   };
 
   // Subtitle styles are authored in canonical Program-space units. Scale by
@@ -231,8 +241,8 @@ export function buildAssTrack(
   // This keeps typography visually identical to what is inside the guide box.
   const designScale = playResHeight / safeSourceViewport.height;
 
-  const sorted = [...subtitles].sort((a, b) =>
-    a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
+  const sorted = [...subtitles].sort(
+    (a, b) => a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
   );
 
   const styles = sorted

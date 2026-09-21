@@ -17,7 +17,8 @@ function normalizeSourcePaths(sourcePaths: string[]) {
 }
 
 export function useVideoProxies(sourcePaths: string[]) {
-  const [proxyStatesBySource, setProxyStatesBySource] = useState<VideoProxyStates>({});
+  const [proxyStatesBySource, setProxyStatesBySource] =
+    useState<VideoProxyStates>({});
   const requestedPathsRef = useRef<Set<string>>(new Set());
   const generationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);

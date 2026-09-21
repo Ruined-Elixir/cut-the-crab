@@ -40,17 +40,32 @@ type WaveformTrackProps = {
     targetTrackId: TimelineTrackId,
     newTimelineStart: number,
   ) => void;
-  onResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
-  onLinkedFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onResize?: (
+    id: string,
+    newTimelineStart: number,
+    newTimelineEnd: number,
+  ) => void;
+  onLinkedFadeChange?: (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => void;
   onLinkedVolumeChange?: (id: string, volume: number) => void;
   onLinkedMuteChange?: (id: string, muted: boolean) => void;
-  onStandaloneFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onStandaloneFadeChange?: (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => void;
   onStandaloneVolumeChange?: (id: string, volume: number) => void;
   onStandaloneMuteChange?: (id: string, muted: boolean) => void;
   onRevealClip?: (clip: AudioTimelineClip) => void;
   compoundRegions?: CompoundTrackRegion[];
   selectedCompoundIds?: string[];
-  onCompoundSelect?: (compoundId: string, mode?: "single" | "toggle" | "focus") => void;
+  onCompoundSelect?: (
+    compoundId: string,
+    mode?: "single" | "toggle" | "focus",
+  ) => void;
   onCompoundOpen?: (compoundId: string) => void;
   onCompoundMoveStart?: (compoundId: string) => boolean | void;
   onCompoundMove?: (compoundId: string, newTimelineStart: number) => void;
@@ -82,11 +97,20 @@ function drawWaveformClip(
     clip.sourceOut,
     0.001,
   );
-  const sourceStartRatio = Math.max(0, Math.min(1, clip.sourceIn / sourceDuration));
-  const sourceEndRatio = Math.max(sourceStartRatio, Math.min(1, clip.sourceOut / sourceDuration));
+  const sourceStartRatio = Math.max(
+    0,
+    Math.min(1, clip.sourceIn / sourceDuration),
+  );
+  const sourceEndRatio = Math.max(
+    sourceStartRatio,
+    Math.min(1, clip.sourceOut / sourceDuration),
+  );
   const sourceStartIndex = Math.max(
     0,
-    Math.min(waveform.length - 1, Math.floor(sourceStartRatio * waveform.length)),
+    Math.min(
+      waveform.length - 1,
+      Math.floor(sourceStartRatio * waveform.length),
+    ),
   );
   const sourceEndIndex = Math.max(
     sourceStartIndex + 1,
@@ -108,18 +132,21 @@ function drawWaveformClip(
   context.fillRect(clipLeft, 0, clipWidth, height);
 
   const sourceSampleCount = Math.max(1, sourceEndIndex - sourceStartIndex);
-  const barCount = Math.max(1, Math.min(sourceSampleCount, Math.floor(clipWidth / 2)));
+  const barCount = Math.max(
+    1,
+    Math.min(sourceSampleCount, Math.floor(clipWidth / 2)),
+  );
   const barWidth = clipWidth / barCount;
   context.fillStyle = clip.linkedVideoClipId
     ? "rgba(220, 220, 220, 0.76)"
     : "rgba(198, 235, 212, 0.82)";
 
   for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
-    const bucketStart = sourceStartIndex + Math.floor((barIndex / barCount) * sourceSampleCount);
-    const bucketEnd = sourceStartIndex + Math.max(
-      1,
-      Math.floor(((barIndex + 1) / barCount) * sourceSampleCount),
-    );
+    const bucketStart =
+      sourceStartIndex + Math.floor((barIndex / barCount) * sourceSampleCount);
+    const bucketEnd =
+      sourceStartIndex +
+      Math.max(1, Math.floor(((barIndex + 1) / barCount) * sourceSampleCount));
     let amplitudeValue = 0;
 
     for (
@@ -127,19 +154,37 @@ function drawWaveformClip(
       sampleIndex < Math.min(bucketEnd, sourceEndIndex);
       sampleIndex += 1
     ) {
-      amplitudeValue = Math.max(amplitudeValue, Math.abs(waveform[sampleIndex] ?? 0));
+      amplitudeValue = Math.max(
+        amplitudeValue,
+        Math.abs(waveform[sampleIndex] ?? 0),
+      );
     }
 
     const positionRatio = barCount <= 1 ? 0 : barIndex / (barCount - 1);
     const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
     const localTime = positionRatio * clipDuration;
-    const fadeInDuration = Math.max(0, Math.min(clip.fadeInDuration ?? 0, clipDuration));
-    const fadeOutDuration = Math.max(0, Math.min(clip.fadeOutDuration ?? 0, clipDuration));
-    const fadeInGain = fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
-    const fadeOutGain = fadeOutDuration > 0 ? Math.min(1, (clipDuration - localTime) / fadeOutDuration) : 1;
+    const fadeInDuration = Math.max(
+      0,
+      Math.min(clip.fadeInDuration ?? 0, clipDuration),
+    );
+    const fadeOutDuration = Math.max(
+      0,
+      Math.min(clip.fadeOutDuration ?? 0, clipDuration),
+    );
+    const fadeInGain =
+      fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
+    const fadeOutGain =
+      fadeOutDuration > 0
+        ? Math.min(1, (clipDuration - localTime) / fadeOutDuration)
+        : 1;
     const volumeGain = Math.max(0, Math.min(100, clip.volume ?? 100)) / 100;
-    const effectiveGain = clip.muted ? 0.12 : volumeGain * Math.min(fadeInGain, fadeOutGain);
-    const amplitude = Math.max(1, amplitudeValue * height * 0.72 * effectiveGain);
+    const effectiveGain = clip.muted
+      ? 0.12
+      : volumeGain * Math.min(fadeInGain, fadeOutGain);
+    const amplitude = Math.max(
+      1,
+      amplitudeValue * height * 0.72 * effectiveGain,
+    );
     const x = clipLeft + barIndex * barWidth;
     const y = centerY - amplitude / 2;
     context.fillRect(x, y, Math.max(1, barWidth * 0.72), amplitude);
@@ -175,8 +220,10 @@ function setExternalAudioTrackPreview(
   timelineDuration: number,
 ) {
   clearExternalAudioTrackPreview();
-  const left = timelineDuration > 0 ? (timelineStart / timelineDuration) * 100 : 0;
-  const width = timelineDuration > 0 ? (clipDuration / timelineDuration) * 100 : 0;
+  const left =
+    timelineDuration > 0 ? (timelineStart / timelineDuration) * 100 : 0;
+  const width =
+    timelineDuration > 0 ? (clipDuration / timelineDuration) * 100 : 0;
   target.classList.add("clip-drag-target");
   target.style.setProperty("--clip-drag-left", `${left}%`);
   target.style.setProperty("--clip-drag-width", `${Math.max(width, 0.6)}%`);
@@ -218,7 +265,9 @@ function WaveformTrack({
 }: WaveformTrackProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
-  const [draggingCompoundId, setDraggingCompoundId] = useState<string | null>(null);
+  const [draggingCompoundId, setDraggingCompoundId] = useState<string | null>(
+    null,
+  );
   const [fadeDrag, setFadeDrag] = useState<{
     clipId: string;
     edge: "in" | "out";
@@ -231,7 +280,10 @@ function WaveformTrack({
 
   const isLinkedTrack = !!linkedTrackId;
   const audioClips = useMemo(
-    () => track.clips.filter((clip): clip is AudioTimelineClip => clip.kind === "audio"),
+    () =>
+      track.clips.filter(
+        (clip): clip is AudioTimelineClip => clip.kind === "audio",
+      ),
     [track.clips],
   );
 
@@ -280,14 +332,20 @@ function WaveformTrack({
   const handleTrackClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (
       duration <= 0 ||
-      (event.target as HTMLElement).closest(".audio-clip-label, .timeline-compound-track-region")
-    ) return;
+      (event.target as HTMLElement).closest(
+        ".audio-clip-label, .timeline-compound-track-region",
+      )
+    )
+      return;
     const time = timeFromClientX(event.clientX, event.currentTarget);
     onPasteTargetChange?.(track.id, time);
     onSeek?.(time);
   };
 
-  const startMove = (event: ReactMouseEvent<HTMLSpanElement>, clip: AudioTimelineClip) => {
+  const startMove = (
+    event: ReactMouseEvent<HTMLSpanElement>,
+    clip: AudioTimelineClip,
+  ) => {
     if (event.button !== 0) return;
 
     if (
@@ -319,13 +377,18 @@ function WaveformTrack({
     let latestStart = originalStart;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      const deltaTime =
+        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
       latestStart = Math.max(0, originalStart + deltaTime);
       onMove?.(clip.id, latestStart);
 
-      const target = document.elementsFromPoint(moveEvent.clientX, moveEvent.clientY).find(
-        (element) => element instanceof HTMLElement && element.matches(".waveform-track[data-audio-track-id]"),
-      );
+      const target = document
+        .elementsFromPoint(moveEvent.clientX, moveEvent.clientY)
+        .find(
+          (element) =>
+            element instanceof HTMLElement &&
+            element.matches(".waveform-track[data-audio-track-id]"),
+        );
       if (
         selectedAudioClipIds.length <= 1 &&
         target instanceof HTMLElement &&
@@ -333,7 +396,12 @@ function WaveformTrack({
         target.dataset.trackLinked !== "true" &&
         target.dataset.audioTrackId !== track.id
       ) {
-        setExternalAudioTrackPreview(target, latestStart, clipDuration, duration);
+        setExternalAudioTrackPreview(
+          target,
+          latestStart,
+          clipDuration,
+          duration,
+        );
       } else {
         clearExternalAudioTrackPreview();
       }
@@ -341,9 +409,13 @@ function WaveformTrack({
 
     const handleMouseUp = (upEvent: MouseEvent) => {
       setDraggingClipId(null);
-      const target = document.elementsFromPoint(upEvent.clientX, upEvent.clientY).find(
-        (element) => element instanceof HTMLElement && element.matches(".waveform-track[data-audio-track-id]"),
-      );
+      const target = document
+        .elementsFromPoint(upEvent.clientX, upEvent.clientY)
+        .find(
+          (element) =>
+            element instanceof HTMLElement &&
+            element.matches(".waveform-track[data-audio-track-id]"),
+        );
       if (target instanceof HTMLElement) {
         const targetTrackId = target.dataset.audioTrackId;
         if (
@@ -438,18 +510,28 @@ function WaveformTrack({
     const width = trackElement.getBoundingClientRect().width;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      const deltaTime =
+        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
       if (edge === "left") {
         onResize(
           clip.id,
-          Math.max(0, Math.min(originalEnd - MIN_AUDIO_CLIP_DURATION, originalStart + deltaTime)),
+          Math.max(
+            0,
+            Math.min(
+              originalEnd - MIN_AUDIO_CLIP_DURATION,
+              originalStart + deltaTime,
+            ),
+          ),
           originalEnd,
         );
       } else {
         onResize(
           clip.id,
           originalStart,
-          Math.max(originalStart + MIN_AUDIO_CLIP_DURATION, originalEnd + deltaTime),
+          Math.max(
+            originalStart + MIN_AUDIO_CLIP_DURATION,
+            originalEnd + deltaTime,
+          ),
         );
       }
     };
@@ -466,29 +548,41 @@ function WaveformTrack({
     clip: AudioTimelineClip,
     edge: "in" | "out",
   ) => {
-    const fadeChange = clip.linkedVideoClipId ? onLinkedFadeChange : onStandaloneFadeChange;
+    const fadeChange = clip.linkedVideoClipId
+      ? onLinkedFadeChange
+      : onStandaloneFadeChange;
     const targetId = clip.linkedVideoClipId ?? clip.id;
     if (!fadeChange || (track.locked && !clip.linkedVideoClipId)) return;
     event.preventDefault();
     event.stopPropagation();
     if (!clip.linkedVideoClipId) onSelect?.(clip.id, "focus");
-    const clipElement = event.currentTarget.closest(".audio-clip-label") as HTMLElement | null;
+    const clipElement = event.currentTarget.closest(
+      ".audio-clip-label",
+    ) as HTMLElement | null;
     if (!clipElement) return;
     const rect = clipElement.getBoundingClientRect();
     const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
     const originalDuration = Math.max(
       0,
-      Math.min(clipDuration, edge === "in" ? clip.fadeInDuration ?? 0 : clip.fadeOutDuration ?? 0),
+      Math.min(
+        clipDuration,
+        edge === "in"
+          ? (clip.fadeInDuration ?? 0)
+          : (clip.fadeOutDuration ?? 0),
+      ),
     );
     const startX = event.clientX;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaSeconds = ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const deltaSeconds =
+        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
       const nextDuration = Math.max(
         0,
         Math.min(
           clipDuration,
-          edge === "in" ? originalDuration + deltaSeconds : originalDuration - deltaSeconds,
+          edge === "in"
+            ? originalDuration + deltaSeconds
+            : originalDuration - deltaSeconds,
         ),
       );
       setFadeDrag({ clipId: clip.id, edge, duration: nextDuration });
@@ -507,24 +601,32 @@ function WaveformTrack({
     event: ReactMouseEvent<HTMLButtonElement>,
     clip: AudioTimelineClip,
   ) => {
-    const volumeChange = clip.linkedVideoClipId ? onLinkedVolumeChange : onStandaloneVolumeChange;
+    const volumeChange = clip.linkedVideoClipId
+      ? onLinkedVolumeChange
+      : onStandaloneVolumeChange;
     const targetId = clip.linkedVideoClipId ?? clip.id;
     if (!volumeChange || (track.locked && !clip.linkedVideoClipId)) return;
     event.preventDefault();
     event.stopPropagation();
     if (!clip.linkedVideoClipId) onSelect?.(clip.id, "focus");
-    const envelope = event.currentTarget.closest(".audio-volume-envelope") as HTMLElement | null;
+    const envelope = event.currentTarget.closest(
+      ".audio-volume-envelope",
+    ) as HTMLElement | null;
     if (!envelope) return;
     const rect = envelope.getBoundingClientRect();
 
     const applyVolumeAtY = (clientY: number) => {
-      const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / Math.max(1, rect.height)));
+      const ratio = Math.max(
+        0,
+        Math.min(1, (clientY - rect.top) / Math.max(1, rect.height)),
+      );
       const nextVolume = Math.round((1 - ratio) * 100);
       setVolumeDrag({ clipId: clip.id, volume: nextVolume });
       volumeChange(targetId, nextVolume);
     };
     applyVolumeAtY(event.clientY);
-    const handleMouseMove = (moveEvent: MouseEvent) => applyVolumeAtY(moveEvent.clientY);
+    const handleMouseMove = (moveEvent: MouseEvent) =>
+      applyVolumeAtY(moveEvent.clientY);
     const handleMouseUp = () => {
       setVolumeDrag(null);
       window.removeEventListener("mousemove", handleMouseMove);
@@ -535,7 +637,9 @@ function WaveformTrack({
   };
 
   return (
-    <div className={`timeline-row timeline-waveform-row ${showLabel ? "" : "track-only"}`.trim()}>
+    <div
+      className={`timeline-row timeline-waveform-row ${showLabel ? "" : "track-only"}`.trim()}
+    >
       {showLabel && (
         <TimelineTrackLabel
           shortLabel={track.shortLabel}
@@ -553,7 +657,9 @@ function WaveformTrack({
           track.muted ? "track-muted" : "",
           track.locked ? "locked" : "",
           isLinkedTrack ? "linked-audio-track" : "standalone-audio-track",
-        ].filter(Boolean).join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         data-audio-track-id={track.id}
         data-track-locked={track.locked ? "true" : "false"}
         data-track-linked={isLinkedTrack ? "true" : "false"}
@@ -572,7 +678,9 @@ function WaveformTrack({
                 "audio",
                 selected ? "selected" : "",
                 dragging ? "dragging" : "",
-              ].filter(Boolean).join(" ")}
+              ]
+                .filter(Boolean)
+                .join(" ")}
               style={{
                 left: `${duration > 0 ? (region.start / duration) * 100 : 0}%`,
                 width: `${duration > 0 ? ((region.end - region.start) / duration) * 100 : 0}%`,
@@ -608,23 +716,37 @@ function WaveformTrack({
         })}
 
         {audioClips.map((clip) => {
-          const clipDuration = Math.max(0.001, clip.timelineEnd - clip.timelineStart);
-          const fadeInDuration = Math.max(0, Math.min(clipDuration, clip.fadeInDuration ?? 0));
-          const fadeOutDuration = Math.max(0, Math.min(clipDuration, clip.fadeOutDuration ?? 0));
+          const clipDuration = Math.max(
+            0.001,
+            clip.timelineEnd - clip.timelineStart,
+          );
+          const fadeInDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.fadeInDuration ?? 0),
+          );
+          const fadeOutDuration = Math.max(
+            0,
+            Math.min(clipDuration, clip.fadeOutDuration ?? 0),
+          );
           const fadeInWidth = (fadeInDuration / clipDuration) * 100;
           const fadeOutWidth = (fadeOutDuration / clipDuration) * 100;
           const volume = Math.max(0, Math.min(100, clip.volume ?? 100));
           const volumeY = 100 - volume;
-          const linkedSelected = !!clip.linkedVideoClipId && selectedVideoClipIds.includes(clip.linkedVideoClipId);
-          const standaloneSelected = !clip.linkedVideoClipId && selectedAudioClipIds.includes(clip.id);
-          const primarySelected = !clip.linkedVideoClipId && selectedAudioClipId === clip.id;
+          const linkedSelected =
+            !!clip.linkedVideoClipId &&
+            selectedVideoClipIds.includes(clip.linkedVideoClipId);
+          const standaloneSelected =
+            !clip.linkedVideoClipId && selectedAudioClipIds.includes(clip.id);
+          const primarySelected =
+            !clip.linkedVideoClipId && selectedAudioClipId === clip.id;
           const dragging = draggingClipId === clip.id;
           const editable = !clip.linkedVideoClipId && !track.locked;
           const canAdjust = clip.linkedVideoClipId
             ? !!(onLinkedVolumeChange || onLinkedFadeChange)
             : !!(onStandaloneVolumeChange || onStandaloneFadeChange);
           const activeFadeDrag = fadeDrag?.clipId === clip.id ? fadeDrag : null;
-          const activeVolumeDrag = volumeDrag?.clipId === clip.id ? volumeDrag : null;
+          const activeVolumeDrag =
+            volumeDrag?.clipId === clip.id ? volumeDrag : null;
           const isExpandedCompoundMember =
             !!expandedCompoundId && clip.compoundId === expandedCompoundId;
 
@@ -638,15 +760,19 @@ function WaveformTrack({
                 primarySelected ? "primary-selected" : "",
                 dragging ? "dragging" : "",
                 isExpandedCompoundMember ? "compound-member" : "",
-              ].filter(Boolean).join(" ")}
+              ]
+                .filter(Boolean)
+                .join(" ")}
               style={{
                 left: `${duration > 0 ? (clip.timelineStart / duration) * 100 : 0}%`,
                 width: `${duration > 0 ? ((clip.timelineEnd - clip.timelineStart) / duration) * 100 : 0}%`,
               }}
               data-audio-clip-id={!clip.linkedVideoClipId ? clip.id : undefined}
-              title={clip.linkedVideoClipId
-                ? `${clip.sourceName} · linked audio · ${videoPlaybackRate(clip)}× · ${clip.muted ? "Muted" : `${Math.round(volume)}%`}`
-                : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${track.shortLabel}`}
+              title={
+                clip.linkedVideoClipId
+                  ? `${clip.sourceName} · linked audio · ${videoPlaybackRate(clip)}× · ${clip.muted ? "Muted" : `${Math.round(volume)}%`}`
+                  : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${track.shortLabel}`
+              }
               onContextMenu={(event) => {
                 const linkedVideoClipId = clip.linkedVideoClipId;
                 const muteChange = linkedVideoClipId
@@ -668,7 +794,10 @@ function WaveformTrack({
                     text: clip.muted ? "Unmute Clip" : "Mute Clip",
                     enabled: linkedVideoClipId ? true : !track.locked,
                     action: () => {
-                      muteChange(linkedVideoClipId ?? clip.id, !(clip.muted ?? false));
+                      muteChange(
+                        linkedVideoClipId ?? clip.id,
+                        !(clip.muted ?? false),
+                      );
                     },
                   },
                   ...(onRevealClip
@@ -681,7 +810,10 @@ function WaveformTrack({
                       ]
                     : []),
                 ]).catch((error) => {
-                  console.error("Failed to show native audio clip context menu:", error);
+                  console.error(
+                    "Failed to show native audio clip context menu:",
+                    error,
+                  );
                 });
               }}
               onMouseDown={(event) => startMove(event, clip)}
@@ -692,15 +824,28 @@ function WaveformTrack({
                   !event.shiftKey &&
                   !event.metaKey &&
                   !event.ctrlKey
-                ) onSelect?.(clip.id, "focus");
+                )
+                  onSelect?.(clip.id, "focus");
                 onPasteTargetChange?.(track.id, clip.timelineStart);
-                onSeek?.(Math.max(clip.timelineStart, Math.min(clip.timelineEnd, timeFromClientX(event.clientX, event.currentTarget.parentElement ?? event.currentTarget))));
+                onSeek?.(
+                  Math.max(
+                    clip.timelineStart,
+                    Math.min(
+                      clip.timelineEnd,
+                      timeFromClientX(
+                        event.clientX,
+                        event.currentTarget.parentElement ??
+                          event.currentTarget,
+                      ),
+                    ),
+                  ),
+                );
               }}
             >
               <span className="audio-clip-name">
-                {clip.sourceName}{clip.muted ? " · Muted" : ""}
+                {clip.sourceName}
+                {clip.muted ? " · Muted" : ""}
               </span>
-
 
               {editable && (
                 <>
@@ -718,14 +863,22 @@ function WaveformTrack({
               )}
 
               {fadeInDuration > 0 && (
-                <span className="clip-fade-region audio in" style={{ width: `${fadeInWidth}%` }} aria-hidden="true">
+                <span
+                  className="clip-fade-region audio in"
+                  style={{ width: `${fadeInWidth}%` }}
+                  aria-hidden="true"
+                >
                   <svg viewBox="0 0 100 100" preserveAspectRatio="none">
                     <path d={`M0 100 C22 100 38 ${volumeY} 100 ${volumeY}`} />
                   </svg>
                 </span>
               )}
               {fadeOutDuration > 0 && (
-                <span className="clip-fade-region audio out" style={{ width: `${fadeOutWidth}%` }} aria-hidden="true">
+                <span
+                  className="clip-fade-region audio out"
+                  style={{ width: `${fadeOutWidth}%` }}
+                  aria-hidden="true"
+                >
                   <svg viewBox="0 0 100 100" preserveAspectRatio="none">
                     <path d={`M0 ${volumeY} C62 ${volumeY} 78 100 100 100`} />
                   </svg>
@@ -734,14 +887,26 @@ function WaveformTrack({
 
               {canAdjust && (
                 <span className="audio-volume-envelope">
-                  {(clip.linkedVideoClipId ? onLinkedVolumeChange : onStandaloneVolumeChange) && (
+                  {(clip.linkedVideoClipId
+                    ? onLinkedVolumeChange
+                    : onStandaloneVolumeChange) && (
                     <>
-                      <span className="audio-volume-line" style={{ top: `${volumeY}%` }} />
+                      <span
+                        className="audio-volume-line"
+                        style={{ top: `${volumeY}%` }}
+                      />
                       <button
                         type="button"
-                        className={["audio-volume-handle", volumeDrag?.clipId === clip.id ? "active" : ""].filter(Boolean).join(" ")}
+                        className={[
+                          "audio-volume-handle",
+                          volumeDrag?.clipId === clip.id ? "active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                         style={{ top: `${volumeY}%` }}
-                        onMouseDown={(event) => startAudioVolumeDrag(event, clip)}
+                        onMouseDown={(event) =>
+                          startAudioVolumeDrag(event, clip)
+                        }
                         onClick={(event) => event.stopPropagation()}
                         title={`Volume · ${Math.round(volume)}%`}
                         aria-label={`Adjust audio volume, currently ${Math.round(volume)} percent`}
@@ -749,22 +914,48 @@ function WaveformTrack({
                     </>
                   )}
 
-                  {(clip.linkedVideoClipId ? onLinkedFadeChange : onStandaloneFadeChange) && (
+                  {(clip.linkedVideoClipId
+                    ? onLinkedFadeChange
+                    : onStandaloneFadeChange) && (
                     <>
                       <button
                         type="button"
-                        className={["clip-fade-handle", "audio", "in", activeFadeDrag?.edge === "in" ? "active" : ""].filter(Boolean).join(" ")}
-                        style={{ left: `clamp(5px, ${fadeInWidth}%, calc(100% - 5px))`, top: `${volumeY}%` }}
-                        onMouseDown={(event) => startAudioFadeResize(event, clip, "in")}
+                        className={[
+                          "clip-fade-handle",
+                          "audio",
+                          "in",
+                          activeFadeDrag?.edge === "in" ? "active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        style={{
+                          left: `clamp(5px, ${fadeInWidth}%, calc(100% - 5px))`,
+                          top: `${volumeY}%`,
+                        }}
+                        onMouseDown={(event) =>
+                          startAudioFadeResize(event, clip, "in")
+                        }
                         onClick={(event) => event.stopPropagation()}
                         title={`Audio fade in · ${fadeInDuration.toFixed(2)}s`}
                         aria-label="Adjust audio fade in"
                       />
                       <button
                         type="button"
-                        className={["clip-fade-handle", "audio", "out", activeFadeDrag?.edge === "out" ? "active" : ""].filter(Boolean).join(" ")}
-                        style={{ right: `clamp(5px, ${fadeOutWidth}%, calc(100% - 5px))`, top: `${volumeY}%` }}
-                        onMouseDown={(event) => startAudioFadeResize(event, clip, "out")}
+                        className={[
+                          "clip-fade-handle",
+                          "audio",
+                          "out",
+                          activeFadeDrag?.edge === "out" ? "active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        style={{
+                          right: `clamp(5px, ${fadeOutWidth}%, calc(100% - 5px))`,
+                          top: `${volumeY}%`,
+                        }}
+                        onMouseDown={(event) =>
+                          startAudioFadeResize(event, clip, "out")
+                        }
                         onClick={(event) => event.stopPropagation()}
                         title={`Audio fade out · ${fadeOutDuration.toFixed(2)}s`}
                         aria-label="Adjust audio fade out"
@@ -777,15 +968,24 @@ function WaveformTrack({
               {activeFadeDrag && (
                 <span
                   className={`clip-fade-duration-label audio ${activeFadeDrag.edge}`}
-                  style={activeFadeDrag.edge === "in"
-                    ? { left: `${(activeFadeDrag.duration / clipDuration) * 100}%` }
-                    : { right: `${(activeFadeDrag.duration / clipDuration) * 100}%` }}
+                  style={
+                    activeFadeDrag.edge === "in"
+                      ? {
+                          left: `${(activeFadeDrag.duration / clipDuration) * 100}%`,
+                        }
+                      : {
+                          right: `${(activeFadeDrag.duration / clipDuration) * 100}%`,
+                        }
+                  }
                 >
                   {activeFadeDrag.duration.toFixed(2)}s
                 </span>
               )}
               {activeVolumeDrag && (
-                <span className="audio-volume-value-label" style={{ top: `${100 - activeVolumeDrag.volume}%` }}>
+                <span
+                  className="audio-volume-value-label"
+                  style={{ top: `${100 - activeVolumeDrag.volume}%` }}
+                >
                   {activeVolumeDrag.volume}%
                 </span>
               )}

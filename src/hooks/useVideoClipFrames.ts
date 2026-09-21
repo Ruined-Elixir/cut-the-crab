@@ -3,7 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import type { VideoTimelineClip } from "../types/timelineModel";
-import { isFreezeFrameClip, timelineTimeToSourceTime, videoPlaybackRate } from "../utils/videoRetime";
+import {
+  isFreezeFrameClip,
+  timelineTimeToSourceTime,
+  videoPlaybackRate,
+} from "../utils/videoRetime";
 
 export type VideoClipFrame = {
   sourceTime: number;
@@ -95,8 +99,9 @@ function uniformTimes(duration: number, count: number) {
   if (duration <= 0 || count <= 0) return [];
   if (count === 1) return [0];
   const end = Math.max(0, duration - 0.01);
-  return Array.from({ length: count }, (_, index) =>
-    (index / (count - 1)) * end,
+  return Array.from(
+    { length: count },
+    (_, index) => (index / (count - 1)) * end,
   );
 }
 
@@ -104,8 +109,9 @@ function uniformRangeTimes(start: number, end: number, interval: number) {
   if (end <= start) return [start];
   const safeInterval = Math.max(0.04, interval);
   const count = Math.max(2, Math.ceil((end - start) / safeInterval) + 1);
-  return Array.from({ length: count }, (_, index) =>
-    start + ((end - start) * index) / Math.max(1, count - 1),
+  return Array.from(
+    { length: count },
+    (_, index) => start + ((end - start) * index) / Math.max(1, count - 1),
   );
 }
 
@@ -114,7 +120,8 @@ function mergeTimes(times: number[]) {
   const merged: number[] = [];
   for (const time of sorted) {
     const previous = merged[merged.length - 1];
-    if (previous === undefined || Math.abs(previous - time) > 0.025) merged.push(time);
+    if (previous === undefined || Math.abs(previous - time) > 0.025)
+      merged.push(time);
   }
   return merged;
 }
@@ -130,9 +137,18 @@ function waitForEvent(
       target.removeEventListener("error", handleError);
       signal.removeEventListener("abort", handleAbort);
     };
-    const handleEvent = () => { cleanup(); resolve(); };
-    const handleError = () => { cleanup(); reject(new Error(`Video failed while waiting for ${eventName}.`)); };
-    const handleAbort = () => { cleanup(); reject(new DOMException("Aborted", "AbortError")); };
+    const handleEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error(`Video failed while waiting for ${eventName}.`));
+    };
+    const handleAbort = () => {
+      cleanup();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
     target.addEventListener(eventName, handleEvent, { once: true });
     target.addEventListener("error", handleError, { once: true });
     signal.addEventListener("abort", handleAbort, { once: true });
@@ -154,12 +170,19 @@ function waitForFramePaint(signal: AbortSignal) {
     };
     signal.addEventListener("abort", handleAbort, { once: true });
     frameId = window.requestAnimationFrame(() => {
-      timeoutId = window.setTimeout(() => { cleanup(); resolve(); }, FRAME_PAINT_DELAY_MS);
+      timeoutId = window.setTimeout(() => {
+        cleanup();
+        resolve();
+      }, FRAME_PAINT_DELAY_MS);
     });
   });
 }
 
-async function seekAndWaitForFrame(video: HTMLVideoElement, targetTime: number, signal: AbortSignal) {
+async function seekAndWaitForFrame(
+  video: HTMLVideoElement,
+  targetTime: number,
+  signal: AbortSignal,
+) {
   if (Math.abs(video.currentTime - targetTime) > 0.004) {
     video.currentTime = targetTime;
     await waitForEvent(video, "seeked", signal);
@@ -212,11 +235,15 @@ function sourcePlansFor(
   const visibleSpan = Math.max(1, visibleEnd - visibleStart);
   const prefetchStart = Math.max(0, visibleStart - visibleSpan);
   const prefetchEnd = visibleEnd + visibleSpan;
-  const timelineSampleInterval = FRAME_TILE_WIDTH_PX / Math.max(0.01, pixelsPerSecond);
+  const timelineSampleInterval =
+    FRAME_TILE_WIDTH_PX / Math.max(0.01, pixelsPerSecond);
 
   for (const clip of videoClips) {
     if (!clip.sourcePath) continue;
-    const entry = bySource.get(clip.sourcePath) ?? { duration: 0, priority: [] };
+    const entry = bySource.get(clip.sourcePath) ?? {
+      duration: 0,
+      priority: [],
+    };
     entry.duration = Math.max(entry.duration, sourceDurationForClip(clip));
 
     const overlapStart = Math.max(clip.timelineStart, prefetchStart);
@@ -224,7 +251,8 @@ function sourcePlansFor(
     if (overlapEnd > overlapStart) {
       const sourceStart = timelineTimeToSourceTime(clip, overlapStart);
       const sourceEnd = timelineTimeToSourceTime(clip, overlapEnd);
-      const sourceSampleInterval = timelineSampleInterval * videoPlaybackRate(clip);
+      const sourceSampleInterval =
+        timelineSampleInterval * videoPlaybackRate(clip);
       entry.priority.push(
         ...uniformRangeTimes(
           Math.min(sourceStart, sourceEnd),
@@ -274,7 +302,8 @@ function displayFramesForClip(
   const slotWidth = 100 / slotCount;
   return Array.from({ length: slotCount }, (_, index) => {
     const ratio = index / slotCount;
-    const timelineTime = clip.timelineStart + (clip.timelineEnd - clip.timelineStart) * ratio;
+    const timelineTime =
+      clip.timelineStart + (clip.timelineEnd - clip.timelineStart) * ratio;
     const targetTime = isFreezeFrameClip(clip)
       ? clip.freezeFrameSourceTime!
       : timelineTimeToSourceTime(clip, timelineTime);
@@ -288,7 +317,10 @@ function displayFramesForClip(
   });
 }
 
-function buildClipFrameMap(videoClips: VideoTimelineClip[], pixelsPerSecond: number) {
+function buildClipFrameMap(
+  videoClips: VideoTimelineClip[],
+  pixelsPerSecond: number,
+) {
   const result: VideoClipFrames = {};
   for (const clip of videoClips) {
     result[clip.id] = displayFramesForClip(
@@ -306,7 +338,8 @@ function missingTimes(
   duration: number,
 ) {
   if (times.length === 0) return [];
-  const sampleSpacing = times.length > 1 ? duration / (times.length - 1) : duration;
+  const sampleSpacing =
+    times.length > 1 ? duration / (times.length - 1) : duration;
   const tolerance = Math.max(0.03, sampleSpacing * 0.28);
   return times.filter((time) => {
     const nearest = nearestFrame(cache.frames, time);
@@ -336,7 +369,8 @@ async function runWorker(
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       await waitForEvent(video, "loadeddata", signal);
     }
-    if (signal.aborted || video.videoWidth <= 0 || video.videoHeight <= 0) return;
+    if (signal.aborted || video.videoWidth <= 0 || video.videoHeight <= 0)
+      return;
 
     const canvas = document.createElement("canvas");
     canvas.width = THUMB_WIDTH;
@@ -346,7 +380,11 @@ async function runWorker(
 
     for (let index = 0; index < times.length; index += 1) {
       if (signal.aborted) return;
-      const targetTime = clamp(times[index], 0, Math.max(0, cache.duration - 0.01));
+      const targetTime = clamp(
+        times[index],
+        0,
+        Math.max(0, cache.duration - 0.01),
+      );
       await seekAndWaitForFrame(video, targetTime, signal);
       drawContainedFrame(context, video, canvas);
       addFrameToCache(cache, {
@@ -375,12 +413,19 @@ async function generateSourceFrames(
 
   const priorityMissing = missingTimes(
     cache,
-    plan.priorityTimes.map((time) => clamp(time, 0, Math.max(0, cache.duration - 0.01))),
+    plan.priorityTimes.map((time) =>
+      clamp(time, 0, Math.max(0, cache.duration - 0.01)),
+    ),
     cache.duration,
   );
 
-  const priorityBuckets = Array.from({ length: SOURCE_WORKERS }, () => [] as number[]);
-  priorityMissing.forEach((time, index) => priorityBuckets[index % SOURCE_WORKERS].push(time));
+  const priorityBuckets = Array.from(
+    { length: SOURCE_WORKERS },
+    () => [] as number[],
+  );
+  priorityMissing.forEach((time, index) =>
+    priorityBuckets[index % SOURCE_WORKERS].push(time),
+  );
   await Promise.all(
     priorityBuckets.map((times) =>
       runWorker(plan.sourcePath, times, cache!, signal, onProgress, true),
@@ -391,11 +436,18 @@ async function generateSourceFrames(
 
   const backgroundMissing = missingTimes(
     cache,
-    plan.backgroundTimes.map((time) => clamp(time, 0, Math.max(0, cache.duration - 0.01))),
+    plan.backgroundTimes.map((time) =>
+      clamp(time, 0, Math.max(0, cache.duration - 0.01)),
+    ),
     cache.duration,
   );
-  const backgroundBuckets = Array.from({ length: SOURCE_WORKERS }, () => [] as number[]);
-  backgroundMissing.forEach((time, index) => backgroundBuckets[index % SOURCE_WORKERS].push(time));
+  const backgroundBuckets = Array.from(
+    { length: SOURCE_WORKERS },
+    () => [] as number[],
+  );
+  backgroundMissing.forEach((time, index) =>
+    backgroundBuckets[index % SOURCE_WORKERS].push(time),
+  );
   await Promise.all(
     backgroundBuckets.map((times) =>
       runWorker(plan.sourcePath, times, cache!, signal, onProgress, false),
@@ -444,7 +496,9 @@ export function useVideoClipFrames(
               if (!controller.signal.aborted) setRevision((value) => value + 1);
             });
           } catch (error) {
-            if (!(error instanceof DOMException && error.name === "AbortError")) {
+            if (!(
+              error instanceof DOMException && error.name === "AbortError"
+            )) {
               console.warn(
                 `Could not generate source-wide timeline thumbnails for ${plan.sourcePath}:`,
                 error,

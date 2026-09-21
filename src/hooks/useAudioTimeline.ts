@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 
 import type { ProjectMediaAsset } from "../types/project";
-import type { AudioTimelineClip, TimelineTrackId } from "../types/timelineModel";
+import type {
+  AudioTimelineClip,
+  TimelineTrackId,
+} from "../types/timelineModel";
 
 const MIN_AUDIO_CLIP_DURATION = 0.05;
 const AUDIO_TRACK_ID_PATTERN = /^audio-\d+$/;
@@ -65,9 +68,13 @@ function findNearestAvailableStart(
   }
   candidates.push(Math.max(gapStart, requested));
 
-  return candidates.reduce((best, candidate) =>
-    Math.abs(candidate - requested) < Math.abs(best - requested) ? candidate : best,
-  candidates[0] ?? requested);
+  return candidates.reduce(
+    (best, candidate) =>
+      Math.abs(candidate - requested) < Math.abs(best - requested)
+        ? candidate
+        : best,
+    candidates[0] ?? requested,
+  );
 }
 
 function splitForInsert(
@@ -118,10 +125,7 @@ function splitForInsert(
   return result;
 }
 
-function rippleDelete(
-  clips: AudioTimelineClip[],
-  removedIds: Set<string>,
-) {
+function rippleDelete(clips: AudioTimelineClip[], removedIds: Set<string>) {
   let next = [...clips];
   const byTrack = new Map<string, AudioTimelineClip[]>();
   for (const clip of clips.filter((clip) => removedIds.has(clip.id))) {
@@ -155,10 +159,16 @@ function rippleDelete(
 
 type UseAudioTimelineOptions = { rippleMode?: boolean };
 
-export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions = {}) {
+export function useAudioTimeline({
+  rippleMode = false,
+}: UseAudioTimelineOptions = {}) {
   const [audioClips, setAudioClips] = useState<AudioTimelineClip[]>([]);
-  const [selectedAudioClipId, setSelectedAudioClipId] = useState<string | null>(null);
-  const [selectedAudioClipIds, setSelectedAudioClipIds] = useState<string[]>([]);
+  const [selectedAudioClipId, setSelectedAudioClipId] = useState<string | null>(
+    null,
+  );
+  const [selectedAudioClipIds, setSelectedAudioClipIds] = useState<string[]>(
+    [],
+  );
   const moveOriginRef = useRef<{
     anchorId: string;
     selected: AudioTimelineClip[];
@@ -175,7 +185,10 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
     setSelectedAudioClipIds([]);
   };
 
-  const selectAudioClip = (id: string, mode: "single" | "toggle" | "focus" = "single") => {
+  const selectAudioClip = (
+    id: string,
+    mode: "single" | "toggle" | "focus" = "single",
+  ) => {
     if (mode === "single") {
       setSelectedAudioClipId(id);
       setSelectedAudioClipIds([id]);
@@ -183,13 +196,17 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
     }
     if (mode === "focus") {
       setSelectedAudioClipId(id);
-      setSelectedAudioClipIds((current) => current.includes(id) ? current : [id]);
+      setSelectedAudioClipIds((current) =>
+        current.includes(id) ? current : [id],
+      );
       return;
     }
     setSelectedAudioClipIds((current) => {
       if (current.includes(id)) {
         const next = current.filter((value) => value !== id);
-        setSelectedAudioClipId((primary) => primary === id ? next[next.length - 1] ?? null : primary);
+        setSelectedAudioClipId((primary) =>
+          primary === id ? (next[next.length - 1] ?? null) : primary,
+        );
         return next;
       }
       setSelectedAudioClipId(id);
@@ -200,15 +217,24 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
   const selectAudioClips = (ids: string[], primaryId?: string | null) => {
     const unique = [...new Set(ids)];
     setSelectedAudioClipIds(unique);
-    setSelectedAudioClipId(primaryId === undefined ? unique[0] ?? null : primaryId);
+    setSelectedAudioClipId(
+      primaryId === undefined ? (unique[0] ?? null) : primaryId,
+    );
   };
 
   const replaceAudioClips = (clips: AudioTimelineClip[]) => {
-    const normalized = clips.map((clip) => ({ ...clip, trackId: normalizeAudioTrackId(clip.trackId) }));
+    const normalized = clips.map((clip) => ({
+      ...clip,
+      trackId: normalizeAudioTrackId(clip.trackId),
+    }));
     setAudioClips(sortAudioClips(normalized));
     const available = new Set(normalized.map((clip) => clip.id));
-    setSelectedAudioClipIds((current) => current.filter((id) => available.has(id)));
-    setSelectedAudioClipId((current) => current && available.has(current) ? current : null);
+    setSelectedAudioClipIds((current) =>
+      current.filter((id) => available.has(id)),
+    );
+    setSelectedAudioClipId((current) =>
+      current && available.has(current) ? current : null,
+    );
   };
 
   const beginAudioClipMove = (id: string) => {
@@ -216,12 +242,16 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
     const selected = new Set(selectedAudioClipIds);
     moveOriginRef.current = {
       anchorId: id,
-      selected: audioClips.filter((clip) => selected.has(clip.id)).map((clip) => ({ ...clip })),
+      selected: audioClips
+        .filter((clip) => selected.has(clip.id))
+        .map((clip) => ({ ...clip })),
       all: audioClips.map((clip) => ({ ...clip })),
     };
   };
 
-  const endAudioClipMove = () => { moveOriginRef.current = null; };
+  const endAudioClipMove = () => {
+    moveOriginRef.current = null;
+  };
 
   const moveAudioClip = (id: string, requestedStart: number) => {
     setAudioClips((current) => {
@@ -232,14 +262,26 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
         const selectedIds = new Set(origin.selected.map((clip) => clip.id));
         const deltaRequested = requestedStart - anchor.timelineStart;
 
-        if (rippleMode && origin.selected.every((clip) => clip.trackId === anchor.trackId)) {
+        if (
+          rippleMode &&
+          origin.selected.every((clip) => clip.trackId === anchor.trackId)
+        ) {
           const without = rippleDelete(origin.all, selectedIds);
-          const groupStart = Math.min(...origin.selected.map((clip) => clip.timelineStart));
-          const groupEnd = Math.max(...origin.selected.map((clip) => clip.timelineEnd));
+          const groupStart = Math.min(
+            ...origin.selected.map((clip) => clip.timelineStart),
+          );
+          const groupEnd = Math.max(
+            ...origin.selected.map((clip) => clip.timelineEnd),
+          );
           const duration = groupEnd - groupStart;
           const anchorOffset = anchor.timelineStart - groupStart;
           const destination = Math.max(0, requestedStart - anchorOffset);
-          const opened = splitForInsert(without, anchor.trackId, destination, duration);
+          const opened = splitForInsert(
+            without,
+            anchor.trackId,
+            destination,
+            duration,
+          );
           const inserted = origin.selected.map((clip) => ({
             ...clip,
             timelineStart: destination + (clip.timelineStart - groupStart),
@@ -262,31 +304,54 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
           const clipDelta = legal - clip.timelineStart;
           if (Math.abs(clipDelta) < Math.abs(delta)) delta = clipDelta;
         }
-        delta = Math.max(delta, -Math.min(...origin.selected.map((clip) => clip.timelineStart)));
+        delta = Math.max(
+          delta,
+          -Math.min(...origin.selected.map((clip) => clip.timelineStart)),
+        );
         const origins = new Map(origin.selected.map((clip) => [clip.id, clip]));
-        return sortAudioClips(current.map((clip) => {
-          const source = origins.get(clip.id);
-          return source ? {
-            ...clip,
-            timelineStart: source.timelineStart + delta,
-            timelineEnd: source.timelineEnd + delta,
-          } : clip;
-        }));
+        return sortAudioClips(
+          current.map((clip) => {
+            const source = origins.get(clip.id);
+            return source
+              ? {
+                  ...clip,
+                  timelineStart: source.timelineStart + delta,
+                  timelineEnd: source.timelineEnd + delta,
+                }
+              : clip;
+          }),
+        );
       }
 
       const clip = current.find((value) => value.id === id);
       if (!clip) return current;
       const duration = clip.timelineEnd - clip.timelineStart;
-      const start = findNearestAvailableStart(current, clip.trackId, requestedStart, duration, new Set([id]));
-      return sortAudioClips(current.map((value) => value.id === id ? {
-        ...value,
-        timelineStart: start,
-        timelineEnd: start + duration,
-      } : value));
+      const start = findNearestAvailableStart(
+        current,
+        clip.trackId,
+        requestedStart,
+        duration,
+        new Set([id]),
+      );
+      return sortAudioClips(
+        current.map((value) =>
+          value.id === id
+            ? {
+                ...value,
+                timelineStart: start,
+                timelineEnd: start + duration,
+              }
+            : value,
+        ),
+      );
     });
   };
 
-  const moveAudioClipToTrack = (id: string, targetTrackId: TimelineTrackId, requestedStart: number) => {
+  const moveAudioClipToTrack = (
+    id: string,
+    targetTrackId: TimelineTrackId,
+    requestedStart: number,
+  ) => {
     const target = normalizeAudioTrackId(targetTrackId);
     setAudioClips((current) => {
       const origin = moveOriginRef.current;
@@ -311,13 +376,25 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
       const clip = current.find((value) => value.id === id);
       if (!clip) return current;
       const duration = clip.timelineEnd - clip.timelineStart;
-      const start = findNearestAvailableStart(current, target, requestedStart, duration, new Set([id]));
-      return sortAudioClips(current.map((value) => value.id === id ? {
-        ...value,
-        trackId: target,
-        timelineStart: start,
-        timelineEnd: start + duration,
-      } : value));
+      const start = findNearestAvailableStart(
+        current,
+        target,
+        requestedStart,
+        duration,
+        new Set([id]),
+      );
+      return sortAudioClips(
+        current.map((value) =>
+          value.id === id
+            ? {
+                ...value,
+                trackId: target,
+                timelineStart: start,
+                timelineEnd: start + duration,
+              }
+            : value,
+        ),
+      );
     });
   };
 
@@ -327,49 +404,101 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
       if (!clip) return current;
       const minStart = Math.max(0, clip.timelineStart - clip.sourceIn);
       const sourceDuration = clip.sourceDuration ?? clip.sourceOut;
-      const maxEnd = clip.timelineEnd + Math.max(0, sourceDuration - clip.sourceOut);
-      const start = Math.max(minStart, Math.min(newStart, newEnd - MIN_AUDIO_CLIP_DURATION));
-      const end = Math.min(maxEnd, Math.max(start + MIN_AUDIO_CLIP_DURATION, newEnd));
+      const maxEnd =
+        clip.timelineEnd + Math.max(0, sourceDuration - clip.sourceOut);
+      const start = Math.max(
+        minStart,
+        Math.min(newStart, newEnd - MIN_AUDIO_CLIP_DURATION),
+      );
+      const end = Math.min(
+        maxEnd,
+        Math.max(start + MIN_AUDIO_CLIP_DURATION, newEnd),
+      );
       const sourceIn = clip.sourceIn + (start - clip.timelineStart);
       const sourceOut = clip.sourceOut + (end - clip.timelineEnd);
-      const overlaps = current.some((other) => other.id !== id && other.trackId === clip.trackId && end > other.timelineStart && start < other.timelineEnd);
+      const overlaps = current.some(
+        (other) =>
+          other.id !== id &&
+          other.trackId === clip.trackId &&
+          end > other.timelineStart &&
+          start < other.timelineEnd,
+      );
       if (overlaps) return current;
-      return sortAudioClips(current.map((value) => value.id === id ? {
-        ...value,
-        timelineStart: start,
-        timelineEnd: end,
-        sourceIn,
-        sourceOut,
-        fadeInDuration: Math.min(value.fadeInDuration ?? 0, end - start),
-        fadeOutDuration: Math.min(value.fadeOutDuration ?? 0, end - start),
-      } : value));
+      return sortAudioClips(
+        current.map((value) =>
+          value.id === id
+            ? {
+                ...value,
+                timelineStart: start,
+                timelineEnd: end,
+                sourceIn,
+                sourceOut,
+                fadeInDuration: Math.min(
+                  value.fadeInDuration ?? 0,
+                  end - start,
+                ),
+                fadeOutDuration: Math.min(
+                  value.fadeOutDuration ?? 0,
+                  end - start,
+                ),
+              }
+            : value,
+        ),
+      );
     });
   };
 
   const splitAudioClip = (id: string, time: number) => {
     setAudioClips((current) => {
       const clip = current.find((value) => value.id === id);
-      if (!clip || time <= clip.timelineStart + MIN_AUDIO_CLIP_DURATION || time >= clip.timelineEnd - MIN_AUDIO_CLIP_DURATION) return current;
+      if (
+        !clip ||
+        time <= clip.timelineStart + MIN_AUDIO_CLIP_DURATION ||
+        time >= clip.timelineEnd - MIN_AUDIO_CLIP_DURATION
+      )
+        return current;
       const sourceSplit = clip.sourceIn + (time - clip.timelineStart);
       const rightId = crypto.randomUUID();
-      const left = { ...clip, timelineEnd: time, sourceOut: sourceSplit, fadeOutDuration: 0 };
-      const right = { ...clip, id: rightId, timelineStart: time, sourceIn: sourceSplit, fadeInDuration: 0 };
+      const left = {
+        ...clip,
+        timelineEnd: time,
+        sourceOut: sourceSplit,
+        fadeOutDuration: 0,
+      };
+      const right = {
+        ...clip,
+        id: rightId,
+        timelineStart: time,
+        sourceIn: sourceSplit,
+        fadeInDuration: 0,
+      };
       window.requestAnimationFrame(() => {
         setSelectedAudioClipId(rightId);
         setSelectedAudioClipIds([rightId]);
       });
-      return sortAudioClips(current.flatMap((value) => value.id === id ? [left, right] : [value]));
+      return sortAudioClips(
+        current.flatMap((value) => (value.id === id ? [left, right] : [value])),
+      );
     });
   };
 
-  const insertAudioClipFromMedia = (asset: ProjectMediaAsset, requestedStart: number, requestedTrackId: TimelineTrackId) => {
+  const insertAudioClipFromMedia = (
+    asset: ProjectMediaAsset,
+    requestedStart: number,
+    requestedTrackId: TimelineTrackId,
+  ) => {
     if (asset.duration <= 0) return null;
     const id = crypto.randomUUID();
     const trackId = normalizeAudioTrackId(requestedTrackId);
     setAudioClips((current) => {
       const start = rippleMode
         ? Math.max(0, requestedStart)
-        : findNextAvailableStart(current, trackId, requestedStart, asset.duration);
+        : findNextAvailableStart(
+            current,
+            trackId,
+            requestedStart,
+            asset.duration,
+          );
       const clip: AudioTimelineClip = {
         id,
         kind: "audio",
@@ -398,13 +527,22 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
     return id;
   };
 
-  const insertAudioClipCopies = (sourceClips: AudioTimelineClip[], requestedStart: number, requestedTrackId?: TimelineTrackId) => {
+  const insertAudioClipCopies = (
+    sourceClips: AudioTimelineClip[],
+    requestedStart: number,
+    requestedTrackId?: TimelineTrackId,
+  ) => {
     if (sourceClips.length === 0) return [] as string[];
     const sourceTracks = [...new Set(sourceClips.map((clip) => clip.trackId))];
-    const groupStart = Math.min(...sourceClips.map((clip) => clip.timelineStart));
+    const groupStart = Math.min(
+      ...sourceClips.map((clip) => clip.timelineStart),
+    );
     const groupEnd = Math.max(...sourceClips.map((clip) => clip.timelineEnd));
     const groupDuration = groupEnd - groupStart;
-    const targetTrack = requestedTrackId && sourceTracks.length === 1 ? normalizeAudioTrackId(requestedTrackId) : undefined;
+    const targetTrack =
+      requestedTrackId && sourceTracks.length === 1
+        ? normalizeAudioTrackId(requestedTrackId)
+        : undefined;
     const ids = sourceClips.map(() => crypto.randomUUID());
     setAudioClips((current) => {
       let baseStart = Math.max(0, requestedStart);
@@ -412,7 +550,12 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
         let shift = baseStart - groupStart;
         for (const clip of sourceClips) {
           const trackId = targetTrack ?? clip.trackId;
-          const legal = findNextAvailableStart(current, trackId, clip.timelineStart + shift, clip.timelineEnd - clip.timelineStart);
+          const legal = findNextAvailableStart(
+            current,
+            trackId,
+            clip.timelineStart + shift,
+            clip.timelineEnd - clip.timelineStart,
+          );
           shift = Math.max(shift, legal - clip.timelineStart);
         }
         baseStart = groupStart + shift;
@@ -420,7 +563,8 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
       let working = current;
       if (rippleMode) {
         const tracks = targetTrack ? [targetTrack] : sourceTracks;
-        for (const trackId of tracks) working = splitForInsert(working, trackId, baseStart, groupDuration);
+        for (const trackId of tracks)
+          working = splitForInsert(working, trackId, baseStart, groupDuration);
       }
       const copies = sourceClips.map((clip, index) => ({
         ...clip,
@@ -441,28 +585,61 @@ export function useAudioTimeline({ rippleMode = false }: UseAudioTimelineOptions
 
   const deleteAudioClips = (ids: string[]) => {
     const removed = new Set(ids);
-    setAudioClips((current) => rippleMode ? rippleDelete(current, removed) : current.filter((clip) => !removed.has(clip.id)));
-    setSelectedAudioClipIds((current) => current.filter((id) => !removed.has(id)));
-    setSelectedAudioClipId((current) => current && removed.has(current) ? null : current);
+    setAudioClips((current) =>
+      rippleMode
+        ? rippleDelete(current, removed)
+        : current.filter((clip) => !removed.has(clip.id)),
+    );
+    setSelectedAudioClipIds((current) =>
+      current.filter((id) => !removed.has(id)),
+    );
+    setSelectedAudioClipId((current) =>
+      current && removed.has(current) ? null : current,
+    );
   };
 
   const deleteAudioTrack = (trackId: TimelineTrackId) => {
-    setAudioClips((current) => current.filter((clip) => clip.trackId !== trackId));
+    setAudioClips((current) =>
+      current.filter((clip) => clip.trackId !== trackId),
+    );
     clearAudioClipSelection();
   };
 
-  const updateAudioClip = (id: string, patch: { volume?: number; muted?: boolean; fadeInDuration?: number; fadeOutDuration?: number }) => {
-    setAudioClips((current) => current.map((clip) => {
-      if (clip.id !== id) return clip;
-      const duration = Math.max(MIN_AUDIO_CLIP_DURATION, clip.timelineEnd - clip.timelineStart);
-      return {
-        ...clip,
-        volume: patch.volume === undefined ? clip.volume ?? 100 : Math.max(0, Math.min(100, patch.volume)),
-        muted: patch.muted === undefined ? clip.muted ?? false : patch.muted,
-        fadeInDuration: patch.fadeInDuration === undefined ? clip.fadeInDuration ?? 0 : Math.max(0, Math.min(duration, patch.fadeInDuration)),
-        fadeOutDuration: patch.fadeOutDuration === undefined ? clip.fadeOutDuration ?? 0 : Math.max(0, Math.min(duration, patch.fadeOutDuration)),
-      };
-    }));
+  const updateAudioClip = (
+    id: string,
+    patch: {
+      volume?: number;
+      muted?: boolean;
+      fadeInDuration?: number;
+      fadeOutDuration?: number;
+    },
+  ) => {
+    setAudioClips((current) =>
+      current.map((clip) => {
+        if (clip.id !== id) return clip;
+        const duration = Math.max(
+          MIN_AUDIO_CLIP_DURATION,
+          clip.timelineEnd - clip.timelineStart,
+        );
+        return {
+          ...clip,
+          volume:
+            patch.volume === undefined
+              ? (clip.volume ?? 100)
+              : Math.max(0, Math.min(100, patch.volume)),
+          muted:
+            patch.muted === undefined ? (clip.muted ?? false) : patch.muted,
+          fadeInDuration:
+            patch.fadeInDuration === undefined
+              ? (clip.fadeInDuration ?? 0)
+              : Math.max(0, Math.min(duration, patch.fadeInDuration)),
+          fadeOutDuration:
+            patch.fadeOutDuration === undefined
+              ? (clip.fadeOutDuration ?? 0)
+              : Math.max(0, Math.min(duration, patch.fadeOutDuration)),
+        };
+      }),
+    );
   };
 
   return {

@@ -1,7 +1,4 @@
-import {
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type {
   AdjustmentLayerClip,
@@ -42,7 +39,11 @@ type VideoTrackProps = {
   onAdjustmentLayerEditStart?: (id: string) => boolean | void;
   onAdjustmentLayerEditEnd?: () => void;
   onAdjustmentLayerMove?: (id: string, newTimelineStart: number) => void;
-  onAdjustmentLayerResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
+  onAdjustmentLayerResize?: (
+    id: string,
+    newTimelineStart: number,
+    newTimelineEnd: number,
+  ) => void;
   selectedVideoClipId: string | null;
   selectedVideoClipIds: string[];
   framesByClipId: VideoClipFrames;
@@ -52,10 +53,7 @@ type VideoTrackProps = {
   onSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
   onMoveStart?: (id: string) => boolean | void;
   onMoveEnd?: () => void;
-  onMove?: (
-    id: string,
-    newTimelineStart: number,
-  ) => void;
+  onMove?: (id: string, newTimelineStart: number) => void;
   onMoveToTrack?: (
     id: string,
     targetTrackId: TimelineTrackId,
@@ -151,10 +149,10 @@ function VideoTrack({
   expandedCompoundId = null,
   showLabel = true,
 }: VideoTrackProps) {
-  const [draggingClipId, setDraggingClipId] =
-    useState<string | null>(null);
-  const [draggingAdjustmentId, setDraggingAdjustmentId] =
-    useState<string | null>(null);
+  const [draggingClipId, setDraggingClipId] = useState<string | null>(null);
+  const [draggingAdjustmentId, setDraggingAdjustmentId] = useState<
+    string | null
+  >(null);
   const [adjustmentGestureMode, setAdjustmentGestureMode] = useState<
     "move" | "resize-left" | "resize-right" | null
   >(null);
@@ -168,10 +166,7 @@ function VideoTrack({
     (clip): clip is VideoTimelineClip => clip.kind === "video",
   );
 
-  const timeFromClientX = (
-    clientX: number,
-    element: HTMLElement,
-  ) => {
+  const timeFromClientX = (clientX: number, element: HTMLElement) => {
     if (duration <= 0) {
       return 0;
     }
@@ -182,12 +177,12 @@ function VideoTrack({
     return Math.max(0, Math.min(duration, ratio * duration));
   };
 
-  const handleTrackClick = (
-    event: ReactMouseEvent<HTMLDivElement>,
-  ) => {
+  const handleTrackClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (
       duration <= 0 ||
-      (event.target as HTMLElement).closest(".timeline-video-clip, .timeline-adjustment-layer")
+      (event.target as HTMLElement).closest(
+        ".timeline-video-clip, .timeline-adjustment-layer",
+      )
     ) {
       return;
     }
@@ -288,8 +283,7 @@ function VideoTrack({
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / width) * duration;
+      const deltaTime = ((moveEvent.clientX - startX) / width) * duration;
 
       const rawStart = Math.max(0, originalStart + deltaTime);
       const snapped = resolveSnappedStart(rawStart);
@@ -342,8 +336,7 @@ function VideoTrack({
 
       if (targetTrackElement instanceof HTMLElement) {
         const targetTrackId = targetTrackElement.dataset.videoTrackId;
-        const targetLocked =
-          targetTrackElement.dataset.trackLocked === "true";
+        const targetLocked = targetTrackElement.dataset.trackLocked === "true";
 
         if (
           !clip.compoundDisplay &&
@@ -352,11 +345,7 @@ function VideoTrack({
           targetTrackId !== track.id &&
           !targetLocked
         ) {
-          onMoveToTrack?.(
-            clip.id,
-            targetTrackId,
-            latestTimelineStart,
-          );
+          onMoveToTrack?.(clip.id, targetTrackId, latestTimelineStart);
         }
       }
 
@@ -401,8 +390,7 @@ function VideoTrack({
     const width = trackElement.getBoundingClientRect().width;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / width) * duration;
+      const deltaTime = ((moveEvent.clientX - startX) / width) * duration;
 
       if (edge === "left") {
         const nextStart = Math.max(
@@ -475,8 +463,8 @@ function VideoTrack({
       Math.min(
         maxDuration,
         edge === "in"
-          ? clip.videoFadeInDuration ?? 0
-          : clip.videoFadeOutDuration ?? 0,
+          ? (clip.videoFadeInDuration ?? 0)
+          : (clip.videoFadeOutDuration ?? 0),
       ),
     );
     const startX = event.clientX;
@@ -539,8 +527,8 @@ function VideoTrack({
       Math.min(
         maxDuration,
         edge === "in"
-          ? clip.transitionInDuration ?? 0.5
-          : clip.transitionOutDuration ?? 0.5,
+          ? (clip.transitionInDuration ?? 0.5)
+          : (clip.transitionOutDuration ?? 0.5),
       ),
     );
     const startX = event.clientX;
@@ -575,12 +563,14 @@ function VideoTrack({
     layer: AdjustmentLayerClip,
   ) => {
     if (event.button !== 0) return;
-    if ((event.target as HTMLElement).closest(".adjustment-resize-handle")) return;
+    if ((event.target as HTMLElement).closest(".adjustment-resize-handle"))
+      return;
 
     event.preventDefault();
     event.stopPropagation();
     onAdjustmentLayerSelect?.(layer.id);
-    if (track.locked || onAdjustmentLayerEditStart?.(layer.id) === false) return;
+    if (track.locked || onAdjustmentLayerEditStart?.(layer.id) === false)
+      return;
 
     const trackElement = event.currentTarget.parentElement;
     if (!trackElement || duration <= 0) return;
@@ -589,9 +579,13 @@ function VideoTrack({
     setAdjustmentGestureMode("move");
     const startX = event.clientX;
     const originalStart = layer.timelineStart;
-    const layerDuration = Math.max(MIN_VIDEO_CLIP_DURATION, layer.timelineEnd - layer.timelineStart);
+    const layerDuration = Math.max(
+      MIN_VIDEO_CLIP_DURATION,
+      layer.timelineEnd - layer.timelineStart,
+    );
     const width = trackElement.getBoundingClientRect().width;
-    const snapThresholdSeconds = (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
+    const snapThresholdSeconds =
+      (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
 
     const handleMove = (moveEvent: MouseEvent) => {
       // If mouseup was swallowed by a native menu/window transition, never
@@ -716,12 +710,11 @@ function VideoTrack({
         const snapped = resolveSnappedEdge(rawStart);
         const nextStart = Math.max(
           0,
-          Math.min(
-            originalEnd - MIN_VIDEO_CLIP_DURATION,
-            snapped.time,
-          ),
+          Math.min(originalEnd - MIN_VIDEO_CLIP_DURATION, snapped.time),
         );
-        onSnapGuideChange?.(snapped.target === nextStart ? snapped.target : null);
+        onSnapGuideChange?.(
+          snapped.target === nextStart ? snapped.target : null,
+        );
         onAdjustmentLayerResize?.(layer.id, nextStart, originalEnd);
         return;
       }
@@ -757,17 +750,19 @@ function VideoTrack({
   };
 
   return (
-    <div className={`timeline-row timeline-video-row ${showLabel ? "" : "track-only"}`.trim()}>
+    <div
+      className={`timeline-row timeline-video-row ${showLabel ? "" : "track-only"}`.trim()}
+    >
       {showLabel && (
-      <TimelineTrackLabel
-        shortLabel={track.shortLabel}
-        name={track.name}
-        locked={track.locked}
-        hidden={track.hidden}
-        canHide
-        onToggleLock={() => onToggleLock?.(track.id)}
-        onToggleHidden={() => onToggleHidden?.(track.id)}
-      />
+        <TimelineTrackLabel
+          shortLabel={track.shortLabel}
+          name={track.name}
+          locked={track.locked}
+          hidden={track.hidden}
+          canHide
+          onToggleLock={() => onToggleLock?.(track.id)}
+          onToggleHidden={() => onToggleHidden?.(track.id)}
+        />
       )}
 
       <div
@@ -783,8 +778,12 @@ function VideoTrack({
         onClick={handleTrackClick}
       >
         {adjustmentLayers.map((layer) => {
-          const left = duration > 0 ? (layer.timelineStart / duration) * 100 : 0;
-          const width = duration > 0 ? ((layer.timelineEnd - layer.timelineStart) / duration) * 100 : 0;
+          const left =
+            duration > 0 ? (layer.timelineStart / duration) * 100 : 0;
+          const width =
+            duration > 0
+              ? ((layer.timelineEnd - layer.timelineStart) / duration) * 100
+              : 0;
           const selected = selectedAdjustmentLayerId === layer.id;
           const dragging = draggingAdjustmentId === layer.id;
 
@@ -795,11 +794,19 @@ function VideoTrack({
                 "timeline-adjustment-layer",
                 selected ? "selected" : "",
                 dragging ? "dragging" : "",
-                dragging && adjustmentGestureMode?.startsWith("resize") ? "resizing" : "",
-                dragging && adjustmentGestureMode === "resize-left" ? "resizing-left" : "",
-                dragging && adjustmentGestureMode === "resize-right" ? "resizing-right" : "",
+                dragging && adjustmentGestureMode?.startsWith("resize")
+                  ? "resizing"
+                  : "",
+                dragging && adjustmentGestureMode === "resize-left"
+                  ? "resizing-left"
+                  : "",
+                dragging && adjustmentGestureMode === "resize-right"
+                  ? "resizing-right"
+                  : "",
                 layer.enabled === false ? "disabled" : "",
-              ].filter(Boolean).join(" ")}
+              ]
+                .filter(Boolean)
+                .join(" ")}
               style={{ left: `${left}%`, width: `${width}%` }}
               data-adjustment-layer-id={layer.id}
               title={`${layer.name} · drag to move · drag either edge to trim · double-click for controls`}
@@ -824,23 +831,40 @@ function VideoTrack({
                     action: () => onAdjustmentLayerOpen?.(layer.id),
                   },
                 ]).catch((error) => {
-                  console.error("Failed to show adjustment layer context menu:", error);
+                  console.error(
+                    "Failed to show adjustment layer context menu:",
+                    error,
+                  );
                 });
               }}
             >
               <div
                 className="adjustment-resize-handle left"
-                onMouseDown={(event) => startAdjustmentResize(event, layer, "left")}
+                onMouseDown={(event) =>
+                  startAdjustmentResize(event, layer, "left")
+                }
               />
               <div className="timeline-adjustment-layer-header">
-                <span className="timeline-adjustment-icon" aria-hidden="true">◇</span>
+                <span className="timeline-adjustment-icon" aria-hidden="true">
+                  ◇
+                </span>
                 <strong>{layer.name}</strong>
-                <span className="timeline-adjustment-badge">{layer.enabled === false ? "OFF" : "ADJ"}</span>
+                <span className="timeline-adjustment-badge">
+                  {layer.enabled === false ? "OFF" : "ADJ"}
+                </span>
               </div>
               <div className="timeline-adjustment-summary">
-                <span>{Math.max(0, layer.timelineEnd - layer.timelineStart).toFixed(2)}s</span>
+                <span>
+                  {Math.max(0, layer.timelineEnd - layer.timelineStart).toFixed(
+                    2,
+                  )}
+                  s
+                </span>
                 <span>Opacity {Math.round(layer.opacity)}%</span>
-                <span>Exp {layer.exposure > 0 ? "+" : ""}{layer.exposure.toFixed(1)}</span>
+                <span>
+                  Exp {layer.exposure > 0 ? "+" : ""}
+                  {layer.exposure.toFixed(1)}
+                </span>
                 <span>Sat {Math.round(layer.saturation)}%</span>
               </div>
               {dragging && adjustmentGestureMode && (
@@ -851,51 +875,63 @@ function VideoTrack({
                 </div>
               )}
               {allAdjustmentLayerKeyframeTimes(layer).length > 0 && (
-                <div className="adjustment-keyframe-strip" aria-label={`${layer.name} keyframes`}>
-                  {allAdjustmentLayerKeyframeTimes(layer).map((relativeTime) => {
-                    const absoluteTime = layer.timelineStart + relativeTime;
-                    const markerLeft = layer.timelineEnd > layer.timelineStart
-                      ? (relativeTime / (layer.timelineEnd - layer.timelineStart)) * 100
-                      : 0;
-                    const count = adjustmentLayerKeyframeCountAtTime(layer, relativeTime);
-                    const active = Math.abs(currentTime - absoluteTime) <= ADJUSTMENT_KEYFRAME_EPSILON;
-                    return (
-                      <button
-                        type="button"
-                        key={relativeTime}
-                        className={`adjustment-keyframe-marker ${active ? "active" : ""}`.trim()}
-                        style={{ left: `${markerLeft}%` }}
-                        title={`${count} keyframe${count === 1 ? "" : "s"} at ${absoluteTime.toFixed(2)}s`}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onAdjustmentLayerSelect?.(layer.id);
-                          onSeek?.(absoluteTime);
-                        }}
-                      >
-                        ◆
-                      </button>
-                    );
-                  })}
+                <div
+                  className="adjustment-keyframe-strip"
+                  aria-label={`${layer.name} keyframes`}
+                >
+                  {allAdjustmentLayerKeyframeTimes(layer).map(
+                    (relativeTime) => {
+                      const absoluteTime = layer.timelineStart + relativeTime;
+                      const markerLeft =
+                        layer.timelineEnd > layer.timelineStart
+                          ? (relativeTime /
+                              (layer.timelineEnd - layer.timelineStart)) *
+                            100
+                          : 0;
+                      const count = adjustmentLayerKeyframeCountAtTime(
+                        layer,
+                        relativeTime,
+                      );
+                      const active =
+                        Math.abs(currentTime - absoluteTime) <=
+                        ADJUSTMENT_KEYFRAME_EPSILON;
+                      return (
+                        <button
+                          type="button"
+                          key={relativeTime}
+                          className={`adjustment-keyframe-marker ${active ? "active" : ""}`.trim()}
+                          style={{ left: `${markerLeft}%` }}
+                          title={`${count} keyframe${count === 1 ? "" : "s"} at ${absoluteTime.toFixed(2)}s`}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onAdjustmentLayerSelect?.(layer.id);
+                            onSeek?.(absoluteTime);
+                          }}
+                        >
+                          ◆
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
               )}
               <div
                 className="adjustment-resize-handle right"
-                onMouseDown={(event) => startAdjustmentResize(event, layer, "right")}
+                onMouseDown={(event) =>
+                  startAdjustmentResize(event, layer, "right")
+                }
               />
             </div>
           );
         })}
 
         {videoClips.map((clip) => {
-          const left =
-            duration > 0
-              ? (clip.timelineStart / duration) * 100
-              : 0;
+          const left = duration > 0 ? (clip.timelineStart / duration) * 100 : 0;
 
           const width =
             duration > 0
@@ -919,8 +955,14 @@ function VideoTrack({
             clipDuration / 2,
             clip.transitionOutDuration ?? 0.5,
           );
-          const transitionInWidth = Math.min(50, (transitionInDuration / clipDuration) * 100);
-          const transitionOutWidth = Math.min(50, (transitionOutDuration / clipDuration) * 100);
+          const transitionInWidth = Math.min(
+            50,
+            (transitionInDuration / clipDuration) * 100,
+          );
+          const transitionOutWidth = Math.min(
+            50,
+            (transitionOutDuration / clipDuration) * 100,
+          );
           const videoFadeInDuration = Math.max(
             0,
             Math.min(clipDuration, clip.videoFadeInDuration ?? 0),
@@ -933,9 +975,10 @@ function VideoTrack({
           const videoFadeOutWidth = (videoFadeOutDuration / clipDuration) * 100;
           const isExpandedCompoundMember =
             !!expandedCompoundId && clip.compoundId === expandedCompoundId;
-          const transformKeyframeTimes = isSelected && !clip.compoundDisplay
-            ? allVideoTransformKeyframeTimes(clip)
-            : [];
+          const transformKeyframeTimes =
+            isSelected && !clip.compoundDisplay
+              ? allVideoTransformKeyframeTimes(clip)
+              : [];
 
           return (
             <div
@@ -956,7 +999,9 @@ function VideoTrack({
                 width: `${width}%`,
               }}
               data-video-clip-id={clip.id}
-              data-compound-id={clip.compoundDisplay ? clip.compoundId : undefined}
+              data-compound-id={
+                clip.compoundDisplay ? clip.compoundId : undefined
+              }
               onDoubleClick={(event) => {
                 if (!clip.compoundDisplay || !clip.compoundId) return;
                 event.preventDefault();
@@ -975,12 +1020,16 @@ function VideoTrack({
                     action: () => onRevealClip(clip),
                   },
                 ]).catch((error) => {
-                  console.error("Failed to show native video clip context menu:", error);
+                  console.error(
+                    "Failed to show native video clip context menu:",
+                    error,
+                  );
                 });
               }}
-              title={clip.compoundDisplay
-                ? `${clip.sourceName} · ${clip.compoundMemberCount ?? 0} members · double-click to open`
-                : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${videoPlaybackRate(clip)}× · ${track.shortLabel}`
+              title={
+                clip.compoundDisplay
+                  ? `${clip.sourceName} · ${clip.compoundMemberCount ?? 0} members · double-click to open`
+                  : `${clip.sourceName} · ${clip.sourceIn.toFixed(2)}–${clip.sourceOut.toFixed(2)} s · ${videoPlaybackRate(clip)}× · ${track.shortLabel}`
               }
               onMouseDown={(event) => startMove(event, clip)}
               onClick={(event) => {
@@ -1005,7 +1054,9 @@ function VideoTrack({
                     <span
                       key={`${clip.id}-keyframe-${time.toFixed(4)}`}
                       className="timeline-video-keyframe-marker"
-                      style={{ left: `${Math.max(0, Math.min(100, (time / clipDuration) * 100))}%` }}
+                      style={{
+                        left: `${Math.max(0, Math.min(100, (time / clipDuration) * 100))}%`,
+                      }}
                     />
                   ))}
                 </div>
@@ -1019,15 +1070,22 @@ function VideoTrack({
               <div className="timeline-video-clip-header">
                 {clip.compoundDisplay ? (
                   <div className="timeline-compound-header">
-                    <span className="timeline-compound-stack-icon" aria-hidden="true">
+                    <span
+                      className="timeline-compound-stack-icon"
+                      aria-hidden="true"
+                    >
                       <svg viewBox="0 0 20 20">
                         <path d="M4.5 7.2 10 4l5.5 3.2L10 10.4 4.5 7.2Z" />
                         <path d="m4.5 10.1 5.5 3.2 5.5-3.2" />
                         <path d="m4.5 13 5.5 3.2 5.5-3.2" />
                       </svg>
                     </span>
-                    <span className="timeline-compound-title">{clip.sourceName}</span>
-                    <span className="timeline-video-speed-badge compound-badge">CMPD</span>
+                    <span className="timeline-compound-title">
+                      {clip.sourceName}
+                    </span>
+                    <span className="timeline-video-speed-badge compound-badge">
+                      CMPD
+                    </span>
                   </div>
                 ) : (
                   <span className="timeline-video-clip-name">
@@ -1035,20 +1093,21 @@ function VideoTrack({
                   </span>
                 )}
 
-                {!clip.compoundDisplay && (clip.freezeFrameSourceTime !== undefined ? (
-                  <span className="timeline-video-speed-badge">HOLD</span>
-                ) : (
-                  <>
-                    {clip.playbackDirection === "reverse" && (
-                      <span className="timeline-video-speed-badge">REV</span>
-                    )}
-                    {Math.abs(videoPlaybackRate(clip) - 1) > 0.0001 && (
-                      <span className="timeline-video-speed-badge">
-                        {videoPlaybackRate(clip)}×
-                      </span>
-                    )}
-                  </>
-                ))}
+                {!clip.compoundDisplay &&
+                  (clip.freezeFrameSourceTime !== undefined ? (
+                    <span className="timeline-video-speed-badge">HOLD</span>
+                  ) : (
+                    <>
+                      {clip.playbackDirection === "reverse" && (
+                        <span className="timeline-video-speed-badge">REV</span>
+                      )}
+                      {Math.abs(videoPlaybackRate(clip) - 1) > 0.0001 && (
+                        <span className="timeline-video-speed-badge">
+                          {videoPlaybackRate(clip)}×
+                        </span>
+                      )}
+                    </>
+                  ))}
 
                 {currentTime >= clip.timelineStart &&
                   currentTime <= clip.timelineEnd && (
@@ -1093,7 +1152,9 @@ function VideoTrack({
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    style={{ left: `clamp(5px, ${videoFadeInWidth}%, calc(100% - 5px))` }}
+                    style={{
+                      left: `clamp(5px, ${videoFadeInWidth}%, calc(100% - 5px))`,
+                    }}
                     onMouseDown={(event) => startFadeResize(event, clip, "in")}
                     onClick={(event) => event.stopPropagation()}
                     title={`Video fade in · ${videoFadeInDuration.toFixed(2)}s`}
@@ -1111,7 +1172,9 @@ function VideoTrack({
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    style={{ right: `clamp(5px, ${videoFadeOutWidth}%, calc(100% - 5px))` }}
+                    style={{
+                      right: `clamp(5px, ${videoFadeOutWidth}%, calc(100% - 5px))`,
+                    }}
                     onMouseDown={(event) => startFadeResize(event, clip, "out")}
                     onClick={(event) => event.stopPropagation()}
                     title={`Video fade out · ${videoFadeOutDuration.toFixed(2)}s`}
@@ -1126,54 +1189,62 @@ function VideoTrack({
                   style={
                     fadeDrag.edge === "in"
                       ? { left: `${(fadeDrag.duration / clipDuration) * 100}%` }
-                      : { right: `${(fadeDrag.duration / clipDuration) * 100}%` }
+                      : {
+                          right: `${(fadeDrag.duration / clipDuration) * 100}%`,
+                        }
                   }
                 >
                   {fadeDrag.duration.toFixed(2)}s
                 </span>
               )}
 
-              {!clip.compoundDisplay && (clip.transitionInType ?? "none") !== "none" && (
-                <div
-                  className={`timeline-video-transition-region in ${clip.transitionInType}`}
-                  style={{ width: `${transitionInWidth}%` }}
-                  title={`${clip.transitionInType === "fade-black" ? "Fade from Black" : "Cross Dissolve"} · ${transitionInDuration.toFixed(1)}s`}
-                  onMouseDown={(event) => event.stopPropagation()}
-                >
-                  <span className="timeline-video-transition-label">
-                    {clip.transitionInType === "fade-black" ? "B" : "D"}
-                  </span>
-                  {!track.locked && (
-                    <button
-                      type="button"
-                      className="timeline-video-transition-handle in"
-                      onMouseDown={(event) => startTransitionResize(event, clip, "in")}
-                      aria-label="Adjust transition in duration"
-                    />
-                  )}
-                </div>
-              )}
+              {!clip.compoundDisplay &&
+                (clip.transitionInType ?? "none") !== "none" && (
+                  <div
+                    className={`timeline-video-transition-region in ${clip.transitionInType}`}
+                    style={{ width: `${transitionInWidth}%` }}
+                    title={`${clip.transitionInType === "fade-black" ? "Fade from Black" : "Cross Dissolve"} · ${transitionInDuration.toFixed(1)}s`}
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <span className="timeline-video-transition-label">
+                      {clip.transitionInType === "fade-black" ? "B" : "D"}
+                    </span>
+                    {!track.locked && (
+                      <button
+                        type="button"
+                        className="timeline-video-transition-handle in"
+                        onMouseDown={(event) =>
+                          startTransitionResize(event, clip, "in")
+                        }
+                        aria-label="Adjust transition in duration"
+                      />
+                    )}
+                  </div>
+                )}
 
-              {!clip.compoundDisplay && (clip.transitionOutType ?? "none") !== "none" && (
-                <div
-                  className={`timeline-video-transition-region out ${clip.transitionOutType}`}
-                  style={{ width: `${transitionOutWidth}%` }}
-                  title={`${clip.transitionOutType === "fade-black" ? "Fade to Black" : "Cross Dissolve"} · ${transitionOutDuration.toFixed(1)}s`}
-                  onMouseDown={(event) => event.stopPropagation()}
-                >
-                  <span className="timeline-video-transition-label">
-                    {clip.transitionOutType === "fade-black" ? "B" : "D"}
-                  </span>
-                  {!track.locked && (
-                    <button
-                      type="button"
-                      className="timeline-video-transition-handle out"
-                      onMouseDown={(event) => startTransitionResize(event, clip, "out")}
-                      aria-label="Adjust transition out duration"
-                    />
-                  )}
-                </div>
-              )}
+              {!clip.compoundDisplay &&
+                (clip.transitionOutType ?? "none") !== "none" && (
+                  <div
+                    className={`timeline-video-transition-region out ${clip.transitionOutType}`}
+                    style={{ width: `${transitionOutWidth}%` }}
+                    title={`${clip.transitionOutType === "fade-black" ? "Fade to Black" : "Cross Dissolve"} · ${transitionOutDuration.toFixed(1)}s`}
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <span className="timeline-video-transition-label">
+                      {clip.transitionOutType === "fade-black" ? "B" : "D"}
+                    </span>
+                    {!track.locked && (
+                      <button
+                        type="button"
+                        className="timeline-video-transition-handle out"
+                        onMouseDown={(event) =>
+                          startTransitionResize(event, clip, "out")
+                        }
+                        aria-label="Adjust transition out duration"
+                      />
+                    )}
+                  </div>
+                )}
 
               <div className="timeline-video-clip-frame-area">
                 {clip.compoundDisplay ? (
@@ -1208,10 +1279,7 @@ function VideoTrack({
                     ))}
                   </div>
                 ) : (
-                  <div
-                    className="timeline-video-filmstrip"
-                    aria-hidden="true"
-                  >
+                  <div className="timeline-video-filmstrip" aria-hidden="true">
                     {Array.from({ length: 8 }).map((_, index) => (
                       <span key={index} />
                     ))}

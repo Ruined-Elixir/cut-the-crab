@@ -85,7 +85,11 @@ type TimelineProps = {
   onAdjustmentLayerEditStart?: (id: string) => boolean | void;
   onAdjustmentLayerEditEnd?: () => void;
   onAdjustmentLayerMove?: (id: string, newTimelineStart: number) => void;
-  onAdjustmentLayerResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
+  onAdjustmentLayerResize?: (
+    id: string,
+    newTimelineStart: number,
+    newTimelineEnd: number,
+  ) => void;
   onOpenAdjustmentControls?: () => void;
   onDeleteTrack?: (trackId: TimelineTrackId) => void;
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
@@ -97,14 +101,17 @@ type TimelineProps = {
   onExtractRange?: () => void;
   onExportRange?: () => void;
 
-  onVideoClipSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
-  onVideoClipSelectionChange?: (ids: string[], primaryId?: string | null) => void;
+  onVideoClipSelect?: (
+    id: string,
+    mode?: "single" | "toggle" | "focus",
+  ) => void;
+  onVideoClipSelectionChange?: (
+    ids: string[],
+    primaryId?: string | null,
+  ) => void;
   onVideoClipMoveStart?: (id: string) => boolean | void;
   onVideoClipMoveEnd?: () => void;
-  onVideoClipMove?: (
-    id: string,
-    newTimelineStart: number,
-  ) => void;
+  onVideoClipMove?: (id: string, newTimelineStart: number) => void;
   onVideoClipResizeStart?: (id: string) => boolean | void;
   onVideoClipResize?: (
     id: string,
@@ -122,7 +129,10 @@ type TimelineProps = {
   ) => void;
   onCopyVideoClip?: () => void;
 
-  onAudioClipSelect?: (id: string, mode?: "single" | "toggle" | "focus") => void;
+  onAudioClipSelect?: (
+    id: string,
+    mode?: "single" | "toggle" | "focus",
+  ) => void;
   onAudioClipMoveStart?: (id: string) => boolean | void;
   onAudioClipMoveEnd?: () => void;
   onAudioClipMove?: (id: string, newTimelineStart: number) => void;
@@ -131,15 +141,20 @@ type TimelineProps = {
     targetTrackId: TimelineTrackId,
     newTimelineStart: number,
   ) => void;
-  onAudioClipResize?: (id: string, newTimelineStart: number, newTimelineEnd: number) => void;
-  onStandaloneAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onAudioClipResize?: (
+    id: string,
+    newTimelineStart: number,
+    newTimelineEnd: number,
+  ) => void;
+  onStandaloneAudioFadeChange?: (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => void;
   onStandaloneAudioVolumeChange?: (id: string, volume: number) => void;
   onStandaloneAudioMuteChange?: (id: string, muted: boolean) => void;
 
-  onSubtitleSelect?: (
-    id: string,
-    mode?: "single" | "toggle" | "range",
-  ) => void;
+  onSubtitleSelect?: (id: string, mode?: "single" | "toggle" | "range") => void;
   onSubtitleMove?: (id: string, newStartTime: number) => void;
   onSubtitleMoveToTrack?: (
     id: string,
@@ -168,8 +183,16 @@ type TimelineProps = {
     edge: "in" | "out",
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
-  onVideoFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
-  onAudioFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onVideoFadeChange?: (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => void;
+  onAudioFadeChange?: (
+    id: string,
+    edge: "in" | "out",
+    duration: number,
+  ) => void;
   onAudioVolumeChange?: (id: string, volume: number) => void;
   onAudioMuteChange?: (id: string, muted: boolean) => void;
 
@@ -208,93 +231,96 @@ export function clampTimelineZoom(value: number) {
   return Math.max(MIN_TIMELINE_ZOOM, Math.min(MAX_TIMELINE_ZOOM, value));
 }
 
-const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
-  duration,
-  scaleDuration,
-  currentTime,
-  waveformsBySource,
-  videoClips,
-  audioClips,
-  adjustmentLayers,
-  subtitles,
-  markers,
-  zoom,
-  trackSettings,
-  timelineRange,
-  rippleMode,
-  selectedSubtitleId,
-  selectedSubtitleIds,
-  selectedVideoClipId,
-  selectedVideoClipIds,
-  selectedAudioClipId,
-  selectedAudioClipIds,
-  selectedAdjustmentLayerId,
-  activeSubtitleTrackId,
-  onSeek,
-  onSkimPreviewChange,
-  onAddTrack,
-  onCreateAdjustmentLayer,
-  onAdjustmentLayerSelect,
-  onAdjustmentLayerOpen,
-  onAdjustmentLayerEditStart,
-  onAdjustmentLayerEditEnd,
-  onAdjustmentLayerMove,
-  onAdjustmentLayerResize,
-  onOpenAdjustmentControls,
-  onDeleteTrack,
-  onPasteTargetChange,
-  onClearSubtitleSelection,
-  onTimelineRangeChange,
-  onRippleModeChange,
-  onDeleteRange,
-  onLiftRange,
-  onExtractRange,
-  onExportRange,
-  onVideoClipSelect,
-  onVideoClipSelectionChange,
-  onVideoClipMoveStart,
-  onVideoClipMoveEnd,
-  onVideoClipMove,
-  onVideoClipResizeStart,
-  onVideoClipResize,
-  onVideoClipResizeEnd,
-  onVideoPlaybackRateChange,
-  onToggleVideoReverse,
-  onInsertFreezeFrame,
-  onVideoClipMoveToTrack,
-  onCopyVideoClip,
-  onAudioClipSelect,
-  onAudioClipMoveStart,
-  onAudioClipMoveEnd,
-  onAudioClipMove,
-  onAudioClipMoveToTrack,
-  onAudioClipResize,
-  onStandaloneAudioFadeChange,
-  onStandaloneAudioVolumeChange,
-  onStandaloneAudioMuteChange,
-  onSubtitleSelect,
-  onSubtitleMove,
-  onSubtitleMoveToTrack,
-  onSubtitleTrackActivate,
-  onSubtitleGroupMove,
-  onSubtitleResize,
-  onMarkersChange,
-  onZoomChange,
-  onToggleTrackLock,
-  onToggleTrackMute,
-  onToggleTrackSolo,
-  onToggleTrackHidden,
-  onVideoTransitionChange,
-  onVideoFadeChange,
-  onAudioFadeChange,
-  onAudioVolumeChange,
-  onAudioMuteChange,
-  expandedCompoundId = null,
-  onCreateCompound,
-  onBreakApartCompound,
-  onOpenCompound,
-  onCloseCompound,
-}: TimelineProps, ref) {
+const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
+  {
+    duration,
+    scaleDuration,
+    currentTime,
+    waveformsBySource,
+    videoClips,
+    audioClips,
+    adjustmentLayers,
+    subtitles,
+    markers,
+    zoom,
+    trackSettings,
+    timelineRange,
+    rippleMode,
+    selectedSubtitleId,
+    selectedSubtitleIds,
+    selectedVideoClipId,
+    selectedVideoClipIds,
+    selectedAudioClipId,
+    selectedAudioClipIds,
+    selectedAdjustmentLayerId,
+    activeSubtitleTrackId,
+    onSeek,
+    onSkimPreviewChange,
+    onAddTrack,
+    onCreateAdjustmentLayer,
+    onAdjustmentLayerSelect,
+    onAdjustmentLayerOpen,
+    onAdjustmentLayerEditStart,
+    onAdjustmentLayerEditEnd,
+    onAdjustmentLayerMove,
+    onAdjustmentLayerResize,
+    onOpenAdjustmentControls,
+    onDeleteTrack,
+    onPasteTargetChange,
+    onClearSubtitleSelection,
+    onTimelineRangeChange,
+    onRippleModeChange,
+    onDeleteRange,
+    onLiftRange,
+    onExtractRange,
+    onExportRange,
+    onVideoClipSelect,
+    onVideoClipSelectionChange,
+    onVideoClipMoveStart,
+    onVideoClipMoveEnd,
+    onVideoClipMove,
+    onVideoClipResizeStart,
+    onVideoClipResize,
+    onVideoClipResizeEnd,
+    onVideoPlaybackRateChange,
+    onToggleVideoReverse,
+    onInsertFreezeFrame,
+    onVideoClipMoveToTrack,
+    onCopyVideoClip,
+    onAudioClipSelect,
+    onAudioClipMoveStart,
+    onAudioClipMoveEnd,
+    onAudioClipMove,
+    onAudioClipMoveToTrack,
+    onAudioClipResize,
+    onStandaloneAudioFadeChange,
+    onStandaloneAudioVolumeChange,
+    onStandaloneAudioMuteChange,
+    onSubtitleSelect,
+    onSubtitleMove,
+    onSubtitleMoveToTrack,
+    onSubtitleTrackActivate,
+    onSubtitleGroupMove,
+    onSubtitleResize,
+    onMarkersChange,
+    onZoomChange,
+    onToggleTrackLock,
+    onToggleTrackMute,
+    onToggleTrackSolo,
+    onToggleTrackHidden,
+    onVideoTransitionChange,
+    onVideoFadeChange,
+    onAudioFadeChange,
+    onAudioVolumeChange,
+    onAudioMuteChange,
+    expandedCompoundId = null,
+    onCreateCompound,
+    onBreakApartCompound,
+    onOpenCompound,
+    onCloseCompound,
+  }: TimelineProps,
+  ref,
+) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const skimmerRef = useRef<HTMLDivElement | null>(null);
@@ -355,8 +381,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       ? Math.max(
           MIN_TIMELINE_ZOOM,
           Math.floor(
-            (scaleReferenceDuration /
-              (HALF_SECOND_RULER_THRESHOLD_SECONDS + 0.001)) /
+            scaleReferenceDuration /
+              (HALF_SECOND_RULER_THRESHOLD_SECONDS + 0.001) /
               TIMELINE_ZOOM_STEP,
           ) * TIMELINE_ZOOM_STEP,
         )
@@ -373,9 +399,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     MIN_TIMELINE_ZOOM,
     Math.min(
       1,
-      workspaceDuration > 0
-        ? scaleReferenceDuration / workspaceDuration
-        : 1,
+      workspaceDuration > 0 ? scaleReferenceDuration / workspaceDuration : 1,
     ),
   );
 
@@ -406,14 +430,20 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       : workspaceDuration;
 
   const compoundDisplay = useMemo(
-    () => collapsedTimelineMedia(videoClips, audioClips, subtitles, expandedCompoundId),
+    () =>
+      collapsedTimelineMedia(
+        videoClips,
+        audioClips,
+        subtitles,
+        expandedCompoundId,
+      ),
     [audioClips, expandedCompoundId, subtitles, videoClips],
   );
   const displayVideoClips = compoundDisplay.videoClips;
   const displayAudioClips = compoundDisplay.audioClips;
   const displaySubtitles = compoundDisplay.subtitles;
   const expandedCompoundGroup = expandedCompoundId
-    ? compoundDisplay.groups.get(expandedCompoundId) ?? null
+    ? (compoundDisplay.groups.get(expandedCompoundId) ?? null)
     : null;
   const compoundTrackRegions = useMemo(
     () =>
@@ -500,10 +530,13 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
 
   const selectionRevealTarget = useMemo<TimelineRevealTarget | null>(() => {
     if (selectedAudioClipIds.length > 0) {
-      const selected = audioClips.filter((clip) => selectedAudioClipIds.includes(clip.id));
+      const selected = audioClips.filter((clip) =>
+        selectedAudioClipIds.includes(clip.id),
+      );
       if (selected.length > 0) {
         const primary =
-          selected.find((clip) => clip.id === selectedAudioClipId) ?? selected[0];
+          selected.find((clip) => clip.id === selectedAudioClipId) ??
+          selected[0];
         return {
           start: Math.min(...selected.map((clip) => clip.timelineStart)),
           end: Math.max(...selected.map((clip) => clip.timelineEnd)),
@@ -513,14 +546,21 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     }
 
     if (selectedVideoClipIds.length > 0) {
-      const selected = videoClips.filter((clip) => selectedVideoClipIds.includes(clip.id));
+      const selected = videoClips.filter((clip) =>
+        selectedVideoClipIds.includes(clip.id),
+      );
       if (selected.length > 0) {
         const primary =
-          selected.find((clip) => clip.id === selectedVideoClipId) ?? selected[0];
+          selected.find((clip) => clip.id === selectedVideoClipId) ??
+          selected[0];
         if (primary.compoundId && primary.compoundId !== expandedCompoundId) {
           const group = compoundDisplay.groups.get(primary.compoundId);
           if (group?.anchorVideoId === primary.id) {
-            return { start: group.start, end: group.end, trackId: group.trackId };
+            return {
+              start: group.start,
+              end: group.end,
+              trackId: group.trackId,
+            };
           }
         }
         return {
@@ -532,10 +572,13 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     }
 
     if (selectedSubtitleIds.length > 0) {
-      const selected = subtitles.filter((subtitle) => selectedSubtitleIds.includes(subtitle.id));
+      const selected = subtitles.filter((subtitle) =>
+        selectedSubtitleIds.includes(subtitle.id),
+      );
       if (selected.length > 0) {
         const primary =
-          selected.find((subtitle) => subtitle.id === selectedSubtitleId) ?? selected[0];
+          selected.find((subtitle) => subtitle.id === selectedSubtitleId) ??
+          selected[0];
         return {
           start: Math.min(...selected.map((subtitle) => subtitle.startTime)),
           end: Math.max(...selected.map((subtitle) => subtitle.endTime)),
@@ -649,10 +692,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
 
     window.requestAnimationFrame(() => {
       const nextCenterX = centerTime * pixelsPerSecond;
-      scroll.scrollLeft = Math.max(
-        0,
-        nextCenterX - scroll.clientWidth / 2,
-      );
+      scroll.scrollLeft = Math.max(0, nextCenterX - scroll.clientWidth / 2);
     });
   }, [zoom, pixelsPerSecond, pixelsPerSecondAt100]);
 
@@ -686,11 +726,17 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     if (!scroll || !body || pixelsPerSecond <= 0) return false;
 
     const safeStart = Math.max(0, Math.min(workspaceDuration, target.start));
-    const safeEnd = Math.max(safeStart, Math.min(workspaceDuration, target.end));
+    const safeEnd = Math.max(
+      safeStart,
+      Math.min(workspaceDuration, target.end),
+    );
     const startPx = safeStart * pixelsPerSecond;
     const endPx = safeEnd * pixelsPerSecond;
     const behavior = options.behavior ?? "smooth";
-    const horizontalMargin = Math.min(80, Math.max(24, scroll.clientWidth * 0.08));
+    const horizontalMargin = Math.min(
+      80,
+      Math.max(24, scroll.clientWidth * 0.08),
+    );
 
     let nextLeft = scroll.scrollLeft;
     if (options.center) {
@@ -698,7 +744,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       nextLeft = centerPx - scroll.clientWidth / 2;
     } else if (startPx < scroll.scrollLeft + horizontalMargin) {
       nextLeft = startPx - horizontalMargin;
-    } else if (endPx > scroll.scrollLeft + scroll.clientWidth - horizontalMargin) {
+    } else if (
+      endPx >
+      scroll.scrollLeft + scroll.clientWidth - horizontalMargin
+    ) {
       nextLeft = endPx - scroll.clientWidth + horizontalMargin;
     }
 
@@ -718,7 +767,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
 
       if (options.center) {
         nextTop +=
-          rowRect.top + rowRect.height / 2 -
+          rowRect.top +
+          rowRect.height / 2 -
           (bodyRect.top + bodyRect.height / 2);
       } else if (rowRect.top < bodyRect.top + verticalMargin) {
         nextTop += rowRect.top - bodyRect.top - verticalMargin;
@@ -739,14 +789,22 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   const revealVideoClip = (id: string) => {
     const clip = videoClips.find((item) => item.id === id);
     return clip
-      ? revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+      ? revealTarget({
+          start: clip.timelineStart,
+          end: clip.timelineEnd,
+          trackId: clip.trackId,
+        })
       : false;
   };
 
   const revealAudioClip = (id: string) => {
     const clip = audioClips.find((item) => item.id === id);
     return clip
-      ? revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+      ? revealTarget({
+          start: clip.timelineStart,
+          end: clip.timelineEnd,
+          trackId: clip.trackId,
+        })
       : false;
   };
 
@@ -767,7 +825,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
   const frameSelection = () => {
     if (!selectionRevealTarget) return false;
 
-    const span = Math.max(0.05, selectionRevealTarget.end - selectionRevealTarget.start);
+    const span = Math.max(
+      0.05,
+      selectionRevealTarget.end - selectionRevealTarget.start,
+    );
     const paddedDuration = Math.max(0.5, span * 1.4);
     const targetZoom = Math.max(
       effectiveMinZoom,
@@ -788,16 +849,13 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     return true;
   };
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      revealSelection,
-      frameSelection,
-      revealVideoClip,
-      revealAudioClip,
-      revealSubtitle,
-    }),
-  );
+  useImperativeHandle(ref, () => ({
+    revealSelection,
+    frameSelection,
+    revealVideoClip,
+    revealAudioClip,
+    revealSubtitle,
+  }));
 
   useEffect(() => {
     if (!selectionRevealTarget) return;
@@ -829,7 +887,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     }
 
     const safeTime = Math.max(0, Math.min(workspaceDuration, time));
-    const existing = markers.find((marker) => Math.abs(marker.time - safeTime) < 0.05);
+    const existing = markers.find(
+      (marker) => Math.abs(marker.time - safeTime) < 0.05,
+    );
 
     if (existing) {
       return;
@@ -920,7 +980,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     }
 
     event.preventDefault();
-    setTimelineZoom(zoom + (event.deltaY < 0 ? TIMELINE_ZOOM_STEP : -TIMELINE_ZOOM_STEP));
+    setTimelineZoom(
+      zoom + (event.deltaY < 0 ? TIMELINE_ZOOM_STEP : -TIMELINE_ZOOM_STEP),
+    );
   };
 
   const formatSkimmerTime = (time: number) => {
@@ -1072,8 +1134,14 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
         drag.moved = true;
         moveEvent.preventDefault();
 
-        const currentLocalX = Math.max(0, Math.min(contentRect.width, moveEvent.clientX - contentRect.left));
-        const currentLocalY = Math.max(0, Math.min(contentRect.height, moveEvent.clientY - contentRect.top));
+        const currentLocalX = Math.max(
+          0,
+          Math.min(contentRect.width, moveEvent.clientX - contentRect.left),
+        );
+        const currentLocalY = Math.max(
+          0,
+          Math.min(contentRect.height, moveEvent.clientY - contentRect.top),
+        );
         const left = Math.min(drag.startLocalX, currentLocalX);
         const top = Math.min(drag.startLocalY, currentLocalY);
         const width = Math.abs(currentLocalX - drag.startLocalX);
@@ -1085,9 +1153,13 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
         const selectionRight = selectionLeft + width;
         const selectionTop = contentRect.top + top;
         const selectionBottom = selectionTop + height;
-        const hitIds = (Array.from(
-          content.querySelectorAll(".timeline-video-clip[data-video-clip-id]"),
-        ) as HTMLElement[])
+        const hitIds = (
+          Array.from(
+            content.querySelectorAll(
+              ".timeline-video-clip[data-video-clip-id]",
+            ),
+          ) as HTMLElement[]
+        )
           .filter((element) => {
             const rect = element.getBoundingClientRect();
             return (
@@ -1105,7 +1177,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
           nextIds,
           selectedVideoClipId && nextIds.includes(selectedVideoClipId)
             ? selectedVideoClipId
-            : hitIds[hitIds.length - 1] ?? nextIds[nextIds.length - 1] ?? null,
+            : (hitIds[hitIds.length - 1] ??
+                nextIds[nextIds.length - 1] ??
+                null),
         );
       };
 
@@ -1299,9 +1373,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     onVideoClipMove?.(group.anchorVideoId, newTimelineStart);
   };
 
-  const renderTimelineTrack = (
-    track: TimelineTrackModel,
-  ) => {
+  const renderTimelineTrack = (track: TimelineTrackModel) => {
     switch (track.kind) {
       case "video":
         return (
@@ -1310,7 +1382,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             duration={workspaceDuration}
             currentTime={currentTime}
             track={track}
-            adjustmentLayers={adjustmentLayers.filter((layer) => layer.trackId === track.id)}
+            adjustmentLayers={adjustmentLayers.filter(
+              (layer) => layer.trackId === track.id,
+            )}
             selectedAdjustmentLayerId={selectedAdjustmentLayerId}
             onAdjustmentLayerSelect={onAdjustmentLayerSelect}
             onAdjustmentLayerOpen={onAdjustmentLayerOpen}
@@ -1339,7 +1413,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             snapTargets={videoMoveSnapTargets}
             onSnapGuideChange={setSnapGuideTime}
             onRevealClip={(clip) =>
-              revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: clip.trackId })
+              revealTarget({
+                start: clip.timelineStart,
+                end: clip.timelineEnd,
+                trackId: clip.trackId,
+              })
             }
             onOpenCompound={onOpenCompound}
             expandedCompoundId={expandedCompoundId}
@@ -1407,7 +1485,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             onStandaloneVolumeChange={onStandaloneAudioVolumeChange}
             onStandaloneMuteChange={onStandaloneAudioMuteChange}
             onRevealClip={(clip) =>
-              revealTarget({ start: clip.timelineStart, end: clip.timelineEnd, trackId: track.id })
+              revealTarget({
+                start: clip.timelineStart,
+                end: clip.timelineEnd,
+                trackId: track.id,
+              })
             }
             compoundRegions={compoundTrackRegions.audio.filter(
               (region) => region.trackId === track.id,
@@ -1432,8 +1514,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       const target = event.target;
       const element = target instanceof HTMLElement ? target : null;
       const editingText =
-        !!element?.closest("input, textarea, select, [contenteditable='true']") ||
-        element?.isContentEditable === true;
+        !!element?.closest(
+          "input, textarea, select, [contenteditable='true']",
+        ) || element?.isContentEditable === true;
 
       if (
         editingText ||
@@ -1544,23 +1627,30 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
     );
   };
 
-
   const singleSelectedVideoClip =
     selectedVideoClipIds.length === 1
-      ? videoClips.find((clip) => clip.id === selectedVideoClipIds[0]) ?? null
+      ? (videoClips.find((clip) => clip.id === selectedVideoClipIds[0]) ?? null)
       : null;
   const selectedCompoundId = (() => {
     const compoundId = singleSelectedVideoClip?.compoundId;
-    if (!compoundId || compoundId === expandedCompoundId || !singleSelectedVideoClip) {
+    if (
+      !compoundId ||
+      compoundId === expandedCompoundId ||
+      !singleSelectedVideoClip
+    ) {
       return null;
     }
-    return compoundDisplay.groups.get(compoundId)?.anchorVideoId === singleSelectedVideoClip.id
+    return compoundDisplay.groups.get(compoundId)?.anchorVideoId ===
+      singleSelectedVideoClip.id
       ? compoundId
       : null;
   })();
   const mixedSelectionCount =
-    selectedVideoClipIds.length + selectedAudioClipIds.length + selectedSubtitleIds.length;
-  const canCreateCompound = mixedSelectionCount >= 2 && selectedVideoClipIds.length > 0;
+    selectedVideoClipIds.length +
+    selectedAudioClipIds.length +
+    selectedSubtitleIds.length;
+  const canCreateCompound =
+    mixedSelectionCount >= 2 && selectedVideoClipIds.length > 0;
 
   return (
     <section className="timeline-panel">
@@ -1587,7 +1677,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
               {addTrackMenuOpen && (
                 <div className="timeline-add-track-menu" role="menu">
                   {[
-                    ["video-audio", "Video + Audio", "Linked picture and sound", "V+A"],
+                    [
+                      "video-audio",
+                      "Video + Audio",
+                      "Linked picture and sound",
+                      "V+A",
+                    ],
                     ["video", "Video", "Visual-only track", "V"],
                     ["audio", "Audio", "Independent audio track", "A"],
                     ["subtitle", "Subtitle", "Text / caption track", "S"],
@@ -1601,7 +1696,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                         setAddTrackMenuOpen(false);
                       }}
                     >
-                      <span className={`timeline-add-track-badge ${kind}`}>{badge}</span>
+                      <span className={`timeline-add-track-badge ${kind}`}>
+                        {badge}
+                      </span>
                       <span className="timeline-add-track-copy">
                         <strong>{label}</strong>
                         <small>{description}</small>
@@ -1613,19 +1710,29 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             </div>
           </div>
           <span className="timeline-help">
-            Cmd/Ctrl-click clips across tracks to build a mixed selection · Compound groups them · R toggles Ripple
+            Cmd/Ctrl-click clips across tracks to build a mixed selection ·
+            Compound groups them · R toggles Ripple
           </span>
         </div>
 
         <div className="timeline-controls">
           {timelineRange && (
-            <div className="timeline-range-summary" title="Selected timeline range">
+            <div
+              className="timeline-range-summary"
+              title="Selected timeline range"
+            >
               <span>
-                {formatSkimmerTime(timelineRange.start)}–{formatSkimmerTime(timelineRange.end)}
-                <strong>{(timelineRange.end - timelineRange.start).toFixed(2)}s</strong>
+                {formatSkimmerTime(timelineRange.start)}–
+                {formatSkimmerTime(timelineRange.end)}
+                <strong>
+                  {(timelineRange.end - timelineRange.start).toFixed(2)}s
+                </strong>
               </span>
 
-              <div className="timeline-range-actions" aria-label="Range edit actions">
+              <div
+                className="timeline-range-actions"
+                aria-label="Range edit actions"
+              >
                 <button
                   type="button"
                   className="timeline-range-command"
@@ -1686,7 +1793,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                 : "Ripple mode is off: normal freeform timeline editing (R)"
             }
           >
-            <span className="timeline-ripple-symbol" aria-hidden="true">⇥</span>
+            <span className="timeline-ripple-symbol" aria-hidden="true">
+              ⇥
+            </span>
             Ripple
           </button>
 
@@ -1724,7 +1833,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
           )}
 
           {singleSelectedVideoClip && !selectedCompoundId && (
-            <div className="timeline-retime-actions" aria-label="Retime clip actions">
+            <div
+              className="timeline-retime-actions"
+              aria-label="Retime clip actions"
+            >
               <button
                 type="button"
                 className={`timeline-action-button ${singleSelectedVideoClip.playbackDirection === "reverse" ? "active" : ""}`.trim()}
@@ -1732,7 +1844,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                   trackSettings[singleSelectedVideoClip.trackId]?.locked ||
                   singleSelectedVideoClip.freezeFrameSourceTime !== undefined
                 }
-                onClick={() => onToggleVideoReverse?.(singleSelectedVideoClip.id)}
+                onClick={() =>
+                  onToggleVideoReverse?.(singleSelectedVideoClip.id)
+                }
                 title="Reverse the selected video clip"
               >
                 Reverse
@@ -1744,7 +1858,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                   trackSettings[singleSelectedVideoClip.trackId]?.locked ||
                   singleSelectedVideoClip.freezeFrameSourceTime !== undefined
                 }
-                onClick={() => onInsertFreezeFrame?.(singleSelectedVideoClip.id)}
+                onClick={() =>
+                  onInsertFreezeFrame?.(singleSelectedVideoClip.id)
+                }
                 title="Insert a 2-second freeze frame at the playhead"
               >
                 Freeze
@@ -1753,7 +1869,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
           )}
 
           {!expandedCompoundId && (
-            <div className="timeline-adjustment-actions" aria-label="Adjustment layer actions">
+            <div
+              className="timeline-adjustment-actions"
+              aria-label="Adjustment layer actions"
+            >
               <button
                 type="button"
                 className="timeline-action-button adjustment"
@@ -1780,7 +1899,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
               className="timeline-compound-editing"
               title="Editing compound contents in place"
             >
-              <span className="timeline-compound-editing-icon" aria-hidden="true">
+              <span
+                className="timeline-compound-editing-icon"
+                aria-hidden="true"
+              >
                 <svg viewBox="0 0 20 20">
                   <path d="M4.5 7.2 10 4l5.5 3.2L10 10.4 4.5 7.2Z" />
                   <path d="m4.5 10.1 5.5 3.2 5.5-3.2" />
@@ -1788,9 +1910,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                 </svg>
               </span>
               <span className="timeline-compound-editing-copy">
-                <strong>{expandedCompoundGroup?.name ?? "Compound Clip"}</strong>
+                <strong>
+                  {expandedCompoundGroup?.name ?? "Compound Clip"}
+                </strong>
                 <small>
-                  {expandedCompoundGroup?.memberCount ?? 0} items · editing contents
+                  {expandedCompoundGroup?.memberCount ?? 0} items · editing
+                  contents
                 </small>
               </span>
               <button
@@ -1804,7 +1929,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
           )}
 
           {!expandedCompoundId && (
-            <div className="timeline-compound-actions" aria-label="Compound clip actions">
+            <div
+              className="timeline-compound-actions"
+              aria-label="Compound clip actions"
+            >
               <button
                 type="button"
                 className="timeline-action-button"
@@ -1837,7 +1965,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             </div>
           )}
 
-          <div className="timeline-edit-actions" aria-label="Video clip actions">
+          <div
+            className="timeline-edit-actions"
+            aria-label="Video clip actions"
+          >
             <button
               type="button"
               className="timeline-action-button"
@@ -1847,7 +1978,6 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
             >
               Copy
             </button>
-
           </div>
 
           <button
@@ -1918,7 +2048,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       <div ref={bodyRef} className="timeline-body">
         <div className="timeline-sticky-ruler" aria-label="Timeline time ruler">
           <div className="timeline-sticky-ruler-surface">
-            <div className="timeline-sticky-ruler-label-spacer" aria-hidden="true" />
+            <div
+              className="timeline-sticky-ruler-label-spacer"
+              aria-hidden="true"
+            />
             <div className="timeline-sticky-ruler-viewport">
               <div
                 className="timeline-sticky-ruler-track"
@@ -1994,7 +2127,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
                 style={{
                   left: `${(timelineRange.start / workspaceDuration) * 100}%`,
                   width: `${
-                    ((timelineRange.end - timelineRange.start) / workspaceDuration) * 100
+                    ((timelineRange.end - timelineRange.start) /
+                      workspaceDuration) *
+                    100
                   }%`,
                 }}
                 aria-label={`Selected range ${timelineRange.start.toFixed(2)} to ${timelineRange.end.toFixed(2)} seconds`}
@@ -2085,7 +2220,6 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline({
       </div>
     </section>
   );
-}
-);
+});
 
 export default Timeline;

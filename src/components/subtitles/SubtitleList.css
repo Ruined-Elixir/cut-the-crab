@@ -27,8 +27,7 @@
 
   cursor: pointer;
 
-  transition:
-    background 0.12s ease;
+  transition: background 0.12s ease;
 }
 
 .subtitle-row + .subtitle-row {
@@ -55,12 +54,7 @@
   color: var(--tertiary-label);
 
   font-family:
-    "SFMono-Regular",
-    ui-monospace,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace;
+    "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
 
   font-size: 9px;
   font-variant-numeric: tabular-nums;
@@ -150,8 +144,7 @@
 
 .subtitle-row.primary-selected {
   background: rgba(10, 132, 255, 0.24);
-  box-shadow:
-    inset 2px 0 0 rgba(10, 132, 255, 0.95);
+  box-shadow: inset 2px 0 0 rgba(10, 132, 255, 0.95);
 }
 
 .subtitle-row.primary-selected:hover {

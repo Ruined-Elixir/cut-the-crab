@@ -128,15 +128,17 @@ export function normalizeVideoEffects(
 export function cloneVideoEffects(
   effects: VideoEffectInstance[] | undefined,
 ): VideoEffectInstance[] | undefined {
-  return effects?.map((effect) => ({ ...effect } as VideoEffectInstance));
+  return effects?.map((effect) => ({ ...effect }) as VideoEffectInstance);
 }
 
 export function videoEffectStacksEqual(
   left: VideoEffectInstance[] | undefined,
   right: VideoEffectInstance[] | undefined,
 ) {
-  return JSON.stringify(normalizeVideoEffects(left) ?? []) ===
-    JSON.stringify(normalizeVideoEffects(right) ?? []);
+  return (
+    JSON.stringify(normalizeVideoEffects(left) ?? []) ===
+    JSON.stringify(normalizeVideoEffects(right) ?? [])
+  );
 }
 
 export function enabledVideoEffects(
@@ -158,13 +160,14 @@ export function videoEffectsForClipAtTime(
     trackSettings,
   ).flatMap((layer) => layer.effects ?? []);
 
-  return [
-    ...(clip.effects ?? []),
-    ...adjustmentEffects,
-  ].filter((effect) => effect.enabled !== false);
+  return [...(clip.effects ?? []), ...adjustmentEffects].filter(
+    (effect) => effect.enabled !== false,
+  );
 }
 
-export function hasRasterVideoEffects(effects: VideoEffectInstance[] | undefined) {
+export function hasRasterVideoEffects(
+  effects: VideoEffectInstance[] | undefined,
+) {
   return enabledVideoEffects(effects).some(
     (effect) => effect.kind === "gaussian-blur" || effect.kind === "sharpen",
   );
@@ -197,7 +200,8 @@ export function combinedVignette(
   for (const effect of vignettes) {
     const amount = clamp(effect.amount, 0, 100, 45) / 100;
     remainingLight *= 1 - amount;
-    weightedSoftness += clamp(effect.softness, 0, 100, 60) * Math.max(0.001, amount);
+    weightedSoftness +=
+      clamp(effect.softness, 0, 100, 60) * Math.max(0.001, amount);
     totalWeight += Math.max(0.001, amount);
   }
 
@@ -210,7 +214,12 @@ export function combinedVignette(
 export function updateVideoEffect(
   effects: VideoEffectInstance[] | undefined,
   id: string,
-  patch: Partial<{ enabled: boolean; radius: number; amount: number; softness: number }>,
+  patch: Partial<{
+    enabled: boolean;
+    radius: number;
+    amount: number;
+    softness: number;
+  }>,
 ) {
   return (effects ?? []).map((effect) =>
     effect.id === id
@@ -265,14 +274,17 @@ export function videoEffectFfmpegFilters(
   for (const effect of enabledVideoEffects(effects)) {
     if (effect.kind === "gaussian-blur") {
       const sigma = Math.max(0, Math.min(50, effect.radius));
-      if (sigma > 0.001) filters.push(`gblur=sigma=${ffNumber(sigma, 4)}${enabledSuffix}`);
+      if (sigma > 0.001)
+        filters.push(`gblur=sigma=${ffNumber(sigma, 4)}${enabledSuffix}`);
       continue;
     }
 
     if (effect.kind === "sharpen") {
       const amount = (Math.max(0, Math.min(100, effect.amount)) / 100) * 1.5;
       if (amount > 0.001) {
-        filters.push(`unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=${ffNumber(amount, 5)}:chroma_amount=0${enabledSuffix}`);
+        filters.push(
+          `unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=${ffNumber(amount, 5)}:chroma_amount=0${enabledSuffix}`,
+        );
       }
       continue;
     }

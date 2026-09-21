@@ -1,4 +1,7 @@
-import type { AudioTimelineClip, VideoTimelineClip } from "../types/timelineModel";
+import type {
+  AudioTimelineClip,
+  VideoTimelineClip,
+} from "../types/timelineModel";
 
 export const MIN_VIDEO_PLAYBACK_RATE = 0.25;
 export const MAX_VIDEO_PLAYBACK_RATE = 4;
@@ -7,7 +10,10 @@ export const DEFAULT_VIDEO_PLAYBACK_RATE = 1;
 export type RateAwareTimelineClip = Pick<
   VideoTimelineClip | AudioTimelineClip,
   "sourceIn" | "sourceOut" | "timelineStart" | "playbackRate"
-> & Partial<Pick<VideoTimelineClip, "playbackDirection" | "freezeFrameSourceTime">>;
+> &
+  Partial<
+    Pick<VideoTimelineClip, "playbackDirection" | "freezeFrameSourceTime">
+  >;
 
 export function normalizeVideoPlaybackRate(value: number | undefined) {
   if (!Number.isFinite(value)) return DEFAULT_VIDEO_PLAYBACK_RATE;
@@ -21,7 +27,9 @@ export function videoPlaybackRate(clip: { playbackRate?: number }) {
   return normalizeVideoPlaybackRate(clip.playbackRate);
 }
 
-export function isReverseVideoClip(clip: { playbackDirection?: "forward" | "reverse" }) {
+export function isReverseVideoClip(clip: {
+  playbackDirection?: "forward" | "reverse";
+}) {
   return clip.playbackDirection === "reverse";
 }
 

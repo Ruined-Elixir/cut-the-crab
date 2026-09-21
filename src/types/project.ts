@@ -1,9 +1,5 @@
 export type ProjectLanguage =
-  | "english"
-  | "cantonese"
-  | "mandarin"
-  | "french"
-  | "mixed";
+  "english" | "cantonese" | "mandarin" | "french" | "mixed";
 
 export type ProjectMetadata = {
   title: string;

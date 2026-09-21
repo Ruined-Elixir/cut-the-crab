@@ -63,7 +63,8 @@ export function buildCompoundGroups(
   const ids = new Set<string>();
   for (const clip of videoClips) if (clip.compoundId) ids.add(clip.compoundId);
   for (const clip of audioClips) if (clip.compoundId) ids.add(clip.compoundId);
-  for (const subtitle of subtitles) if (subtitle.compoundId) ids.add(subtitle.compoundId);
+  for (const subtitle of subtitles)
+    if (subtitle.compoundId) ids.add(subtitle.compoundId);
 
   const groups = new Map<string, CompoundClipGroup>();
 
@@ -140,7 +141,9 @@ export function assignCompoundMembership(
         : clip,
     ),
     audioClips: state.audioClips.map((clip) =>
-      audioIds.has(clip.id) ? { ...clip, compoundId: options.compoundId } : clip,
+      audioIds.has(clip.id)
+        ? { ...clip, compoundId: options.compoundId }
+        : clip,
     ),
     subtitles: state.subtitles.map((subtitle) =>
       subtitleIds.has(subtitle.id)
@@ -166,7 +169,9 @@ export function breakApartCompound(
         : clip,
     ),
     audioClips: state.audioClips.map((clip) =>
-      clip.compoundId === compoundId ? { ...clip, compoundId: undefined } : clip,
+      clip.compoundId === compoundId
+        ? { ...clip, compoundId: undefined }
+        : clip,
     ),
     subtitles: state.subtitles.map((subtitle) =>
       subtitle.compoundId === compoundId
@@ -181,14 +186,24 @@ export function deleteCompound(
   compoundId: string,
 ): CompoundTimelineState {
   return {
-    videoClips: state.videoClips.filter((clip) => clip.compoundId !== compoundId),
-    audioClips: state.audioClips.filter((clip) => clip.compoundId !== compoundId),
-    subtitles: state.subtitles.filter((subtitle) => subtitle.compoundId !== compoundId),
+    videoClips: state.videoClips.filter(
+      (clip) => clip.compoundId !== compoundId,
+    ),
+    audioClips: state.audioClips.filter(
+      (clip) => clip.compoundId !== compoundId,
+    ),
+    subtitles: state.subtitles.filter(
+      (subtitle) => subtitle.compoundId !== compoundId,
+    ),
   };
 }
 
-
-function overlaps(start: number, end: number, otherStart: number, otherEnd: number) {
+function overlaps(
+  start: number,
+  end: number,
+  otherStart: number,
+  otherEnd: number,
+) {
   return end > otherStart + EPSILON && start < otherEnd - EPSILON;
 }
 
@@ -214,7 +229,8 @@ export function canShiftCompound(
           other.trackId === clip.trackId &&
           overlaps(start, end, other.timelineStart, other.timelineEnd),
       )
-    ) return false;
+    )
+      return false;
   }
 
   for (const clip of state.audioClips) {
@@ -228,7 +244,8 @@ export function canShiftCompound(
           other.trackId === clip.trackId &&
           overlaps(start, end, other.timelineStart, other.timelineEnd),
       )
-    ) return false;
+    )
+      return false;
   }
 
   for (const subtitle of state.subtitles) {
@@ -243,7 +260,8 @@ export function canShiftCompound(
           getSubtitleTrackId(other) === trackId &&
           overlaps(start, end, other.startTime, other.endTime),
       )
-    ) return false;
+    )
+      return false;
   }
 
   return true;
@@ -315,12 +333,18 @@ function trimVideoClip(
     sourceIn: reverse ? endSource : startSource,
     sourceOut: reverse ? startSource : endSource,
     transformKeyframes: sliceVideoTransformKeyframes(clip, start, end),
-    transitionInType: start > clip.timelineStart + EPSILON ? "none" : clip.transitionInType,
-    transitionOutType: end < clip.timelineEnd - EPSILON ? "none" : clip.transitionOutType,
-    videoFadeInDuration: start > clip.timelineStart + EPSILON ? 0 : clip.videoFadeInDuration,
-    videoFadeOutDuration: end < clip.timelineEnd - EPSILON ? 0 : clip.videoFadeOutDuration,
-    audioFadeInDuration: start > clip.timelineStart + EPSILON ? 0 : clip.audioFadeInDuration,
-    audioFadeOutDuration: end < clip.timelineEnd - EPSILON ? 0 : clip.audioFadeOutDuration,
+    transitionInType:
+      start > clip.timelineStart + EPSILON ? "none" : clip.transitionInType,
+    transitionOutType:
+      end < clip.timelineEnd - EPSILON ? "none" : clip.transitionOutType,
+    videoFadeInDuration:
+      start > clip.timelineStart + EPSILON ? 0 : clip.videoFadeInDuration,
+    videoFadeOutDuration:
+      end < clip.timelineEnd - EPSILON ? 0 : clip.videoFadeOutDuration,
+    audioFadeInDuration:
+      start > clip.timelineStart + EPSILON ? 0 : clip.audioFadeInDuration,
+    audioFadeOutDuration:
+      end < clip.timelineEnd - EPSILON ? 0 : clip.audioFadeOutDuration,
     rippleAutoHealInBoundaryId: undefined,
     rippleAutoHealOutBoundaryId: undefined,
   };
@@ -341,8 +365,10 @@ function trimAudioClip(
     timelineEnd: end,
     sourceIn: clip.sourceIn + (start - clip.timelineStart) * rate,
     sourceOut: clip.sourceOut - (clip.timelineEnd - end) * rate,
-    fadeInDuration: start > clip.timelineStart + EPSILON ? 0 : clip.fadeInDuration,
-    fadeOutDuration: end < clip.timelineEnd - EPSILON ? 0 : clip.fadeOutDuration,
+    fadeInDuration:
+      start > clip.timelineStart + EPSILON ? 0 : clip.fadeInDuration,
+    fadeOutDuration:
+      end < clip.timelineEnd - EPSILON ? 0 : clip.fadeOutDuration,
   };
 }
 
@@ -353,8 +379,11 @@ export function trimCompound(
   retainedEnd: number,
 ): CompoundTimelineState {
   const originalName =
-    buildCompoundGroups(state.videoClips, state.audioClips, state.subtitles).get(compoundId)?.name ??
-    "Compound Clip";
+    buildCompoundGroups(
+      state.videoClips,
+      state.audioClips,
+      state.subtitles,
+    ).get(compoundId)?.name ?? "Compound Clip";
   const nextVideos = state.videoClips.flatMap((clip) => {
     if (clip.compoundId !== compoundId) return [clip];
     const trimmed = trimVideoClip(clip, retainedStart, retainedEnd);
@@ -377,14 +406,21 @@ export function trimCompound(
   const members = nextVideos.filter((clip) => clip.compoundId === compoundId);
   if (members.length === 0) {
     return deleteCompound(
-      { videoClips: nextVideos, audioClips: nextAudios, subtitles: nextSubtitles },
+      {
+        videoClips: nextVideos,
+        audioClips: nextAudios,
+        subtitles: nextSubtitles,
+      },
       compoundId,
     );
   }
 
   const previousAnchor = members.find((clip) => clip.compoundAnchor);
-  const anchor = previousAnchor ?? [...members].sort((a, b) => a.timelineStart - b.timelineStart)[0];
-  const name = previousAnchor?.compoundName ?? anchor.compoundName ?? originalName;
+  const anchor =
+    previousAnchor ??
+    [...members].sort((a, b) => a.timelineStart - b.timelineStart)[0];
+  const name =
+    previousAnchor?.compoundName ?? anchor.compoundName ?? originalName;
 
   return {
     videoClips: nextVideos.map((clip) =>
@@ -406,7 +442,11 @@ export function insertCompoundCopy(
   sourceState: CompoundTimelineState,
   compoundId: string,
   requestedStart: number,
-): { state: CompoundTimelineState; compoundId: string; anchorVideoId: string } | null {
+): {
+  state: CompoundTimelineState;
+  compoundId: string;
+  anchorVideoId: string;
+} | null {
   const groups = buildCompoundGroups(
     sourceState.videoClips,
     sourceState.audioClips,
@@ -415,9 +455,15 @@ export function insertCompoundCopy(
   const group = groups.get(compoundId);
   if (!group) return null;
 
-  const sourceVideos = sourceState.videoClips.filter((clip) => clip.compoundId === compoundId);
-  const sourceAudios = sourceState.audioClips.filter((clip) => clip.compoundId === compoundId);
-  const sourceSubtitles = sourceState.subtitles.filter((subtitle) => subtitle.compoundId === compoundId);
+  const sourceVideos = sourceState.videoClips.filter(
+    (clip) => clip.compoundId === compoundId,
+  );
+  const sourceAudios = sourceState.audioClips.filter(
+    (clip) => clip.compoundId === compoundId,
+  );
+  const sourceSubtitles = sourceState.subtitles.filter(
+    (subtitle) => subtitle.compoundId === compoundId,
+  );
 
   let targetStart = Math.max(0, requestedStart);
 
@@ -431,8 +477,15 @@ export function insertCompoundCopy(
       const start = clip.timelineStart + delta;
       const end = clip.timelineEnd + delta;
       for (const other of state.videoClips) {
-        if (other.trackId !== clip.trackId || !overlaps(start, end, other.timelineStart, other.timelineEnd)) continue;
-        requiredShift = Math.max(requiredShift, other.timelineEnd - start + 0.001);
+        if (
+          other.trackId !== clip.trackId ||
+          !overlaps(start, end, other.timelineStart, other.timelineEnd)
+        )
+          continue;
+        requiredShift = Math.max(
+          requiredShift,
+          other.timelineEnd - start + 0.001,
+        );
       }
     }
 
@@ -440,8 +493,15 @@ export function insertCompoundCopy(
       const start = clip.timelineStart + delta;
       const end = clip.timelineEnd + delta;
       for (const other of state.audioClips) {
-        if (other.trackId !== clip.trackId || !overlaps(start, end, other.timelineStart, other.timelineEnd)) continue;
-        requiredShift = Math.max(requiredShift, other.timelineEnd - start + 0.001);
+        if (
+          other.trackId !== clip.trackId ||
+          !overlaps(start, end, other.timelineStart, other.timelineEnd)
+        )
+          continue;
+        requiredShift = Math.max(
+          requiredShift,
+          other.timelineEnd - start + 0.001,
+        );
       }
     }
 
@@ -450,7 +510,11 @@ export function insertCompoundCopy(
       const start = subtitle.startTime + delta;
       const end = subtitle.endTime + delta;
       for (const other of state.subtitles) {
-        if (getSubtitleTrackId(other) !== trackId || !overlaps(start, end, other.startTime, other.endTime)) continue;
+        if (
+          getSubtitleTrackId(other) !== trackId ||
+          !overlaps(start, end, other.startTime, other.endTime)
+        )
+          continue;
         requiredShift = Math.max(requiredShift, other.endTime - start + 0.001);
       }
     }
@@ -466,7 +530,8 @@ export function insertCompoundCopy(
   const subtitleIdMap = new Map<string, string>();
   for (const id of group.videoIds) videoIdMap.set(id, crypto.randomUUID());
   for (const id of group.audioIds) audioIdMap.set(id, crypto.randomUUID());
-  for (const id of group.subtitleIds) subtitleIdMap.set(id, crypto.randomUUID());
+  for (const id of group.subtitleIds)
+    subtitleIdMap.set(id, crypto.randomUUID());
 
   const copiedVideos = sourceVideos.map((clip) => ({
     ...clip,
@@ -486,7 +551,7 @@ export function insertCompoundCopy(
     timelineStart: clip.timelineStart + delta,
     timelineEnd: clip.timelineEnd + delta,
     linkedVideoClipId: clip.linkedVideoClipId
-      ? videoIdMap.get(clip.linkedVideoClipId) ?? clip.linkedVideoClipId
+      ? (videoIdMap.get(clip.linkedVideoClipId) ?? clip.linkedVideoClipId)
       : undefined,
   }));
   const copiedSubtitles = sourceSubtitles.map((subtitle) => ({
@@ -554,9 +619,13 @@ export function collapsedTimelineMedia(
     });
   }
 
-  return { videoClips: visibleVideos, audioClips: visibleAudios, subtitles: visibleSubtitles, groups };
+  return {
+    videoClips: visibleVideos,
+    audioClips: visibleAudios,
+    subtitles: visibleSubtitles,
+    groups,
+  };
 }
-
 
 export function collapsedCompoundTrackRegions(
   videoClips: VideoTimelineClip[],
@@ -616,7 +685,6 @@ export function collapsedCompoundTrackRegions(
         kind: "audio",
       });
     }
-
   }
 
   return { audio, subtitle };

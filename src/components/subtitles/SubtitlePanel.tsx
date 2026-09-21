@@ -1,9 +1,6 @@
 import { useState } from "react";
 
-import type {
-  Subtitle,
-  SubtitleStyle,
-} from "../../types/subtitle";
+import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 
 import SubtitleInspector from "./SubtitleInspector";
 import SubtitleList from "./SubtitleList";
@@ -28,10 +25,7 @@ type SubtitlePanelProps = {
     mode?: "single" | "toggle" | "range",
   ) => void;
   onTextChange: (id: string, text: string) => void;
-  onStyleChange: (
-    id: string,
-    style: SubtitleStyle,
-  ) => void;
+  onStyleChange: (id: string, style: SubtitleStyle) => void;
 
   onAdd: () => void;
   onDelete: (id: string) => void;
@@ -55,16 +49,13 @@ function SubtitlePanel({
   onDelete,
   onReveal,
 }: SubtitlePanelProps) {
-  const [isInspectorExpanded, setIsInspectorExpanded] =
-    useState(false);
+  const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
 
   return (
     <aside
       className={[
         "subtitle-panel",
-        isInspectorExpanded
-          ? "inspector-expanded"
-          : "inspector-collapsed",
+        isInspectorExpanded ? "inspector-expanded" : "inspector-collapsed",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -73,16 +64,12 @@ function SubtitlePanel({
         <div className="subtitle-panel-header">
           <div className="subtitle-panel-title-row">
             <div>
-              <span className="subtitle-panel-eyebrow">
-                Browser
-              </span>
+              <span className="subtitle-panel-eyebrow">Browser</span>
 
               <h2>Subtitles · S{activeTrackId.split("-")[1] ?? "1"}</h2>
             </div>
 
-            <span className="subtitle-panel-count">
-              {subtitles.length}
-            </span>
+            <span className="subtitle-panel-count">{subtitles.length}</span>
           </div>
 
           <div className="subtitle-panel-tools">
@@ -101,9 +88,7 @@ function SubtitlePanel({
                 className="subtitle-search"
                 placeholder="Search subtitles"
                 value={search}
-                onChange={(event) =>
-                  onSearchChange(event.target.value)
-                }
+                onChange={(event) => onSearchChange(event.target.value)}
               />
             </div>
 
@@ -114,10 +99,7 @@ function SubtitlePanel({
               aria-label="Add subtitle"
               title="Add Subtitle"
             >
-              <svg
-                viewBox="0 0 18 18"
-                aria-hidden="true"
-              >
+              <svg viewBox="0 0 18 18" aria-hidden="true">
                 <path d="M9 3.5v11M3.5 9h11" />
               </svg>
             </button>
@@ -137,19 +119,14 @@ function SubtitlePanel({
         />
       </section>
 
-      <div
-        className="subtitle-panel-divider"
-        aria-hidden="true"
-      />
+      <div className="subtitle-panel-divider" aria-hidden="true" />
 
       <section className="subtitle-inspector-disclosure">
         <button
           type="button"
           className="subtitle-inspector-disclosure-button"
           aria-expanded={isInspectorExpanded}
-          onClick={() =>
-            setIsInspectorExpanded((current) => !current)
-          }
+          onClick={() => setIsInspectorExpanded((current) => !current)}
         >
           <svg
             className="subtitle-inspector-disclosure-chevron"

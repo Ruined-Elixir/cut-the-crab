@@ -67,12 +67,9 @@ function SubtitleList({
         </p>
       ) : (
         subtitles.map((subtitle) => {
-          const isSelected =
-            selectedSubtitleIds.includes(subtitle.id);
-          const isPrimary =
-            selectedSubtitleId === subtitle.id;
-          const isActive =
-            activeSubtitleId === subtitle.id;
+          const isSelected = selectedSubtitleIds.includes(subtitle.id);
+          const isPrimary = selectedSubtitleId === subtitle.id;
+          const isActive = activeSubtitleId === subtitle.id;
 
           return (
             <div
@@ -88,7 +85,8 @@ function SubtitleList({
                 .join(" ")}
               onContextMenu={(event) => {
                 const target = event.target as HTMLElement;
-                if (target.closest("input, textarea, [contenteditable='true']")) return;
+                if (target.closest("input, textarea, [contenteditable='true']"))
+                  return;
                 if (!onReveal || !canShowNativeContextMenu()) return;
                 event.preventDefault();
                 event.stopPropagation();
@@ -99,22 +97,20 @@ function SubtitleList({
                     action: () => onReveal(subtitle.id),
                   },
                 ]).catch((error) => {
-                  console.error("Failed to show native subtitle browser context menu:", error);
+                  console.error(
+                    "Failed to show native subtitle browser context menu:",
+                    error,
+                  );
                 });
               }}
               onClick={(event) => {
-                const mode =
-                  event.shiftKey
-                    ? "range"
-                    : event.metaKey || event.ctrlKey
-                      ? "toggle"
-                      : "single";
+                const mode = event.shiftKey
+                  ? "range"
+                  : event.metaKey || event.ctrlKey
+                    ? "toggle"
+                    : "single";
 
-                onSelect(
-                  subtitle.id,
-                  subtitle.startTime,
-                  mode,
-                );
+                onSelect(subtitle.id, subtitle.startTime, mode);
               }}
             >
               <span className="subtitle-row-time">
@@ -126,11 +122,7 @@ function SubtitleList({
                 value={subtitle.text}
                 onClick={(event) => event.stopPropagation()}
                 onFocus={() =>
-                  onSelect(
-                    subtitle.id,
-                    subtitle.startTime,
-                    "single",
-                  )
+                  onSelect(subtitle.id, subtitle.startTime, "single")
                 }
                 onChange={(event) =>
                   onTextChange(subtitle.id, event.target.value)

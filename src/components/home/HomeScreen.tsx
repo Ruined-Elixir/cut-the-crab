@@ -269,10 +269,7 @@ function HomeScreen({
       <div className="home-shell">
         <header className="home-header">
           <div className="home-brand">
-            <CtcLogo
-              className="home-brand-logo"
-              alt="Cut The Crab"
-            />
+            <CtcLogo className="home-brand-logo" alt="Cut The Crab" />
 
             <div className="home-brand-copy">
               <div className="home-eyebrow">LOCAL SUBTITLE WORKSPACE</div>
@@ -399,7 +396,9 @@ function HomeScreen({
                             autoFocus
                             aria-label={`Rename ${project.title}`}
                             onClick={(event) => event.stopPropagation()}
-                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onChange={(event) =>
+                              setRenameDraft(event.target.value)
+                            }
                             onKeyDown={(event) => {
                               event.stopPropagation();
 
@@ -506,10 +505,7 @@ function HomeScreen({
               </div>
               <h3>No recent projects yet</h3>
               <p>Choose a video to create your first subtitle project.</p>
-              <button
-                type="button"
-                onClick={() => void onChooseNewVideo()}
-              >
+              <button type="button" onClick={() => void onChooseNewVideo()}>
                 Choose Video
               </button>
             </div>

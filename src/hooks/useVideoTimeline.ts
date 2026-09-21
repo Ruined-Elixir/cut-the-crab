@@ -9,6 +9,7 @@ import type { ProjectMediaAsset } from "../types/project";
 import type {
   TimelineTrackId,
   VideoEffectInstance,
+  VideoMask,
   VideoTimelineClip,
   VideoTransitionType,
   VideoTransformKeyframeProperty,
@@ -1367,6 +1368,19 @@ export function useVideoTimeline({
     );
   };
 
+  const updateVideoClipMask = (
+    id: string,
+    mask: VideoMask | undefined,
+  ) => {
+    setVideoClips((current) =>
+      current.map((clip) =>
+        clip.id === id
+          ? { ...clip, mask: mask ? { ...mask } : undefined }
+          : clip,
+      ),
+    );
+  };
+
   const toggleVideoClipTransformKeyframe = (
     id: string,
     property: VideoTransformKeyframeProperty,
@@ -1638,6 +1652,7 @@ export function useVideoTimeline({
     insertVideoFreezeFrame,
     updateVideoClipTransform,
     updateVideoClipEffects,
+    updateVideoClipMask,
     toggleVideoClipTransformKeyframe,
     applyVideoClipCropToTrack,
     resetVideoClipTransform,

@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import type { VideoEffectInstance } from "../../types/timelineModel";
-import { enabledVideoEffects, hasRasterVideoEffects } from "../../utils/videoEffects";
+import {
+  enabledVideoEffects,
+  hasRasterVideoEffects,
+} from "../../utils/videoEffects";
 
 type VideoEffectFilterDefsProps = {
   filterId: string;
