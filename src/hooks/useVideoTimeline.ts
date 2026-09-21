@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProjectMediaAsset } from "../types/project";
 import type {
@@ -55,7 +50,9 @@ type UseVideoTimelineOptions = {
 };
 
 function normalizeVideoTrackId(trackId: TimelineTrackId): TimelineTrackId {
-  return VIDEO_TRACK_ID_PATTERN.test(trackId) ? trackId : DEFAULT_VIDEO_TRACK_ID;
+  return VIDEO_TRACK_ID_PATTERN.test(trackId)
+    ? trackId
+    : DEFAULT_VIDEO_TRACK_ID;
 }
 
 function sortVideoClips(clips: VideoTimelineClip[]) {
@@ -73,9 +70,7 @@ function clipsOnTrack(
   excludedClipId?: string,
 ) {
   return clips.filter(
-    (clip) =>
-      clip.trackId === trackId &&
-      clip.id !== excludedClipId,
+    (clip) => clip.trackId === trackId && clip.id !== excludedClipId,
   );
 }
 
@@ -87,9 +82,7 @@ function findNextAvailableTimelineStart(
   excludedClipId?: string,
 ) {
   let start = Math.max(0, requestedStart);
-  const sorted = sortVideoClips(
-    clipsOnTrack(clips, trackId, excludedClipId),
-  );
+  const sorted = sortVideoClips(clipsOnTrack(clips, trackId, excludedClipId));
 
   for (const clip of sorted) {
     const end = start + clipDuration;
@@ -127,9 +120,7 @@ function findNearestAvailableTimelineStart(
 ) {
   const requested = Math.max(0, requestedStart);
   const duration = Math.max(MIN_VIDEO_CLIP_DURATION, clipDuration);
-  const sorted = sortVideoClips(
-    clipsOnTrack(clips, trackId, excludedClipId),
-  );
+  const sorted = sortVideoClips(clipsOnTrack(clips, trackId, excludedClipId));
 
   if (sorted.length === 0) {
     return requested;
@@ -219,14 +210,14 @@ export function useVideoTimeline({
   sourceDuration,
   rippleMode = false,
 }: UseVideoTimelineOptions) {
-  const [videoClips, setVideoClips] =
-    useState<VideoTimelineClip[]>([]);
+  const [videoClips, setVideoClips] = useState<VideoTimelineClip[]>([]);
 
-  const [
-    selectedVideoClipId,
-    setSelectedVideoClipId,
-  ] = useState<string | null>(null);
-  const [selectedVideoClipIds, setSelectedVideoClipIds] = useState<string[]>([]);
+  const [selectedVideoClipId, setSelectedVideoClipId] = useState<string | null>(
+    null,
+  );
+  const [selectedVideoClipIds, setSelectedVideoClipIds] = useState<string[]>(
+    [],
+  );
 
   const groupMoveOriginRef = useRef<{
     anchorId: string;
@@ -237,11 +228,7 @@ export function useVideoTimeline({
   const initializedSourceRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (
-      !sourcePath ||
-      !sourceName ||
-      sourceDuration <= 0
-    ) {
+    if (!sourcePath || !sourceName || sourceDuration <= 0) {
       return;
     }
 
@@ -252,11 +239,7 @@ export function useVideoTimeline({
     initializedSourceRef.current = sourcePath;
 
     setVideoClips([
-      createFullSourceClip(
-        sourcePath,
-        sourceName,
-        sourceDuration,
-      ),
+      createFullSourceClip(sourcePath, sourceName, sourceDuration),
     ]);
 
     setSelectedVideoClipId(null);
@@ -264,10 +247,7 @@ export function useVideoTimeline({
   }, [sourcePath, sourceName, sourceDuration]);
 
   const selectedVideoClip = useMemo(
-    () =>
-      videoClips.find(
-        (clip) => clip.id === selectedVideoClipId,
-      ) ?? null,
+    () => videoClips.find((clip) => clip.id === selectedVideoClipId) ?? null,
     [videoClips, selectedVideoClipId],
   );
 
@@ -298,7 +278,7 @@ export function useVideoTimeline({
       if (current.includes(id)) {
         const next = current.filter((clipId) => clipId !== id);
         setSelectedVideoClipId((primary) =>
-          primary === id ? next[next.length - 1] ?? null : primary,
+          primary === id ? (next[next.length - 1] ?? null) : primary,
         );
         return next;
       }
@@ -314,7 +294,7 @@ export function useVideoTimeline({
     const primary =
       primaryId && unique.includes(primaryId)
         ? primaryId
-        : unique[unique.length - 1] ?? null;
+        : (unique[unique.length - 1] ?? null);
 
     setSelectedVideoClipIds(unique);
     setSelectedVideoClipId(primary);
@@ -343,7 +323,9 @@ export function useVideoTimeline({
 
     window.requestAnimationFrame(() => {
       setSelectedVideoClipIds((current) =>
-        [...new Set(current.map(resolveId))].filter((id) => availableIds.has(id)),
+        [...new Set(current.map(resolveId))].filter((id) =>
+          availableIds.has(id),
+        ),
       );
       setSelectedVideoClipId((current) => {
         if (!current) {
@@ -413,11 +395,7 @@ export function useVideoTimeline({
     initializedSourceRef.current = sourcePath;
 
     setVideoClips([
-      createFullSourceClip(
-        sourcePath,
-        sourceName,
-        sourceDuration,
-      ),
+      createFullSourceClip(sourcePath, sourceName, sourceDuration),
     ]);
 
     setSelectedVideoClipId(null);
@@ -449,34 +427,38 @@ export function useVideoTimeline({
     groupMoveOriginRef.current = null;
   };
 
-  const moveVideoClip = (
-    id: string,
-    requestedTimelineStart: number,
-  ) => {
+  const moveVideoClip = (id: string, requestedTimelineStart: number) => {
     setVideoClips((current) => {
       const groupOrigin = groupMoveOriginRef.current;
 
       if (rippleMode && groupOrigin?.anchorId === id) {
-        return healRippleSplitsAndRemapSelection(rippleMoveVideoClipGroup(
-          groupOrigin.allClips,
-          groupOrigin.selectedClips.map((clip) => clip.id),
-          id,
-          requestedTimelineStart,
-          {
-            createSplitId: (clip) =>
-              `${clip.id}-ripple-${groupOrigin.rippleToken}`,
-          },
-        ));
+        return healRippleSplitsAndRemapSelection(
+          rippleMoveVideoClipGroup(
+            groupOrigin.allClips,
+            groupOrigin.selectedClips.map((clip) => clip.id),
+            id,
+            requestedTimelineStart,
+            {
+              createSplitId: (clip) =>
+                `${clip.id}-ripple-${groupOrigin.rippleToken}`,
+            },
+          ),
+        );
       }
 
-      if (groupOrigin?.anchorId === id && groupOrigin.selectedClips.length > 1) {
+      if (
+        groupOrigin?.anchorId === id &&
+        groupOrigin.selectedClips.length > 1
+      ) {
         const anchor = groupOrigin.selectedClips.find((clip) => clip.id === id);
 
         if (!anchor) {
           return current;
         }
 
-        const selectedSet = new Set(groupOrigin.selectedClips.map((clip) => clip.id));
+        const selectedSet = new Set(
+          groupOrigin.selectedClips.map((clip) => clip.id),
+        );
         const unselected = current.filter((clip) => !selectedSet.has(clip.id));
         const requestedDelta = requestedTimelineStart - anchor.timelineStart;
         const delta = clampVideoClipGroupMoveDelta(
@@ -488,19 +470,21 @@ export function useVideoTimeline({
           groupOrigin.selectedClips.map((clip) => [clip.id, clip]),
         );
 
-        return healRippleSplitsAndRemapSelection(sortVideoClips(
-          current.map((clip) => {
-            const origin = originsById.get(clip.id);
+        return healRippleSplitsAndRemapSelection(
+          sortVideoClips(
+            current.map((clip) => {
+              const origin = originsById.get(clip.id);
 
-            return origin
-              ? {
-                  ...clip,
-                  timelineStart: origin.timelineStart + delta,
-                  timelineEnd: origin.timelineEnd + delta,
-                }
-              : clip;
-          }),
-        ));
+              return origin
+                ? {
+                    ...clip,
+                    timelineStart: origin.timelineStart + delta,
+                    timelineEnd: origin.timelineEnd + delta,
+                  }
+                : clip;
+            }),
+          ),
+        );
       }
 
       const target = current.find((clip) => clip.id === id);
@@ -519,18 +503,20 @@ export function useVideoTimeline({
         id,
       );
 
-      return healRippleSplitsAndRemapSelection(sortVideoClips(
-        current.map((clip) =>
-          clip.id === id
-            ? {
-                ...clip,
-                trackId,
-                timelineStart: newStart,
-                timelineEnd: newStart + clipDuration,
-              }
-            : clip,
+      return healRippleSplitsAndRemapSelection(
+        sortVideoClips(
+          current.map((clip) =>
+            clip.id === id
+              ? {
+                  ...clip,
+                  trackId,
+                  timelineStart: newStart,
+                  timelineEnd: newStart + clipDuration,
+                }
+              : clip,
+          ),
         ),
-      ));
+      );
     });
   };
 
@@ -545,19 +531,22 @@ export function useVideoTimeline({
       const groupOrigin = groupMoveOriginRef.current;
 
       if (rippleMode && groupOrigin?.anchorId === id) {
-        return healRippleSplitsAndRemapSelection(rippleMoveVideoClipGroup(
-          groupOrigin.allClips,
-          groupOrigin.selectedClips.map((clip) => clip.id),
-          id,
-          requestedTimelineStart ??
-            groupOrigin.selectedClips.find((clip) => clip.id === id)?.timelineStart ??
-            0,
-          {
-            requestedTrackId: normalizedTrackId,
-            createSplitId: (clip) =>
-              `${clip.id}-ripple-${groupOrigin.rippleToken}`,
-          },
-        ));
+        return healRippleSplitsAndRemapSelection(
+          rippleMoveVideoClipGroup(
+            groupOrigin.allClips,
+            groupOrigin.selectedClips.map((clip) => clip.id),
+            id,
+            requestedTimelineStart ??
+              groupOrigin.selectedClips.find((clip) => clip.id === id)
+                ?.timelineStart ??
+              0,
+            {
+              requestedTrackId: normalizedTrackId,
+              createSplitId: (clip) =>
+                `${clip.id}-ripple-${groupOrigin.rippleToken}`,
+            },
+          ),
+        );
       }
 
       const target = current.find((clip) => clip.id === id);
@@ -576,18 +565,20 @@ export function useVideoTimeline({
         id,
       );
 
-      return healRippleSplitsAndRemapSelection(sortVideoClips(
-        current.map((clip) =>
-          clip.id === id
-            ? {
-                ...clip,
-                trackId: normalizedTrackId,
-                timelineStart,
-                timelineEnd: timelineStart + clipDuration,
-              }
-            : clip,
+      return healRippleSplitsAndRemapSelection(
+        sortVideoClips(
+          current.map((clip) =>
+            clip.id === id
+              ? {
+                  ...clip,
+                  trackId: normalizedTrackId,
+                  timelineStart,
+                  timelineEnd: timelineStart + clipDuration,
+                }
+              : clip,
+          ),
         ),
-      ));
+      );
     });
   };
 
@@ -604,23 +595,36 @@ export function useVideoTimeline({
       }
 
       if (isFreezeFrameClip(target)) {
-        const nextStart = Math.max(0, Math.min(newTimelineStart, newTimelineEnd - MIN_VIDEO_CLIP_DURATION));
-        const nextEnd = Math.max(nextStart + MIN_VIDEO_CLIP_DURATION, newTimelineEnd);
+        const nextStart = Math.max(
+          0,
+          Math.min(newTimelineStart, newTimelineEnd - MIN_VIDEO_CLIP_DURATION),
+        );
+        const nextEnd = Math.max(
+          nextStart + MIN_VIDEO_CLIP_DURATION,
+          newTimelineEnd,
+        );
         const overlaps = clipsOnTrack(current, target.trackId, id).some(
-          (clip) => nextEnd > clip.timelineStart && nextStart < clip.timelineEnd,
+          (clip) =>
+            nextEnd > clip.timelineStart && nextStart < clip.timelineEnd,
         );
         if (overlaps) return current;
 
-        return sortVideoClips(current.map((clip) =>
-          clip.id === id
-            ? {
-                ...clip,
-                timelineStart: nextStart,
-                timelineEnd: nextEnd,
-                transformKeyframes: sliceVideoTransformKeyframes(target, nextStart, nextEnd),
-              }
-            : clip,
-        ));
+        return sortVideoClips(
+          current.map((clip) =>
+            clip.id === id
+              ? {
+                  ...clip,
+                  timelineStart: nextStart,
+                  timelineEnd: nextEnd,
+                  transformKeyframes: sliceVideoTransformKeyframes(
+                    target,
+                    nextStart,
+                    nextEnd,
+                  ),
+                }
+              : clip,
+          ),
+        );
       }
 
       const reverse = isReverseVideoClip(target);
@@ -672,9 +676,11 @@ export function useVideoTimeline({
 
       const nextSourceIn = reverse
         ? target.sourceIn - timelineDeltaToSourceDelta(target, sourceEndDelta)
-        : target.sourceIn + timelineDeltaToSourceDelta(target, sourceStartDelta);
+        : target.sourceIn +
+          timelineDeltaToSourceDelta(target, sourceStartDelta);
       const nextSourceOut = reverse
-        ? target.sourceOut - timelineDeltaToSourceDelta(target, sourceStartDelta)
+        ? target.sourceOut -
+          timelineDeltaToSourceDelta(target, sourceStartDelta)
         : target.sourceOut + timelineDeltaToSourceDelta(target, sourceEndDelta);
 
       if (
@@ -684,16 +690,10 @@ export function useVideoTimeline({
         return current;
       }
 
-      const sameTrackClips = clipsOnTrack(
-        current,
-        target.trackId,
-        id,
-      );
+      const sameTrackClips = clipsOnTrack(current, target.trackId, id);
 
       const overlaps = sameTrackClips.some(
-        (clip) =>
-          nextEnd > clip.timelineStart &&
-          nextStart < clip.timelineEnd,
+        (clip) => nextEnd > clip.timelineStart && nextStart < clip.timelineEnd,
       );
 
       if (overlaps) {
@@ -729,10 +729,7 @@ export function useVideoTimeline({
     });
   };
 
-  const splitVideoClip = (
-    id: string,
-    splitTime: number,
-  ) => {
+  const splitVideoClip = (id: string, splitTime: number) => {
     setVideoClips((current) => {
       const target = current.find((clip) => clip.id === id);
 
@@ -754,8 +751,16 @@ export function useVideoTimeline({
       const left: VideoTimelineClip = {
         ...target,
         timelineEnd: splitTime,
-        sourceIn: freeze ? target.sourceIn : reverse ? sourceSplit : target.sourceIn,
-        sourceOut: freeze ? target.sourceOut : reverse ? target.sourceOut : sourceSplit,
+        sourceIn: freeze
+          ? target.sourceIn
+          : reverse
+            ? sourceSplit
+            : target.sourceIn,
+        sourceOut: freeze
+          ? target.sourceOut
+          : reverse
+            ? target.sourceOut
+            : sourceSplit,
         transformKeyframes: sliceVideoTransformKeyframes(
           target,
           target.timelineStart,
@@ -772,8 +777,16 @@ export function useVideoTimeline({
         ...target,
         id: crypto.randomUUID(),
         timelineStart: splitTime,
-        sourceIn: freeze ? target.sourceIn : reverse ? target.sourceIn : sourceSplit,
-        sourceOut: freeze ? target.sourceOut : reverse ? sourceSplit : target.sourceOut,
+        sourceIn: freeze
+          ? target.sourceIn
+          : reverse
+            ? target.sourceIn
+            : sourceSplit,
+        sourceOut: freeze
+          ? target.sourceOut
+          : reverse
+            ? sourceSplit
+            : target.sourceOut,
         transformKeyframes: sliceVideoTransformKeyframes(
           target,
           splitTime,
@@ -791,9 +804,7 @@ export function useVideoTimeline({
       });
 
       return sortVideoClips(
-        current.flatMap((clip) =>
-          clip.id === id ? [left, right] : [clip],
-        ),
+        current.flatMap((clip) => (clip.id === id ? [left, right] : [clip])),
       );
     });
   };
@@ -968,10 +979,10 @@ export function useVideoTimeline({
         transitionOutDuration: 0.5,
         videoFadeInDuration: 0,
         videoFadeOutDuration: 0,
-    audioVolume: 100,
-    audioMuted: false,
-    audioFadeInDuration: 0,
-    audioFadeOutDuration: 0,
+        audioVolume: 100,
+        audioMuted: false,
+        audioFadeInDuration: 0,
+        audioFadeOutDuration: 0,
         timelineStart,
         timelineEnd: timelineStart + asset.duration,
       };
@@ -982,21 +993,15 @@ export function useVideoTimeline({
       });
 
       if (rippleMode) {
-        return rippleInsertVideoClipGroup(
-          current,
-          [clip],
-          timelineStart,
-          {
-            requestedTrackId: trackId,
-            preserveIds: true,
-          },
-        ).clips;
+        return rippleInsertVideoClipGroup(current, [clip], timelineStart, {
+          requestedTrackId: trackId,
+          preserveIds: true,
+        }).clips;
       }
 
       return sortVideoClips([...current, clip]);
     });
   };
-
 
   const insertVideoClipCopies = (
     sourceClips: VideoTimelineClip[],
@@ -1007,8 +1012,11 @@ export function useVideoTimeline({
       return [] as string[];
     }
 
-    const sourceTrackIds = [...new Set(sourceClips.map((clip) => clip.trackId))];
-    const canRetargetSingleTrack = requestedTrackId && sourceTrackIds.length === 1;
+    const sourceTrackIds = [
+      ...new Set(sourceClips.map((clip) => clip.trackId)),
+    ];
+    const canRetargetSingleTrack =
+      requestedTrackId && sourceTrackIds.length === 1;
     const prepared = sourceClips.map((clip) => ({
       ...clip,
       trackId: canRetargetSingleTrack
@@ -1064,10 +1072,7 @@ export function useVideoTimeline({
     return newIds;
   };
 
-  const updateVideoClipPlaybackRate = (
-    id: string,
-    requestedRate: number,
-  ) => {
+  const updateVideoClipPlaybackRate = (id: string, requestedRate: number) => {
     const normalizedRate = normalizeVideoPlaybackRate(requestedRate);
 
     setVideoClips((current) => {
@@ -1126,10 +1131,22 @@ export function useVideoTimeline({
           target.transitionOutDuration ?? 0.5,
           maxTransitionDuration,
         ),
-        videoFadeInDuration: Math.min(target.videoFadeInDuration ?? 0, nextDuration),
-        videoFadeOutDuration: Math.min(target.videoFadeOutDuration ?? 0, nextDuration),
-        audioFadeInDuration: Math.min(target.audioFadeInDuration ?? 0, nextDuration),
-        audioFadeOutDuration: Math.min(target.audioFadeOutDuration ?? 0, nextDuration),
+        videoFadeInDuration: Math.min(
+          target.videoFadeInDuration ?? 0,
+          nextDuration,
+        ),
+        videoFadeOutDuration: Math.min(
+          target.videoFadeOutDuration ?? 0,
+          nextDuration,
+        ),
+        audioFadeInDuration: Math.min(
+          target.audioFadeInDuration ?? 0,
+          nextDuration,
+        ),
+        audioFadeOutDuration: Math.min(
+          target.audioFadeOutDuration ?? 0,
+          nextDuration,
+        ),
       };
 
       return sortVideoClips(
@@ -1162,7 +1179,9 @@ export function useVideoTimeline({
         clip.id === id && !isFreezeFrameClip(clip)
           ? {
               ...clip,
-              playbackDirection: isReverseVideoClip(clip) ? "forward" : "reverse",
+              playbackDirection: isReverseVideoClip(clip)
+                ? "forward"
+                : "reverse",
               rippleAutoHealInBoundaryId: undefined,
               rippleAutoHealOutBoundaryId: undefined,
             }
@@ -1197,7 +1216,10 @@ export function useVideoTimeline({
         target.sourceDuration ?? target.sourceOut,
         target.sourceOut,
       );
-      const frameSpan = Math.min(1 / 30, Math.max(0.001, sourceDurationForFrame));
+      const frameSpan = Math.min(
+        1 / 30,
+        Math.max(0.001, sourceDurationForFrame),
+      );
       const frameIn = Math.max(
         0,
         Math.min(sourceSplit, Math.max(0, sourceDurationForFrame - frameSpan)),
@@ -1270,11 +1292,13 @@ export function useVideoTimeline({
           clip.trackId === target.trackId &&
           clip.timelineStart >= target.timelineEnd - 0.000001
         ) {
-          return [{
-            ...clip,
-            timelineStart: clip.timelineStart + safeHoldDuration,
-            timelineEnd: clip.timelineEnd + safeHoldDuration,
-          }];
+          return [
+            {
+              ...clip,
+              timelineStart: clip.timelineStart + safeHoldDuration,
+              timelineEnd: clip.timelineEnd + safeHoldDuration,
+            },
+          ];
         }
         return [clip];
       });
@@ -1336,19 +1360,19 @@ export function useVideoTimeline({
           ...next,
           cropTop:
             transform.cropTop === undefined
-              ? next.cropTop ?? 0
+              ? (next.cropTop ?? 0)
               : clampCrop(transform.cropTop),
           cropRight:
             transform.cropRight === undefined
-              ? next.cropRight ?? 0
+              ? (next.cropRight ?? 0)
               : clampCrop(transform.cropRight),
           cropBottom:
             transform.cropBottom === undefined
-              ? next.cropBottom ?? 0
+              ? (next.cropBottom ?? 0)
               : clampCrop(transform.cropBottom),
           cropLeft:
             transform.cropLeft === undefined
-              ? next.cropLeft ?? 0
+              ? (next.cropLeft ?? 0)
               : clampCrop(transform.cropLeft),
         };
       }),
@@ -1362,16 +1386,19 @@ export function useVideoTimeline({
     setVideoClips((current) =>
       current.map((clip) =>
         clip.id === id
-          ? { ...clip, effects: effects.length > 0 ? effects.map((effect) => ({ ...effect })) : undefined }
+          ? {
+              ...clip,
+              effects:
+                effects.length > 0
+                  ? effects.map((effect) => ({ ...effect }))
+                  : undefined,
+            }
           : clip,
       ),
     );
   };
 
-  const updateVideoClipMask = (
-    id: string,
-    mask: VideoMask | undefined,
-  ) => {
+  const updateVideoClipMask = (id: string, mask: VideoMask | undefined) => {
     setVideoClips((current) =>
       current.map((clip) =>
         clip.id === id
@@ -1471,26 +1498,27 @@ export function useVideoTimeline({
         if (edge === "in") {
           return {
             ...clip,
-            transitionInType: transition.type ?? clip.transitionInType ?? "none",
+            transitionInType:
+              transition.type ?? clip.transitionInType ?? "none",
             transitionInDuration:
               transition.duration === undefined
-                ? clip.transitionInDuration ?? 0.5
+                ? (clip.transitionInDuration ?? 0.5)
                 : clampDuration(transition.duration),
           };
         }
 
         return {
           ...clip,
-          transitionOutType: transition.type ?? clip.transitionOutType ?? "none",
+          transitionOutType:
+            transition.type ?? clip.transitionOutType ?? "none",
           transitionOutDuration:
             transition.duration === undefined
-              ? clip.transitionOutDuration ?? 0.5
+              ? (clip.transitionOutDuration ?? 0.5)
               : clampDuration(transition.duration),
         };
       }),
     );
   };
-
 
   const updateVideoClipOpacityFade = (
     id: string,
@@ -1516,7 +1544,6 @@ export function useVideoTimeline({
       }),
     );
   };
-
 
   const updateVideoClipAudio = (
     id: string,
@@ -1545,19 +1572,19 @@ export function useVideoTimeline({
           ...clip,
           audioVolume:
             audio.volume === undefined
-              ? clip.audioVolume ?? 100
+              ? (clip.audioVolume ?? 100)
               : Math.max(0, Math.min(100, audio.volume)),
           audioMuted:
             audio.muted === undefined
-              ? clip.audioMuted ?? false
+              ? (clip.audioMuted ?? false)
               : audio.muted,
           audioFadeInDuration:
             audio.fadeInDuration === undefined
-              ? clip.audioFadeInDuration ?? 0
+              ? (clip.audioFadeInDuration ?? 0)
               : clampFade(audio.fadeInDuration),
           audioFadeOutDuration:
             audio.fadeOutDuration === undefined
-              ? clip.audioFadeOutDuration ?? 0
+              ? (clip.audioFadeOutDuration ?? 0)
               : clampFade(audio.fadeOutDuration),
         };
       }),
@@ -1591,7 +1618,9 @@ export function useVideoTimeline({
 
       return healRippleSplitsAndRemapSelection(next);
     });
-    setSelectedVideoClipIds((current) => current.filter((id) => !removedIds.has(id)));
+    setSelectedVideoClipIds((current) =>
+      current.filter((id) => !removedIds.has(id)),
+    );
     setSelectedVideoClipId((current) =>
       current && removedIds.has(current) ? null : current,
     );

@@ -93,7 +93,10 @@ function MaskNumberInput({
   }, [step, value]);
 
   const clamp = (candidate: number) =>
-    Math.max(min, Math.min(max, Number.isFinite(candidate) ? candidate : value));
+    Math.max(
+      min,
+      Math.min(max, Number.isFinite(candidate) ? candidate : value),
+    );
 
   const commit = () => {
     const parsed = Number(draft);
@@ -238,8 +241,7 @@ export default function MasksPanel({
   } | null>(null);
 
   useEffect(() => {
-    const resize = () =>
-      setPosition((current) => clampPanelPosition(current));
+    const resize = () => setPosition((current) => clampPanelPosition(current));
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
@@ -304,7 +306,7 @@ export default function MasksPanel({
   };
 
   const defaultGeometry = () =>
-    ownerKind === "video" ? getDefaultGeometry?.() ?? undefined : undefined;
+    ownerKind === "video" ? (getDefaultGeometry?.() ?? undefined) : undefined;
 
   const add = (shape: VideoMaskShape) =>
     discrete(createVideoMask(shape, defaultGeometry()));
@@ -471,7 +473,9 @@ export default function MasksPanel({
             <div>
               <button
                 disabled={disabled}
-                onClick={() => discrete(resetVideoMask(mask, defaultGeometry()))}
+                onClick={() =>
+                  discrete(resetVideoMask(mask, defaultGeometry()))
+                }
               >
                 Reset
               </button>

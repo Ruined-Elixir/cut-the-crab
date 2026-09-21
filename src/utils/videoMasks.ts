@@ -200,12 +200,8 @@ export function videoMaskCssStyle(
     );
     const solidStop = Math.max(0, Math.min(99.999, originalRadiusRatio * 100));
 
-    const inner = active.invert
-      ? "rgba(0,0,0,0)"
-      : "rgba(0,0,0,1)";
-    const outer = active.invert
-      ? "rgba(0,0,0,1)"
-      : "rgba(0,0,0,0)";
+    const inner = active.invert ? "rgba(0,0,0,0)" : "rgba(0,0,0,1)";
+    const outer = active.invert ? "rgba(0,0,0,1)" : "rgba(0,0,0,0)";
     const gradient = `radial-gradient(ellipse ${pct(outerRadiusX)} ${pct(
       outerRadiusY,
     )} at ${pct(active.positionX)} ${pct(active.positionY)}, ${inner} 0%, ${inner} ${solidStop.toFixed(

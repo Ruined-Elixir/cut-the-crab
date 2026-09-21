@@ -7,7 +7,9 @@ import CtcLogo from "./components/brand/CtcLogo";
 
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
-import VideoPlayer, { type VideoPlayerHandle } from "./components/video/VideoPlayer";
+import VideoPlayer, {
+  type VideoPlayerHandle,
+} from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
 import Timeline, {
   clampTimelineZoom,
@@ -60,7 +62,11 @@ import {
   type TranscriptionPreset,
 } from "./services/appMenu";
 
-import { DEFAULT_SUBTITLE_TRACK_ID, getSubtitleTrackId, type Subtitle } from "./types/subtitle";
+import {
+  DEFAULT_SUBTITLE_TRACK_ID,
+  getSubtitleTrackId,
+  type Subtitle,
+} from "./types/subtitle";
 import type { TimelineMarker } from "./types/timeline";
 import { DEFAULT_TIMELINE_TRACK_SETTINGS } from "./types/timelineModel";
 import type {
@@ -196,14 +202,25 @@ function transcriptionOptionsForPreset(preset: TranscriptionPreset) {
   }
 }
 
-const AUDIO_MEDIA_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"]);
+const AUDIO_MEDIA_EXTENSIONS = new Set([
+  "mp3",
+  "wav",
+  "m4a",
+  "aac",
+  "flac",
+  "ogg",
+  "opus",
+]);
 
 function mediaKindFromPath(path: string): ProjectMediaAsset["kind"] {
   const extension = path.split(".").pop()?.toLowerCase() ?? "";
   return AUDIO_MEDIA_EXTENSIONS.has(extension) ? "audio" : "video";
 }
 
-function probeMediaDuration(path: string, kind: ProjectMediaAsset["kind"] = "video") {
+function probeMediaDuration(
+  path: string,
+  kind: ProjectMediaAsset["kind"] = "video",
+) {
   return new Promise<number>((resolve) => {
     const probe = document.createElement(kind === "audio" ? "audio" : "video");
     const cleanup = () => {
@@ -251,15 +268,8 @@ function transcriptionOptionsForLanguage(language: ProjectLanguage) {
   }
 }
 
-
 type EditorEditCommand =
-  | "undo"
-  | "redo"
-  | "cut"
-  | "copy"
-  | "paste"
-  | "duplicate"
-  | "select-all";
+  "undo" | "redo" | "cut" | "copy" | "paste" | "duplicate" | "select-all";
 
 function isTextEditableInput(element: HTMLInputElement) {
   return ![
@@ -498,9 +508,8 @@ function App() {
   const [pendingNewProjectPath, setPendingNewProjectPath] = useState<
     string | null
   >(null);
-  const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(
-    null,
-  );
+  const [projectMetadata, setProjectMetadata] =
+    useState<ProjectMetadata | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // ==========================================================================
@@ -516,19 +525,31 @@ function App() {
 
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [timelineZoom, setTimelineZoom] = useState(1);
-  const [timelineRange, setTimelineRange] = useState<TimelineRange | null>(null);
+  const [timelineRange, setTimelineRange] = useState<TimelineRange | null>(
+    null,
+  );
   const [rippleMode, setRippleMode] = useState(false);
-  const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(() => ({
-    ...DEFAULT_TIMELINE_TRACK_SETTINGS,
-  }));
+  const [trackSettings, setTrackSettings] = useState<TimelineTrackSettings>(
+    () => ({
+      ...DEFAULT_TIMELINE_TRACK_SETTINGS,
+    }),
+  );
   const [activeSubtitleTrackId, setActiveSubtitleTrackId] =
     useState<TimelineTrackId>(DEFAULT_SUBTITLE_TRACK_ID);
-  const [expandedCompoundId, setExpandedCompoundId] = useState<string | null>(null);
-  const [adjustmentLayers, setAdjustmentLayers] = useState<AdjustmentLayerClip[]>([]);
-  const [selectedAdjustmentLayerId, setSelectedAdjustmentLayerId] = useState<string | null>(null);
+  const [expandedCompoundId, setExpandedCompoundId] = useState<string | null>(
+    null,
+  );
+  const [adjustmentLayers, setAdjustmentLayers] = useState<
+    AdjustmentLayerClip[]
+  >([]);
+  const [selectedAdjustmentLayerId, setSelectedAdjustmentLayerId] = useState<
+    string | null
+  >(null);
   const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
-  const [effectsPanelTarget, setEffectsPanelTarget] = useState<EffectsPanelTarget | null>(null);
-  const [masksPanelTarget, setMasksPanelTarget] = useState<MasksPanelTarget | null>(null);
+  const [effectsPanelTarget, setEffectsPanelTarget] =
+    useState<EffectsPanelTarget | null>(null);
+  const [masksPanelTarget, setMasksPanelTarget] =
+    useState<MasksPanelTarget | null>(null);
 
   // ==========================================================================
   // Video export UI
@@ -559,7 +580,9 @@ function App() {
   const videoClipboardRef = useRef<VideoClipboardPayload | null>(null);
   const audioClipboardRef = useRef<AudioClipboardPayload | null>(null);
   const compoundClipboardRef = useRef<CompoundClipboardPayload | null>(null);
-  const activeClipboardKindRef = useRef<"video" | "audio" | "compound" | null>(null);
+  const activeClipboardKindRef = useRef<"video" | "audio" | "compound" | null>(
+    null,
+  );
   const timelinePasteTargetRef = useRef<{
     trackId: TimelineTrackId;
     time: number;
@@ -567,7 +590,15 @@ function App() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const lastSavedSnapshotRef = useRef<string>(
-    JSON.stringify({ subtitles: [], markers: [], videoClips: [], audioClips: [], adjustmentLayers: [], mediaAssets: [], trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS }),
+    JSON.stringify({
+      subtitles: [],
+      markers: [],
+      videoClips: [],
+      audioClips: [],
+      adjustmentLayers: [],
+      mediaAssets: [],
+      trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
+    }),
   );
 
   // ==========================================================================
@@ -669,18 +700,20 @@ function App() {
     rippleMode,
   });
 
-  const videoProxySourcePaths = useMemo(() => [
-    ...(videoPath ? [videoPath] : []),
-    ...videoClips.map((clip) => clip.sourcePath),
-    ...mediaAssets
-      .filter((asset) => asset.kind === "video")
-      .map((asset) => asset.path),
-  ], [mediaAssets, videoClips, videoPath]);
+  const videoProxySourcePaths = useMemo(
+    () => [
+      ...(videoPath ? [videoPath] : []),
+      ...videoClips.map((clip) => clip.sourcePath),
+      ...mediaAssets
+        .filter((asset) => asset.kind === "video")
+        .map((asset) => asset.path),
+    ],
+    [mediaAssets, videoClips, videoPath],
+  );
 
-  const {
-    proxyStatesBySource,
-    proxyPathsBySource,
-  } = useVideoProxies(videoProxySourcePaths);
+  const { proxyStatesBySource, proxyPathsBySource } = useVideoProxies(
+    videoProxySourcePaths,
+  );
 
   const {
     audioClips,
@@ -768,10 +801,7 @@ function App() {
       adjustmentLayers,
       trackSettings,
     },
-    enabled:
-      screen === "editor" &&
-      !!videoPath &&
-      !isLoadingVideoRef.current,
+    enabled: screen === "editor" && !!videoPath && !isLoadingVideoRef.current,
     onApply: (snapshot) => {
       replaceSubtitles(snapshot.subtitles);
       setMarkers(snapshot.markers);
@@ -783,43 +813,67 @@ function App() {
   });
 
   const selectedAdjustmentLayer = selectedAdjustmentLayerId
-    ? adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null
+    ? (adjustmentLayers.find(
+        (layer) => layer.id === selectedAdjustmentLayerId,
+      ) ?? null)
     : null;
 
-  const effectsPanelVideoClip = effectsPanelTarget?.kind === "video"
-    ? videoClips.find((clip) => clip.id === effectsPanelTarget.id) ?? null
-    : null;
-  const effectsPanelAdjustmentLayer = effectsPanelTarget?.kind === "adjustment"
-    ? adjustmentLayers.find((layer) => layer.id === effectsPanelTarget.id) ?? null
-    : null;
+  const effectsPanelVideoClip =
+    effectsPanelTarget?.kind === "video"
+      ? (videoClips.find((clip) => clip.id === effectsPanelTarget.id) ?? null)
+      : null;
+  const effectsPanelAdjustmentLayer =
+    effectsPanelTarget?.kind === "adjustment"
+      ? (adjustmentLayers.find((layer) => layer.id === effectsPanelTarget.id) ??
+        null)
+      : null;
 
-  const masksPanelVideoClip = masksPanelTarget?.kind === "video"
-    ? videoClips.find((clip) => clip.id === masksPanelTarget.id) ?? null
-    : null;
-  const masksPanelAdjustmentLayer = masksPanelTarget?.kind === "adjustment"
-    ? adjustmentLayers.find((layer) => layer.id === masksPanelTarget.id) ?? null
-    : null;
+  const masksPanelVideoClip =
+    masksPanelTarget?.kind === "video"
+      ? (videoClips.find((clip) => clip.id === masksPanelTarget.id) ?? null)
+      : null;
+  const masksPanelAdjustmentLayer =
+    masksPanelTarget?.kind === "adjustment"
+      ? (adjustmentLayers.find((layer) => layer.id === masksPanelTarget.id) ??
+        null)
+      : null;
 
   useEffect(() => {
     if (!effectsPanelTarget) return;
-    const exists = effectsPanelTarget.kind === "video"
-      ? videoClips.some((clip) => clip.id === effectsPanelTarget.id)
-      : adjustmentLayers.some((layer) => layer.id === effectsPanelTarget.id);
+    const exists =
+      effectsPanelTarget.kind === "video"
+        ? videoClips.some((clip) => clip.id === effectsPanelTarget.id)
+        : adjustmentLayers.some((layer) => layer.id === effectsPanelTarget.id);
     if (!exists) setEffectsPanelTarget(null);
   }, [adjustmentLayers, effectsPanelTarget, videoClips]);
 
   useEffect(() => {
     if (!effectsPanelTarget) return;
 
-    if (selectedAdjustmentLayerId && adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
-      if (effectsPanelTarget.kind !== "adjustment" || effectsPanelTarget.id !== selectedAdjustmentLayerId) {
-        setEffectsPanelTarget({ kind: "adjustment", id: selectedAdjustmentLayerId });
+    if (
+      selectedAdjustmentLayerId &&
+      adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)
+    ) {
+      if (
+        effectsPanelTarget.kind !== "adjustment" ||
+        effectsPanelTarget.id !== selectedAdjustmentLayerId
+      ) {
+        setEffectsPanelTarget({
+          kind: "adjustment",
+          id: selectedAdjustmentLayerId,
+        });
       }
       return;
     }
 
-    if (selectedVideoClipId && videoClips.some((clip) => clip.id === selectedVideoClipId)) {
-      if (effectsPanelTarget.kind !== "video" || effectsPanelTarget.id !== selectedVideoClipId) {
+    if (
+      selectedVideoClipId &&
+      videoClips.some((clip) => clip.id === selectedVideoClipId)
+    ) {
+      if (
+        effectsPanelTarget.kind !== "video" ||
+        effectsPanelTarget.id !== selectedVideoClipId
+      ) {
         setEffectsPanelTarget({ kind: "video", id: selectedVideoClipId });
       }
     }
@@ -833,29 +887,54 @@ function App() {
 
   useEffect(() => {
     if (!masksPanelTarget) return;
-    const exists = masksPanelTarget.kind === "video"
-      ? videoClips.some((clip) => clip.id === masksPanelTarget.id)
-      : adjustmentLayers.some((layer) => layer.id === masksPanelTarget.id);
+    const exists =
+      masksPanelTarget.kind === "video"
+        ? videoClips.some((clip) => clip.id === masksPanelTarget.id)
+        : adjustmentLayers.some((layer) => layer.id === masksPanelTarget.id);
     if (!exists) setMasksPanelTarget(null);
   }, [adjustmentLayers, masksPanelTarget, videoClips]);
 
   useEffect(() => {
     if (!masksPanelTarget) return;
-    if (selectedAdjustmentLayerId && adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
-      if (masksPanelTarget.kind !== "adjustment" || masksPanelTarget.id !== selectedAdjustmentLayerId) {
-        setMasksPanelTarget({ kind: "adjustment", id: selectedAdjustmentLayerId });
+    if (
+      selectedAdjustmentLayerId &&
+      adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)
+    ) {
+      if (
+        masksPanelTarget.kind !== "adjustment" ||
+        masksPanelTarget.id !== selectedAdjustmentLayerId
+      ) {
+        setMasksPanelTarget({
+          kind: "adjustment",
+          id: selectedAdjustmentLayerId,
+        });
       }
       return;
     }
-    if (selectedVideoClipId && videoClips.some((clip) => clip.id === selectedVideoClipId)) {
-      if (masksPanelTarget.kind !== "video" || masksPanelTarget.id !== selectedVideoClipId) {
+    if (
+      selectedVideoClipId &&
+      videoClips.some((clip) => clip.id === selectedVideoClipId)
+    ) {
+      if (
+        masksPanelTarget.kind !== "video" ||
+        masksPanelTarget.id !== selectedVideoClipId
+      ) {
         setMasksPanelTarget({ kind: "video", id: selectedVideoClipId });
       }
     }
-  }, [adjustmentLayers, masksPanelTarget, selectedAdjustmentLayerId, selectedVideoClipId, videoClips]);
+  }, [
+    adjustmentLayers,
+    masksPanelTarget,
+    selectedAdjustmentLayerId,
+    selectedVideoClipId,
+    videoClips,
+  ]);
 
   useEffect(() => {
-    if (selectedAdjustmentLayerId && !adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)) {
+    if (
+      selectedAdjustmentLayerId &&
+      !adjustmentLayers.some((layer) => layer.id === selectedAdjustmentLayerId)
+    ) {
       setSelectedAdjustmentLayerId(null);
       setAdjustmentPanelOpen(false);
     }
@@ -911,7 +990,10 @@ function App() {
     }
 
     updateAdjustmentLayer(target.id, {
-      effects: effects.length > 0 ? effects.map((effect) => ({ ...effect })) : undefined,
+      effects:
+        effects.length > 0
+          ? effects.map((effect) => ({ ...effect }))
+          : undefined,
     });
   };
 
@@ -936,28 +1018,51 @@ function App() {
   };
 
   const createAdjustmentLayer = () => {
-    const rangeStart = timelineRange ? Math.min(timelineRange.start, timelineRange.end) : currentTime;
-    const rangeEnd = timelineRange ? Math.max(timelineRange.start, timelineRange.end) : rangeStart + DEFAULT_ADJUSTMENT_LAYER_DURATION;
+    const rangeStart = timelineRange
+      ? Math.min(timelineRange.start, timelineRange.end)
+      : currentTime;
+    const rangeEnd = timelineRange
+      ? Math.max(timelineRange.start, timelineRange.end)
+      : rangeStart + DEFAULT_ADJUSTMENT_LAYER_DURATION;
     const start = Math.max(0, rangeStart);
     const end = Math.max(start + MIN_ADJUSTMENT_LAYER_DURATION, rangeEnd);
 
     const activeVideoTrackIds = new Set<string>();
-    for (const [trackId, settings] of Object.entries(trackSettings) as [string, TimelineTrackSettings[string]][]) {
-      if (/^video-\d+$/.test(trackId) && settings.deleted !== true) activeVideoTrackIds.add(trackId);
+    for (const [trackId, settings] of Object.entries(trackSettings) as [
+      string,
+      TimelineTrackSettings[string],
+    ][]) {
+      if (/^video-\d+$/.test(trackId) && settings.deleted !== true)
+        activeVideoTrackIds.add(trackId);
     }
     for (const clip of videoClips) {
-      if (trackSettings[clip.trackId]?.deleted !== true) activeVideoTrackIds.add(clip.trackId);
+      if (trackSettings[clip.trackId]?.deleted !== true)
+        activeVideoTrackIds.add(clip.trackId);
     }
     for (const layer of adjustmentLayers) {
-      if (trackSettings[layer.trackId]?.deleted !== true) activeVideoTrackIds.add(layer.trackId);
+      if (trackSettings[layer.trackId]?.deleted !== true)
+        activeVideoTrackIds.add(layer.trackId);
     }
 
-    const topIndex = Math.max(0, ...[...activeVideoTrackIds].map(timelineTrackIndexFromId));
+    const topIndex = Math.max(
+      0,
+      ...[...activeVideoTrackIds].map(timelineTrackIndexFromId),
+    );
     let targetTrackId = topIndex > 0 ? `video-${topIndex}` : "video-1";
     const topSettings = trackSettings[targetTrackId];
     const topHasOverlap =
-      videoClips.some((clip) => clip.trackId === targetTrackId && clip.timelineStart < end && clip.timelineEnd > start) ||
-      adjustmentLayers.some((layer) => layer.trackId === targetTrackId && layer.timelineStart < end && layer.timelineEnd > start);
+      videoClips.some(
+        (clip) =>
+          clip.trackId === targetTrackId &&
+          clip.timelineStart < end &&
+          clip.timelineEnd > start,
+      ) ||
+      adjustmentLayers.some(
+        (layer) =>
+          layer.trackId === targetTrackId &&
+          layer.timelineStart < end &&
+          layer.timelineEnd > start,
+      );
     const topIsSuitable =
       topIndex > 0 &&
       topSettings?.deleted !== true &&
@@ -1014,19 +1119,35 @@ function App() {
   const moveAdjustmentLayer = (id: string, newTimelineStart: number) => {
     setAdjustmentLayers((current) =>
       current.map((layer) => {
-        if (layer.id !== id || trackSettings[layer.trackId]?.locked) return layer;
-        const duration = Math.max(MIN_ADJUSTMENT_LAYER_DURATION, layer.timelineEnd - layer.timelineStart);
+        if (layer.id !== id || trackSettings[layer.trackId]?.locked)
+          return layer;
+        const duration = Math.max(
+          MIN_ADJUSTMENT_LAYER_DURATION,
+          layer.timelineEnd - layer.timelineStart,
+        );
         const start = Math.max(0, newTimelineStart);
-        return { ...layer, timelineStart: start, timelineEnd: start + duration };
+        return {
+          ...layer,
+          timelineStart: start,
+          timelineEnd: start + duration,
+        };
       }),
     );
   };
 
-  const resizeAdjustmentLayer = (id: string, newStart: number, newEnd: number) => {
+  const resizeAdjustmentLayer = (
+    id: string,
+    newStart: number,
+    newEnd: number,
+  ) => {
     setAdjustmentLayers((current) =>
       current.map((layer) => {
-        if (layer.id !== id || trackSettings[layer.trackId]?.locked) return layer;
-        const start = Math.max(0, Math.min(newStart, newEnd - MIN_ADJUSTMENT_LAYER_DURATION));
+        if (layer.id !== id || trackSettings[layer.trackId]?.locked)
+          return layer;
+        const start = Math.max(
+          0,
+          Math.min(newStart, newEnd - MIN_ADJUSTMENT_LAYER_DURATION),
+        );
         const end = Math.max(start + MIN_ADJUSTMENT_LAYER_DURATION, newEnd);
         return normalizedAdjustmentLayer({
           ...layer,
@@ -1039,9 +1160,15 @@ function App() {
   };
 
   const deleteSelectedAdjustmentLayerWithHistory = () => {
-    if (!selectedAdjustmentLayer || trackSettings[selectedAdjustmentLayer.trackId]?.locked) return false;
+    if (
+      !selectedAdjustmentLayer ||
+      trackSettings[selectedAdjustmentLayer.trackId]?.locked
+    )
+      return false;
     markNextChangeImmediate();
-    setAdjustmentLayers((current) => current.filter((layer) => layer.id !== selectedAdjustmentLayer.id));
+    setAdjustmentLayers((current) =>
+      current.filter((layer) => layer.id !== selectedAdjustmentLayer.id),
+    );
     setSelectedAdjustmentLayerId(null);
     setAdjustmentPanelOpen(false);
     return true;
@@ -1150,7 +1277,10 @@ function App() {
         selectedVideoClipIds
           .map((id) => {
             const clip = videoClips.find((item) => item.id === id);
-            if (!clip?.compoundId || !collapsedCompoundIds.has(clip.compoundId)) {
+            if (
+              !clip?.compoundId ||
+              !collapsedCompoundIds.has(clip.compoundId)
+            ) {
               return id;
             }
             return compoundGroups.get(clip.compoundId)?.anchorVideoId ?? id;
@@ -1161,15 +1291,17 @@ function App() {
     const selectedVideoClip = selectedVideoClipId
       ? videoClips.find((clip) => clip.id === selectedVideoClipId)
       : null;
-    const normalizedVideoPrimaryCandidate = selectedVideoClip?.compoundId &&
+    const normalizedVideoPrimaryCandidate =
+      selectedVideoClip?.compoundId &&
       collapsedCompoundIds.has(selectedVideoClip.compoundId)
-      ? compoundGroups.get(selectedVideoClip.compoundId)?.anchorVideoId ?? null
-      : selectedVideoClipId;
+        ? (compoundGroups.get(selectedVideoClip.compoundId)?.anchorVideoId ??
+          null)
+        : selectedVideoClipId;
     const normalizedVideoPrimary =
       normalizedVideoPrimaryCandidate &&
       normalizedVideoIds.includes(normalizedVideoPrimaryCandidate)
         ? normalizedVideoPrimaryCandidate
-        : normalizedVideoIds[0] ?? null;
+        : (normalizedVideoIds[0] ?? null);
 
     if (
       !sameIds(selectedVideoClipIds, normalizedVideoIds) ||
@@ -1185,7 +1317,7 @@ function App() {
     const normalizedAudioPrimary =
       selectedAudioClipId && selectableAudioIds.has(selectedAudioClipId)
         ? selectedAudioClipId
-        : normalizedAudioIds[0] ?? null;
+        : (normalizedAudioIds[0] ?? null);
     if (
       !sameIds(selectedAudioClipIds, normalizedAudioIds) ||
       normalizedAudioPrimary !== selectedAudioClipId
@@ -1197,9 +1329,10 @@ function App() {
       timelineSelectableSubtitleIdSet.has(id),
     );
     const normalizedSubtitlePrimary =
-      selectedSubtitleId && timelineSelectableSubtitleIdSet.has(selectedSubtitleId)
+      selectedSubtitleId &&
+      timelineSelectableSubtitleIdSet.has(selectedSubtitleId)
         ? selectedSubtitleId
-        : normalizedSubtitleIds[0] ?? null;
+        : (normalizedSubtitleIds[0] ?? null);
     if (
       !sameIds(selectedSubtitleIds, normalizedSubtitleIds) ||
       normalizedSubtitlePrimary !== selectedSubtitleId
@@ -1234,7 +1367,11 @@ function App() {
     return group?.anchorVideoId === clip.id ? group : null;
   }, [compoundGroups, expandedCompoundId, selectedVideoClipId, videoClips]);
 
-  const compoundGroupIsEditable = (group: { videoIds: string[]; audioIds: string[]; subtitleIds: string[] }) => {
+  const compoundGroupIsEditable = (group: {
+    videoIds: string[];
+    audioIds: string[];
+    subtitleIds: string[];
+  }) => {
     const videoLocked = group.videoIds.some((id) => {
       const clip = videoClips.find((item) => item.id === id);
       return !!clip && !!trackSettings[clip.trackId]?.locked;
@@ -1245,7 +1382,9 @@ function App() {
     });
     const subtitleLocked = group.subtitleIds.some((id) => {
       const subtitle = subtitles.find((item) => item.id === id);
-      return !!subtitle && !!trackSettings[getSubtitleTrackId(subtitle)]?.locked;
+      return (
+        !!subtitle && !!trackSettings[getSubtitleTrackId(subtitle)]?.locked
+      );
     });
     return !videoLocked && !audioLocked && !subtitleLocked;
   };
@@ -1274,30 +1413,47 @@ function App() {
 
   const createCompoundFromSelection = () => {
     const totalSelected =
-      selectedVideoClipIds.length + selectedAudioClipIds.length + selectedSubtitleIds.length;
+      selectedVideoClipIds.length +
+      selectedAudioClipIds.length +
+      selectedSubtitleIds.length;
     if (totalSelected < 2 || selectedVideoClipIds.length === 0) {
       return false;
     }
 
-    const selectedVideos = videoClips.filter((clip) => selectedVideoClipIds.includes(clip.id));
-    const selectedAudios = audioClips.filter((clip) => selectedAudioClipIds.includes(clip.id));
-    const selectedSubs = subtitles.filter((subtitle) => selectedSubtitleIds.includes(subtitle.id));
+    const selectedVideos = videoClips.filter((clip) =>
+      selectedVideoClipIds.includes(clip.id),
+    );
+    const selectedAudios = audioClips.filter((clip) =>
+      selectedAudioClipIds.includes(clip.id),
+    );
+    const selectedSubs = subtitles.filter((subtitle) =>
+      selectedSubtitleIds.includes(subtitle.id),
+    );
 
     if (
-      selectedVideos.some((clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId)) ||
-      selectedAudios.some((clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId)) ||
+      selectedVideos.some(
+        (clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId),
+      ) ||
+      selectedAudios.some(
+        (clip) => !!clip.compoundId && compoundGroups.has(clip.compoundId),
+      ) ||
       selectedSubs.some(
-        (subtitle) => !!subtitle.compoundId && compoundGroups.has(subtitle.compoundId),
+        (subtitle) =>
+          !!subtitle.compoundId && compoundGroups.has(subtitle.compoundId),
       )
     ) {
-      window.alert("Open or break apart the existing compound before creating a nested compound.");
+      window.alert(
+        "Open or break apart the existing compound before creating a nested compound.",
+      );
       return false;
     }
 
     const locked =
       selectedVideos.some((clip) => trackSettings[clip.trackId]?.locked) ||
       selectedAudios.some((clip) => trackSettings[clip.trackId]?.locked) ||
-      selectedSubs.some((subtitle) => trackSettings[getSubtitleTrackId(subtitle)]?.locked);
+      selectedSubs.some(
+        (subtitle) => trackSettings[getSubtitleTrackId(subtitle)]?.locked,
+      );
     if (locked) return false;
 
     const anchor =
@@ -1336,7 +1492,9 @@ function App() {
   };
 
   const closeCompound = () => {
-    const group = expandedCompoundId ? compoundGroups.get(expandedCompoundId) : null;
+    const group = expandedCompoundId
+      ? compoundGroups.get(expandedCompoundId)
+      : null;
     setExpandedCompoundId(null);
     if (group) {
       selectVideoClips([group.anchorVideoId], group.anchorVideoId);
@@ -1391,7 +1549,9 @@ function App() {
       if (!group) return;
       const delta = requestedStart - origin.groupStart;
       if (!canShiftCompound(origin.state, group, delta)) return;
-      applyCompoundTimelineState(shiftCompound(origin.state, origin.compoundId, delta));
+      applyCompoundTimelineState(
+        shiftCompound(origin.state, origin.compoundId, delta),
+      );
       return;
     }
     moveVideoClip(id, requestedStart);
@@ -1424,7 +1584,11 @@ function App() {
     return true;
   };
 
-  const handleCompoundAwareResize = (id: string, start: number, end: number) => {
+  const handleCompoundAwareResize = (
+    id: string,
+    start: number,
+    end: number,
+  ) => {
     const origin = compoundResizeOriginRef.current;
     if (origin) {
       const next = trimCompound(origin.state, origin.compoundId, start, end);
@@ -1481,8 +1645,7 @@ function App() {
     }
 
     const selectedClip = videoClips.find(
-      (clip) =>
-        clip.id === selectedVideoClipId,
+      (clip) => clip.id === selectedVideoClipId,
     );
 
     if (!selectedClip || trackSettings[selectedClip.trackId]?.locked) {
@@ -1497,10 +1660,7 @@ function App() {
     }
 
     markNextChangeImmediate();
-    splitVideoClip(
-      selectedVideoClipId,
-      currentTime,
-    );
+    splitVideoClip(selectedVideoClipId, currentTime);
 
     return true;
   };
@@ -1510,7 +1670,10 @@ function App() {
       if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
       markNextChangeImmediate();
       applyCompoundTimelineState(
-        deleteCompoundMembers(currentCompoundTimelineState(), selectedCollapsedCompound.id),
+        deleteCompoundMembers(
+          currentCompoundTimelineState(),
+          selectedCollapsedCompound.id,
+        ),
       );
       clearVideoClipSelection();
       clearAudioClipSelection();
@@ -1532,9 +1695,17 @@ function App() {
   const copySelectedVideoClip = () => {
     if (selectedCollapsedCompound) {
       compoundClipboardRef.current = {
-        videoClips: videoClips.filter((clip) => clip.compoundId === selectedCollapsedCompound.id).map((clip) => ({ ...clip })),
-        audioClips: audioClips.filter((clip) => clip.compoundId === selectedCollapsedCompound.id).map((clip) => ({ ...clip })),
-        subtitles: subtitles.filter((subtitle) => subtitle.compoundId === selectedCollapsedCompound.id).map((subtitle) => ({ ...subtitle })),
+        videoClips: videoClips
+          .filter((clip) => clip.compoundId === selectedCollapsedCompound.id)
+          .map((clip) => ({ ...clip })),
+        audioClips: audioClips
+          .filter((clip) => clip.compoundId === selectedCollapsedCompound.id)
+          .map((clip) => ({ ...clip })),
+        subtitles: subtitles
+          .filter(
+            (subtitle) => subtitle.compoundId === selectedCollapsedCompound.id,
+          )
+          .map((subtitle) => ({ ...subtitle })),
         compoundId: selectedCollapsedCompound.id,
         groupStart: selectedCollapsedCompound.start,
         groupEnd: selectedCollapsedCompound.end,
@@ -1583,7 +1754,10 @@ function App() {
       if (!copySelectedVideoClip()) return false;
       markNextChangeImmediate();
       applyCompoundTimelineState(
-        deleteCompoundMembers(currentCompoundTimelineState(), selectedCollapsedCompound.id),
+        deleteCompoundMembers(
+          currentCompoundTimelineState(),
+          selectedCollapsedCompound.id,
+        ),
       );
       clearVideoClipSelection();
       clearAudioClipSelection();
@@ -1611,7 +1785,8 @@ function App() {
   ) => {
     const kind = timelineTrackKindFromId(trackId);
     if (kind !== "video" && kind !== "audio") return;
-    if (trackSettings[trackId]?.deleted || trackSettings[trackId]?.locked) return;
+    if (trackSettings[trackId]?.deleted || trackSettings[trackId]?.locked)
+      return;
     if (kind === "audio" && trackSettings[trackId]?.linkedTrackId) return;
 
     timelinePasteTargetRef.current = { trackId, time: Math.max(0, time) };
@@ -1628,7 +1803,9 @@ function App() {
       trackId: clipboard.clips[0].trackId,
       time: clipboard.groupEnd,
     };
-    const sourceTrackIds = [...new Set(clipboard.clips.map((clip) => clip.trackId))];
+    const sourceTrackIds = [
+      ...new Set(clipboard.clips.map((clip) => clip.trackId)),
+    ];
     const targetTrackIds =
       sourceTrackIds.length === 1 ? [target.trackId] : sourceTrackIds;
 
@@ -1658,7 +1835,9 @@ function App() {
     const clipboard = compoundClipboardRef.current;
     if (!clipboard) return false;
     const target = timelinePasteTargetRef.current ?? {
-      trackId: clipboard.videoClips.find((clip) => clip.compoundAnchor)?.trackId ?? "video-1",
+      trackId:
+        clipboard.videoClips.find((clip) => clip.compoundAnchor)?.trackId ??
+        "video-1",
       time: clipboard.groupEnd,
     };
     if (timelineTrackKindFromId(target.trackId) !== "video") return false;
@@ -1670,7 +1849,9 @@ function App() {
     ]);
     if (
       [...sourceTrackIds].some(
-        (trackId) => trackSettings[trackId]?.deleted === true || trackSettings[trackId]?.locked,
+        (trackId) =>
+          trackSettings[trackId]?.deleted === true ||
+          trackSettings[trackId]?.locked,
       )
     ) {
       return false;
@@ -1719,7 +1900,9 @@ function App() {
       return false;
     }
 
-    const groupEnd = Math.max(...selectedVideoClips.map((clip) => clip.timelineEnd));
+    const groupEnd = Math.max(
+      ...selectedVideoClips.map((clip) => clip.timelineEnd),
+    );
 
     markNextChangeImmediate();
     clearSubtitleSelection();
@@ -1739,7 +1922,11 @@ function App() {
     if (selectedAudioClips.length === 0) return false;
     const clips = selectedAudioClips
       .map((clip) => ({ ...clip }))
-      .sort((a, b) => a.timelineStart - b.timelineStart || a.trackId.localeCompare(b.trackId));
+      .sort(
+        (a, b) =>
+          a.timelineStart - b.timelineStart ||
+          a.trackId.localeCompare(b.trackId),
+      );
     const groupStart = Math.min(...clips.map((clip) => clip.timelineStart));
     const groupEnd = Math.max(...clips.map((clip) => clip.timelineEnd));
     audioClipboardRef.current = { clips, groupStart, groupEnd };
@@ -1752,7 +1939,8 @@ function App() {
   };
 
   const cutSelectedAudioClipsWithHistory = () => {
-    if (!selectedAudioClipsAreEditable || !copySelectedAudioClips()) return false;
+    if (!selectedAudioClipsAreEditable || !copySelectedAudioClips())
+      return false;
     markNextChangeImmediate();
     clearSubtitleSelection();
     deleteAudioClips(selectedAudioClipIds);
@@ -1762,29 +1950,44 @@ function App() {
   const pasteAudioClipsAtTarget = () => {
     const clipboard = audioClipboardRef.current;
     if (!clipboard || clipboard.clips.length === 0) return false;
-    const sourceTrackIds = [...new Set(clipboard.clips.map((clip) => clip.trackId))];
+    const sourceTrackIds = [
+      ...new Set(clipboard.clips.map((clip) => clip.trackId)),
+    ];
     const fallbackTrack = sourceTrackIds[0];
-    const target = timelinePasteTargetRef.current ?? { trackId: fallbackTrack, time: clipboard.groupEnd };
+    const target = timelinePasteTargetRef.current ?? {
+      trackId: fallbackTrack,
+      time: clipboard.groupEnd,
+    };
     const targetKind = timelineTrackKindFromId(target.trackId);
     const canRetarget = sourceTrackIds.length === 1 && targetKind === "audio";
     const targetTracks = canRetarget ? [target.trackId] : sourceTrackIds;
-    if (targetTracks.some((trackId) =>
-      timelineTrackKindFromId(trackId) !== "audio" ||
-      trackSettings[trackId]?.deleted ||
-      trackSettings[trackId]?.locked ||
-      !!trackSettings[trackId]?.linkedTrackId
-    )) return false;
+    if (
+      targetTracks.some(
+        (trackId) =>
+          timelineTrackKindFromId(trackId) !== "audio" ||
+          trackSettings[trackId]?.deleted ||
+          trackSettings[trackId]?.locked ||
+          !!trackSettings[trackId]?.linkedTrackId,
+      )
+    )
+      return false;
 
     markNextChangeImmediate();
     clearSubtitleSelection();
     clearVideoClipSelection();
-    insertAudioClipCopies(clipboard.clips, target.time, canRetarget ? target.trackId : undefined);
+    insertAudioClipCopies(
+      clipboard.clips,
+      target.time,
+      canRetarget ? target.trackId : undefined,
+    );
     return true;
   };
 
   const duplicateSelectedAudioClipsWithHistory = () => {
     if (!selectedAudioClipsAreEditable) return false;
-    const groupEnd = Math.max(...selectedAudioClips.map((clip) => clip.timelineEnd));
+    const groupEnd = Math.max(
+      ...selectedAudioClips.map((clip) => clip.timelineEnd),
+    );
     markNextChangeImmediate();
     clearSubtitleSelection();
     clearVideoClipSelection();
@@ -1809,7 +2012,8 @@ function App() {
   };
 
   const handleAudioClipMoveStart = (id: string) => {
-    const hasMulti = selectedAudioClipIds.includes(id) && selectedAudioClipIds.length > 1;
+    const hasMulti =
+      selectedAudioClipIds.includes(id) && selectedAudioClipIds.length > 1;
     if (hasMulti && !selectedAudioClipsAreEditable) return false;
     beginHistoryTransaction();
     beginAudioClipMove(id);
@@ -1908,7 +2112,11 @@ function App() {
     if (!selectedAudioClipId) return false;
     const clip = audioClips.find((item) => item.id === selectedAudioClipId);
     if (!clip || trackSettings[clip.trackId]?.locked) return false;
-    if (currentTime <= clip.timelineStart + 0.05 || currentTime >= clip.timelineEnd - 0.05) return false;
+    if (
+      currentTime <= clip.timelineStart + 0.05 ||
+      currentTime >= clip.timelineEnd - 0.05
+    )
+      return false;
     markNextChangeImmediate();
     splitAudioClip(clip.id, currentTime);
     return true;
@@ -1926,7 +2134,9 @@ function App() {
         timelineRange.start < group.end - 0.000001,
     );
     if (intersectsCollapsedCompound) {
-      window.alert("Open the compound before applying a range edit through it.");
+      window.alert(
+        "Open the compound before applying a range edit through it.",
+      );
       return false;
     }
 
@@ -1988,8 +2198,18 @@ function App() {
     markNextChangeImmediate();
 
     if (kind === "video-audio") {
-      const videoId = nextTimelineTrackId("video", trackSettings, videoClips, audioClips);
-      const audioId = nextTimelineTrackId("audio", trackSettings, videoClips, audioClips);
+      const videoId = nextTimelineTrackId(
+        "video",
+        trackSettings,
+        videoClips,
+        audioClips,
+      );
+      const audioId = nextTimelineTrackId(
+        "audio",
+        trackSettings,
+        videoClips,
+        audioClips,
+      );
 
       setTrackSettings((current) => ({
         ...current,
@@ -2032,13 +2252,21 @@ function App() {
     const linkedTrackId = trackSettings[trackId]?.linkedTrackId;
 
     // The audio half of a Video + Audio pair is owned by the video track.
-    if (kind === "audio" && linkedTrackId && timelineTrackKindFromId(linkedTrackId) === "video") {
+    if (
+      kind === "audio" &&
+      linkedTrackId &&
+      timelineTrackKindFromId(linkedTrackId) === "video"
+    ) {
       return;
     }
 
     if (kind === "video") {
-      const clipCount = videoClips.filter((clip) => clip.trackId === trackId).length;
-      const adjustmentCount = adjustmentLayers.filter((layer) => layer.trackId === trackId).length;
+      const clipCount = videoClips.filter(
+        (clip) => clip.trackId === trackId,
+      ).length;
+      const adjustmentCount = adjustmentLayers.filter(
+        (layer) => layer.trackId === trackId,
+      ).length;
       const hasLinkedAudio =
         !!linkedTrackId &&
         timelineTrackKindFromId(linkedTrackId) === "audio" &&
@@ -2052,7 +2280,9 @@ function App() {
 
       markNextChangeImmediate();
       deleteVideoTrack(trackId);
-      setAdjustmentLayers((current) => current.filter((layer) => layer.trackId !== trackId));
+      setAdjustmentLayers((current) =>
+        current.filter((layer) => layer.trackId !== trackId),
+      );
       if (selectedAdjustmentLayer?.trackId === trackId) {
         setSelectedAdjustmentLayerId(null);
         setAdjustmentPanelOpen(false);
@@ -2077,16 +2307,26 @@ function App() {
         return next;
       });
 
-      if (timelinePasteTargetRef.current?.trackId === trackId || timelinePasteTargetRef.current?.trackId === linkedTrackId) {
+      if (
+        timelinePasteTargetRef.current?.trackId === trackId ||
+        timelinePasteTargetRef.current?.trackId === linkedTrackId
+      ) {
         timelinePasteTargetRef.current = null;
       }
       return;
     }
 
     if (kind === "audio") {
-      const clipCount = audioClips.filter((clip) => clip.trackId === trackId).length;
+      const clipCount = audioClips.filter(
+        (clip) => clip.trackId === trackId,
+      ).length;
       const label = `A${timelineTrackIndexFromId(trackId)}`;
-      if (!window.confirm(`Delete ${label}?${clipCount ? ` This will remove ${clipCount} audio clip${clipCount === 1 ? "" : "s"}.` : ""}`)) return;
+      if (
+        !window.confirm(
+          `Delete ${label}?${clipCount ? ` This will remove ${clipCount} audio clip${clipCount === 1 ? "" : "s"}.` : ""}`,
+        )
+      )
+        return;
       markNextChangeImmediate();
       deleteAudioTrack(trackId);
       setTrackSettings((current) => ({
@@ -2097,7 +2337,8 @@ function App() {
           linkedTrackId: null,
         },
       }));
-      if (timelinePasteTargetRef.current?.trackId === trackId) timelinePasteTargetRef.current = null;
+      if (timelinePasteTargetRef.current?.trackId === trackId)
+        timelinePasteTargetRef.current = null;
       return;
     }
 
@@ -2338,8 +2579,7 @@ function App() {
     const targetTracksBottomToTop = visibleBottomToTop
       .map((clip) => clip.trackId)
       .sort(
-        (a, b) =>
-          timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
+        (a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
       );
     const requestedBottomToTop = [...orderedClipIdsTopToBottom].reverse();
     const assignments = new Map<string, TimelineTrackId>();
@@ -2367,7 +2607,9 @@ function App() {
     const nextDuration = sourceSpan / effectiveRate;
 
     if (nextDuration < 0.1) {
-      window.alert("This source fragment is too short for that playback speed.");
+      window.alert(
+        "This source fragment is too short for that playback speed.",
+      );
       return;
     }
 
@@ -2396,7 +2638,11 @@ function App() {
 
   const handleToggleVideoReverse = (id: string) => {
     const clip = videoClips.find((item) => item.id === id);
-    if (!clip || trackSettings[clip.trackId]?.locked || clip.freezeFrameSourceTime !== undefined) {
+    if (
+      !clip ||
+      trackSettings[clip.trackId]?.locked ||
+      clip.freezeFrameSourceTime !== undefined
+    ) {
       return;
     }
     markNextChangeImmediate();
@@ -2414,7 +2660,9 @@ function App() {
       currentTime <= clip.timelineStart + 0.1 ||
       currentTime >= clip.timelineEnd - 0.1
     ) {
-      window.alert("Move the playhead inside the selected clip before creating a freeze frame.");
+      window.alert(
+        "Move the playhead inside the selected clip before creating a freeze frame.",
+      );
       return;
     }
     markNextChangeImmediate();
@@ -2444,10 +2692,7 @@ function App() {
     updateVideoClipTransform(id, transform, currentTime);
   };
 
-  const handleVideoMaskChange = (
-    id: string,
-    mask: VideoMask | undefined,
-  ) => {
+  const handleVideoMaskChange = (id: string, mask: VideoMask | undefined) => {
     const clip = videoClips.find((item) => item.id === id);
 
     if (!clip || trackSettings[clip.trackId]?.locked) {
@@ -2485,7 +2730,6 @@ function App() {
     updateVideoClipTransition(id, edge, transition);
   };
 
-
   const handleVideoFadeChange = (
     id: string,
     edge: "in" | "out",
@@ -2511,17 +2755,15 @@ function App() {
       return;
     }
 
-    updateVideoClipAudio(id,
+    updateVideoClipAudio(
+      id,
       edge === "in"
         ? { fadeInDuration: duration }
         : { fadeOutDuration: duration },
     );
   };
 
-  const handleAudioVolumeChange = (
-    id: string,
-    volume: number,
-  ) => {
+  const handleAudioVolumeChange = (id: string, volume: number) => {
     const clip = videoClips.find((item) => item.id === id);
 
     if (!clip) {
@@ -2548,7 +2790,11 @@ function App() {
     duration: number,
   ) => {
     const clip = audioClips.find((item) => item.id === id);
-    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+    if (
+      !clip ||
+      trackSettings[clip.trackId]?.locked ||
+      trackSettings[clip.trackId]?.linkedTrackId
+    ) {
       return;
     }
     updateAudioClip(
@@ -2559,12 +2805,13 @@ function App() {
     );
   };
 
-  const handleStandaloneAudioVolumeChange = (
-    id: string,
-    volume: number,
-  ) => {
+  const handleStandaloneAudioVolumeChange = (id: string, volume: number) => {
     const clip = audioClips.find((item) => item.id === id);
-    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+    if (
+      !clip ||
+      trackSettings[clip.trackId]?.locked ||
+      trackSettings[clip.trackId]?.linkedTrackId
+    ) {
       return;
     }
     updateAudioClip(id, { volume });
@@ -2572,20 +2819,20 @@ function App() {
 
   const handleStandaloneAudioMuteChange = (id: string, muted: boolean) => {
     const clip = audioClips.find((item) => item.id === id);
-    if (!clip || trackSettings[clip.trackId]?.locked || trackSettings[clip.trackId]?.linkedTrackId) {
+    if (
+      !clip ||
+      trackSettings[clip.trackId]?.locked ||
+      trackSettings[clip.trackId]?.linkedTrackId
+    ) {
       return;
     }
     markNextChangeImmediate();
     updateAudioClip(id, { muted });
   };
 
-
   const handleSubtitleTrackSelect = (
     id: string,
-    mode:
-      | "single"
-      | "toggle"
-      | "range" = "single",
+    mode: "single" | "toggle" | "range" = "single",
   ) => {
     if (mode !== "toggle") {
       clearVideoClipSelection();
@@ -2617,35 +2864,26 @@ function App() {
     const MIN_SPLIT_GAP = 0.05;
 
     if (
-      currentTime <=
-        selectedSubtitle.startTime + MIN_SPLIT_GAP ||
-      currentTime >=
-        selectedSubtitle.endTime - MIN_SPLIT_GAP
+      currentTime <= selectedSubtitle.startTime + MIN_SPLIT_GAP ||
+      currentTime >= selectedSubtitle.endTime - MIN_SPLIT_GAP
     ) {
       return;
     }
 
     markNextChangeImmediate();
 
-    splitSubtitle(
-      selectedSubtitleId,
-      currentTime,
-    );
+    splitSubtitle(selectedSubtitleId, currentTime);
   };
 
   const editableSubtitleIds = (ids: string[]) =>
     ids.filter((id) => {
       const subtitle = subtitles.find((item) => item.id === id);
-      return (
-        !!subtitle &&
-        !trackSettings[getSubtitleTrackId(subtitle)]?.locked
-      );
+      return !!subtitle && !trackSettings[getSubtitleTrackId(subtitle)]?.locked;
     });
 
   const deleteSubtitleWithHistory = (id: string) => {
     const requestedIds =
-      selectedSubtitleIds.includes(id) &&
-      selectedSubtitleIds.length > 1
+      selectedSubtitleIds.includes(id) && selectedSubtitleIds.length > 1
         ? selectedSubtitleIds
         : [id];
     const idsToDelete = editableSubtitleIds(requestedIds);
@@ -2671,10 +2909,7 @@ function App() {
 
   const updateSubtitleTextIfEditable = (id: string, text: string) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (
-      !subtitle ||
-      trackSettings[getSubtitleTrackId(subtitle)]?.locked
-    ) {
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
       return;
     }
     updateSubtitleText(id, text);
@@ -2686,10 +2921,7 @@ function App() {
     positionY: number,
   ) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (
-      !subtitle ||
-      trackSettings[getSubtitleTrackId(subtitle)]?.locked
-    ) {
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
       return;
     }
     updateSubtitlePosition(id, positionX, positionY);
@@ -2700,21 +2932,12 @@ function App() {
     style: Parameters<typeof updateSubtitleStyle>[1],
   ) => {
     const subtitle = subtitles.find((item) => item.id === id);
-    if (
-      !subtitle ||
-      trackSettings[getSubtitleTrackId(subtitle)]?.locked
-    ) {
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
       return;
     }
 
-    if (
-      selectedSubtitleIds.includes(id) &&
-      selectedSubtitleIds.length > 1
-    ) {
-      updateSubtitleStyles(
-        editableSubtitleIds(selectedSubtitleIds),
-        style,
-      );
+    if (selectedSubtitleIds.includes(id) && selectedSubtitleIds.length > 1) {
+      updateSubtitleStyles(editableSubtitleIds(selectedSubtitleIds), style);
       return;
     }
 
@@ -2730,24 +2953,19 @@ function App() {
 
     const ids = subtitles
       .filter(
-        (subtitle) =>
-          getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+        (subtitle) => getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
       )
       .map((subtitle) => subtitle.id);
 
     updateSubtitleStyles(ids, style);
   };
 
-  const setMarkersWithHistory = (
-    nextMarkers: TimelineMarker[],
-  ) => {
+  const setMarkersWithHistory = (nextMarkers: TimelineMarker[]) => {
     markNextChangeImmediate();
     setMarkers(nextMarkers);
   };
 
-  const replaceSubtitlesWithHistory = (
-    nextSubtitles: typeof subtitles,
-  ) => {
+  const replaceSubtitlesWithHistory = (nextSubtitles: typeof subtitles) => {
     markNextChangeImmediate();
     replaceSubtitles(nextSubtitles);
   };
@@ -2901,7 +3119,15 @@ function App() {
       return;
     }
 
-    const currentSnapshot = JSON.stringify({ subtitles, markers, videoClips, audioClips, adjustmentLayers, mediaAssets, trackSettings });
+    const currentSnapshot = JSON.stringify({
+      subtitles,
+      markers,
+      videoClips,
+      audioClips,
+      adjustmentLayers,
+      mediaAssets,
+      trackSettings,
+    });
 
     setHasUnsavedChanges(currentSnapshot !== lastSavedSnapshotRef.current);
   }, [
@@ -2998,9 +3224,7 @@ function App() {
               )
               .map((clip, index) => ({
                 clipId: clip.id,
-                label: `Clip ${index + 1} — ${clip.sourceName} · ${
-                  `V${clip.trackId.split("-")[1] ?? "1"}`
-                } ${formatClipMenuTime(clip.timelineStart)}`,
+                label: `Clip ${index + 1} — ${clip.sourceName} · ${`V${clip.trackId.split("-")[1] ?? "1"}`} ${formatClipMenuTime(clip.timelineStart)}`,
               }))
           : [];
 
@@ -3022,13 +3246,10 @@ function App() {
       return;
     }
 
-    const generatedSegments = await generateSubtitles(
-      clip.sourcePath,
-      {
-        ...transcriptionOptionsForPreset(preset),
-        commitResult: false,
-      },
-    );
+    const generatedSegments = await generateSubtitles(clip.sourcePath, {
+      ...transcriptionOptionsForPreset(preset),
+      commitResult: false,
+    });
 
     if (!generatedSegments) {
       return;
@@ -3057,10 +3278,7 @@ function App() {
       return;
     }
 
-    replaceSubtitlesWithHistory([
-      ...subtitles,
-      ...mappedSubtitles,
-    ]);
+    replaceSubtitlesWithHistory([...subtitles, ...mappedSubtitles]);
   };
 
   // ==========================================================================
@@ -3085,8 +3303,7 @@ function App() {
   ) => {
     isLoadingVideoRef.current = true;
 
-    const projectId =
-      requestedProjectId ?? crypto.randomUUID();
+    const projectId = requestedProjectId ?? crypto.randomUUID();
 
     setActiveProjectId(projectId);
 
@@ -3127,20 +3344,18 @@ function App() {
       audioClips: [] as AudioTimelineClip[],
       adjustmentLayers: [] as AdjustmentLayerClip[],
       mediaAssets: [] as ProjectMediaAsset[],
-      trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS } as TimelineTrackSettings,
+      trackSettings: {
+        ...DEFAULT_TIMELINE_TRACK_SETTINGS,
+      } as TimelineTrackSettings,
     };
 
     try {
-      const matchingProject = await loadMatchingProjectFile(
-        projectId,
-        path,
-      );
+      const matchingProject = await loadMatchingProjectFile(projectId, path);
 
       if (matchingProject) {
         const loadedSubtitles = matchingProject.subtitles;
         const loadedMarkers = matchingProject.markers;
-        const loadedVideoClips =
-          matchingProject.videoClips;
+        const loadedVideoClips = matchingProject.videoClips;
         const loadedAudioClips = matchingProject.audioClips;
         const loadedAdjustmentLayers = matchingProject.adjustmentLayers;
         const loadedMediaAssets = matchingProject.mediaAssets;
@@ -3258,11 +3473,7 @@ function App() {
     setHomeError("");
 
     try {
-      await recordRecentProject(
-        projectId,
-        path,
-        resolvedMetadata,
-      );
+      await recordRecentProject(projectId, path, resolvedMetadata);
     } catch (error) {
       console.error("Failed to update recent projects:", error);
     }
@@ -3294,7 +3505,19 @@ function App() {
       filters: [
         {
           name: "Media",
-          extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"],
+          extensions: [
+            "mp4",
+            "mov",
+            "webm",
+            "mkv",
+            "mp3",
+            "wav",
+            "m4a",
+            "aac",
+            "flac",
+            "ogg",
+            "opus",
+          ],
         },
       ],
     });
@@ -3333,19 +3556,27 @@ function App() {
 
   const firstEditableStandaloneAudioTrack = () =>
     Object.keys(trackSettings)
-      .filter((id) =>
-        timelineTrackKindFromId(id) === "audio" &&
-        trackSettings[id]?.deleted !== true &&
-        !trackSettings[id]?.locked &&
-        !trackSettings[id]?.linkedTrackId,
+      .filter(
+        (id) =>
+          timelineTrackKindFromId(id) === "audio" &&
+          trackSettings[id]?.deleted !== true &&
+          !trackSettings[id]?.locked &&
+          !trackSettings[id]?.linkedTrackId,
       )
-      .sort((a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b))[0] ?? null;
+      .sort(
+        (a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
+      )[0] ?? null;
 
   const ensureStandaloneAudioTrack = () => {
     const existing = firstEditableStandaloneAudioTrack();
     if (existing) return existing;
 
-    const id = nextTimelineTrackId("audio", trackSettings, videoClips, audioClips);
+    const id = nextTimelineTrackId(
+      "audio",
+      trackSettings,
+      videoClips,
+      audioClips,
+    );
     setTrackSettings((current) => ({
       ...current,
       [id]: { ...defaultTrackControlState("audio"), deleted: false },
@@ -3375,7 +3606,11 @@ function App() {
       // A linked audio row mirrors its owning video track and does not accept
       // independent media. Standalone audio rows accept audio files and the
       // audio stream of imported video files.
-      if (trackSettings[trackId]?.linkedTrackId || trackSettings[trackId]?.locked) return;
+      if (
+        trackSettings[trackId]?.linkedTrackId ||
+        trackSettings[trackId]?.locked
+      )
+        return;
       markNextChangeImmediate();
       clearSubtitleSelection();
       clearVideoClipSelection();
@@ -3386,7 +3621,8 @@ function App() {
   const handleInsertMediaAtPlayhead = (asset: ProjectMediaAsset) => {
     if (asset.kind === "audio") {
       const target =
-        (selectedAudioClip && !trackSettings[selectedAudioClip.trackId]?.linkedTrackId
+        (selectedAudioClip &&
+        !trackSettings[selectedAudioClip.trackId]?.linkedTrackId
           ? selectedAudioClip.trackId
           : null) ??
         firstEditableStandaloneAudioTrack() ??
@@ -3462,11 +3698,7 @@ function App() {
 
       setPendingNewProjectPath(null);
 
-      await handleVideoPathChange(
-        path,
-        metadata,
-        projectId,
-      );
+      await handleVideoPathChange(path, metadata, projectId);
 
       void generateSubtitles(path, transcriptionOptionsForLanguage(language));
     } catch (error) {
@@ -3676,19 +3908,11 @@ function App() {
       });
     }
 
-    if (
-      duration > 0 &&
-      videoClips.length === 0
-    ) {
+    if (duration > 0 && videoClips.length === 0) {
       initializeDefaultVideoClip();
     }
 
-    if (
-      !activeProjectId ||
-      !videoPath ||
-      !projectMetadata ||
-      duration <= 0
-    ) {
+    if (!activeProjectId || !videoPath || !projectMetadata || duration <= 0) {
       return;
     }
 
@@ -3697,11 +3921,9 @@ function App() {
       videoPath,
       projectMetadata,
       duration,
-    ).catch(
-      (error) => {
-        console.error("Failed to update recent-project duration:", error);
-      },
-    );
+    ).catch((error) => {
+      console.error("Failed to update recent-project duration:", error);
+    });
   };
 
   // ==========================================================================
@@ -3737,7 +3959,6 @@ function App() {
           videoDuration,
         );
       }
-
     } catch (error) {
       console.error("Failed to save project:", error);
     } finally {
@@ -3779,18 +4000,14 @@ function App() {
     const importedSubtitles = await importSrtFile();
 
     if (importedSubtitles) {
-      replaceSubtitleTrackWithHistory(
-        activeSubtitleTrackId,
-        importedSubtitles,
-      );
+      replaceSubtitleTrackWithHistory(activeSubtitleTrackId, importedSubtitles);
     }
   };
 
   const handleExportSrt = async () => {
     await exportSrtFile(
       subtitles.filter(
-        (subtitle) =>
-          getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
+        (subtitle) => getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
       ),
       videoPath,
     );
@@ -3823,7 +4040,8 @@ function App() {
         // Monitor, then crop the selected dashed aspect-ratio viewport.
         // This keeps transformed multi-layer compositions pixel-consistent
         // with what the user actually framed in the viewer.
-        programPreviewSize: videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
+        programPreviewSize:
+          videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
 
         onStart: () => {
           setExportProgress(0);
@@ -3932,7 +4150,7 @@ function App() {
             timelineSelectableAudioClipIds,
             timelineSelectableAudioClipIds.includes(selectedAudioClipId ?? "")
               ? selectedAudioClipId
-              : timelineSelectableAudioClipIds[0] ?? null,
+              : (timelineSelectableAudioClipIds[0] ?? null),
           );
           clearVideoClipSelection();
           clearSubtitleSelection();
@@ -3941,12 +4159,15 @@ function App() {
             timelineSelectableVideoClipIds,
             timelineSelectableVideoClipIds.includes(selectedVideoClipId ?? "")
               ? selectedVideoClipId
-              : timelineSelectableVideoClipIds[0] ?? null,
+              : (timelineSelectableVideoClipIds[0] ?? null),
           );
           clearAudioClipSelection();
           clearSubtitleSelection();
         } else {
-          selectAllSubtitles(activeSubtitleTrackId, timelineSelectableSubtitleIdSet);
+          selectAllSubtitles(
+            activeSubtitleTrackId,
+            timelineSelectableSubtitleIdSet,
+          );
         }
         return true;
     }
@@ -3969,10 +4190,7 @@ function App() {
       );
 
       if (clip) {
-        await generateSubtitlesForVideoClip(
-          clip,
-          clipTranscription.preset,
-        );
+        await generateSubtitlesForVideoClip(clip, clipTranscription.preset);
       }
 
       return;
@@ -4074,7 +4292,10 @@ function App() {
 
       case "edit.split-subtitle":
         if (screen === "editor") {
-          if (!splitSelectedAudioClipAtPlayhead() && !splitSelectedVideoClipAtPlayhead()) {
+          if (
+            !splitSelectedAudioClipAtPlayhead() &&
+            !splitSelectedVideoClipAtPlayhead()
+          ) {
             splitSelectedSubtitleAtPlayhead();
           }
         }
@@ -4082,7 +4303,10 @@ function App() {
 
       case "edit.select-all-subtitles":
         if (screen === "editor") {
-          selectAllSubtitles(activeSubtitleTrackId, timelineSelectableSubtitleIdSet);
+          selectAllSubtitles(
+            activeSubtitleTrackId,
+            timelineSelectableSubtitleIdSet,
+          );
         }
         return;
 
@@ -4148,16 +4372,12 @@ function App() {
     }
   };
 
-  const trimPrimarySubtitleToPlayhead = (
-    edge: "start" | "end",
-  ) => {
+  const trimPrimarySubtitleToPlayhead = (edge: "start" | "end") => {
     if (!selectedSubtitleId) {
       return;
     }
 
-    const subtitle = subtitles.find(
-      (item) => item.id === selectedSubtitleId,
-    );
+    const subtitle = subtitles.find((item) => item.id === selectedSubtitleId);
 
     if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) {
       return;
@@ -4165,25 +4385,20 @@ function App() {
 
     const MIN_SUBTITLE_DURATION = 0.1;
 
-    if (
-      currentTime <= subtitle.startTime ||
-      currentTime >= subtitle.endTime
-    ) {
+    if (currentTime <= subtitle.startTime || currentTime >= subtitle.endTime) {
       return;
     }
 
     if (
       edge === "start" &&
-      currentTime >
-        subtitle.endTime - MIN_SUBTITLE_DURATION
+      currentTime > subtitle.endTime - MIN_SUBTITLE_DURATION
     ) {
       return;
     }
 
     if (
       edge === "end" &&
-      currentTime <
-        subtitle.startTime + MIN_SUBTITLE_DURATION
+      currentTime < subtitle.startTime + MIN_SUBTITLE_DURATION
     ) {
       return;
     }
@@ -4191,30 +4406,16 @@ function App() {
     markNextChangeImmediate();
 
     if (edge === "start") {
-      resizeSubtitle(
-        subtitle.id,
-        currentTime,
-        subtitle.endTime,
-      );
+      resizeSubtitle(subtitle.id, currentTime, subtitle.endTime);
       return;
     }
 
-    resizeSubtitle(
-      subtitle.id,
-      subtitle.startTime,
-      currentTime,
-    );
+    resizeSubtitle(subtitle.id, subtitle.startTime, currentTime);
   };
 
   useEffect(() => {
-    const handleEditorShortcutKeyDown = (
-      event: KeyboardEvent,
-    ) => {
-      if (
-        screen !== "editor" ||
-        isGenerating ||
-        isExporting
-      ) {
+    const handleEditorShortcutKeyDown = (event: KeyboardEvent) => {
+      if (screen !== "editor" || isGenerating || isExporting) {
         return;
       }
 
@@ -4245,9 +4446,7 @@ function App() {
       ) {
         event.preventDefault();
 
-        trimPrimarySubtitleToPlayhead(
-          event.key === "[" ? "start" : "end",
-        );
+        trimPrimarySubtitleToPlayhead(event.key === "[" ? "start" : "end");
 
         return;
       }
@@ -4257,8 +4456,7 @@ function App() {
         event.altKey &&
         !event.metaKey &&
         !event.ctrlKey &&
-        (event.key === "ArrowLeft" ||
-          event.key === "ArrowRight")
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
       ) {
         if (!selectedSubtitlesAreEditable) {
           return;
@@ -4267,8 +4465,7 @@ function App() {
         event.preventDefault();
 
         const step = event.shiftKey ? 1 : 0.1;
-        const direction =
-          event.key === "ArrowLeft" ? -1 : 1;
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
 
         nudgeSelectedSubtitles(step * direction);
         return;
@@ -4286,9 +4483,7 @@ function App() {
         }
 
         const orderedSelected = subtitles
-          .filter((subtitle) =>
-            selectedSubtitleIds.includes(subtitle.id),
-          )
+          .filter((subtitle) => selectedSubtitleIds.includes(subtitle.id))
           .sort((a, b) => a.startTime - b.startTime);
 
         if (orderedSelected.length === 0) {
@@ -4298,21 +4493,15 @@ function App() {
         event.preventDefault();
 
         const currentIndex = orderedSelected.findIndex(
-          (subtitle) =>
-            subtitle.id === selectedSubtitleId,
+          (subtitle) => subtitle.id === selectedSubtitleId,
         );
 
         const delta = event.key === "[" ? -1 : 1;
-        const fallbackIndex =
-          delta > 0 ? -1 : orderedSelected.length;
+        const fallbackIndex = delta > 0 ? -1 : orderedSelected.length;
 
         const nextIndex =
-          ((
-            (currentIndex >= 0
-              ? currentIndex
-              : fallbackIndex) +
-            delta
-          ) +
+          ((currentIndex >= 0 ? currentIndex : fallbackIndex) +
+            delta +
             orderedSelected.length) %
           orderedSelected.length;
 
@@ -4328,8 +4517,7 @@ function App() {
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey &&
-        (event.key === "Delete" ||
-          event.key === "Backspace")
+        (event.key === "Delete" || event.key === "Backspace")
       ) {
         if (timelineRange) {
           event.preventDefault();
@@ -4380,8 +4568,7 @@ function App() {
         return;
       }
 
-      const commandModifier =
-        event.metaKey || event.ctrlKey;
+      const commandModifier = event.metaKey || event.ctrlKey;
 
       if (!commandModifier || event.altKey) {
         return;
@@ -4394,7 +4581,10 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
+        if (
+          selectedVideoClipIds.length > 0 ||
+          selectedAudioClipIds.length > 0
+        ) {
           event.preventDefault();
           void executeEditorEditCommand("cut", event.target);
         }
@@ -4407,7 +4597,10 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
+        if (
+          selectedVideoClipIds.length > 0 ||
+          selectedAudioClipIds.length > 0
+        ) {
           event.preventDefault();
           void executeEditorEditCommand("copy", event.target);
         }
@@ -4420,7 +4613,11 @@ function App() {
           return;
         }
 
-        if (videoClipboardRef.current || audioClipboardRef.current || compoundClipboardRef.current) {
+        if (
+          videoClipboardRef.current ||
+          audioClipboardRef.current ||
+          compoundClipboardRef.current
+        ) {
           event.preventDefault();
           void executeEditorEditCommand("paste", event.target);
         }
@@ -4433,7 +4630,10 @@ function App() {
           return;
         }
 
-        if (selectedVideoClipIds.length > 0 || selectedAudioClipIds.length > 0) {
+        if (
+          selectedVideoClipIds.length > 0 ||
+          selectedAudioClipIds.length > 0
+        ) {
           event.preventDefault();
           void executeEditorEditCommand("duplicate", event.target);
         }
@@ -4471,24 +4671,19 @@ function App() {
 
         event.preventDefault();
 
-        if (!splitSelectedAudioClipAtPlayhead() && !splitSelectedVideoClipAtPlayhead()) {
+        if (
+          !splitSelectedAudioClipAtPlayhead() &&
+          !splitSelectedVideoClipAtPlayhead()
+        ) {
           splitSelectedSubtitleAtPlayhead();
         }
       }
     };
 
-    window.addEventListener(
-      "keydown",
-      handleEditorShortcutKeyDown,
-      true,
-    );
+    window.addEventListener("keydown", handleEditorShortcutKeyDown, true);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handleEditorShortcutKeyDown,
-        true,
-      );
+      window.removeEventListener("keydown", handleEditorShortcutKeyDown, true);
     };
   }, [
     screen,
@@ -4518,9 +4713,7 @@ function App() {
   useAppMenuCommands(handleAppMenuCommand);
 
   const selectedSubtitle =
-    subtitles.find(
-      (subtitle) => subtitle.id === selectedSubtitleId,
-    ) ?? null;
+    subtitles.find((subtitle) => subtitle.id === selectedSubtitleId) ?? null;
 
   const selectedProgramVideoClipId =
     selectedVideoClip &&
@@ -4529,10 +4722,13 @@ function App() {
       ? selectedVideoClipId
       : null;
 
-  const selectedProgramSubtitleId = selectedSubtitle ? selectedSubtitleId : null;
+  const selectedProgramSubtitleId = selectedSubtitle
+    ? selectedSubtitleId
+    : null;
 
   const selectedSubtitleForActiveTrack =
-    selectedSubtitle && getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+    selectedSubtitle &&
+    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
       ? selectedSubtitle
       : null;
 
@@ -4546,7 +4742,8 @@ function App() {
   });
 
   const selectedSubtitleIdForActiveTrack =
-    selectedSubtitle && getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
+    selectedSubtitle &&
+    getSubtitleTrackId(selectedSubtitle) === activeSubtitleTrackId
       ? selectedSubtitle.id
       : null;
 
@@ -4584,11 +4781,7 @@ function App() {
   // ==========================================================================
 
   return (
-    <main
-      className="app"
-      data-can-undo={canUndo}
-      data-can-redo={canRedo}
-    >
+    <main className="app" data-can-undo={canUndo} data-can-redo={canRedo}>
       <header className="topbar">
         <button
           type="button"
@@ -4610,10 +4803,7 @@ function App() {
           ‹
         </button>
 
-        <CtcLogo
-          className="topbar-brand-logo"
-          decorative
-        />
+        <CtcLogo className="topbar-brand-logo" decorative />
 
         <div className="topbar-project-title">
           <h1>{projectMetadata?.title ?? videoName ?? "Untitled Project"}</h1>
@@ -4666,15 +4856,34 @@ function App() {
             onOpenVideoMasks={openVideoMasks}
             editingMask={
               masksPanelVideoClip?.mask
-                ? { ownerKind: "video", ownerId: masksPanelVideoClip.id, mask: masksPanelVideoClip.mask, locked: Boolean(trackSettings[masksPanelVideoClip.trackId]?.locked), label: masksPanelVideoClip.sourceName }
+                ? {
+                    ownerKind: "video",
+                    ownerId: masksPanelVideoClip.id,
+                    mask: masksPanelVideoClip.mask,
+                    locked: Boolean(
+                      trackSettings[masksPanelVideoClip.trackId]?.locked,
+                    ),
+                    label: masksPanelVideoClip.sourceName,
+                  }
                 : masksPanelAdjustmentLayer?.mask
-                  ? { ownerKind: "adjustment", ownerId: masksPanelAdjustmentLayer.id, mask: masksPanelAdjustmentLayer.mask, locked: Boolean(trackSettings[masksPanelAdjustmentLayer.trackId]?.locked), label: masksPanelAdjustmentLayer.name }
+                  ? {
+                      ownerKind: "adjustment",
+                      ownerId: masksPanelAdjustmentLayer.id,
+                      mask: masksPanelAdjustmentLayer.mask,
+                      locked: Boolean(
+                        trackSettings[masksPanelAdjustmentLayer.trackId]
+                          ?.locked,
+                      ),
+                      label: masksPanelAdjustmentLayer.name,
+                    }
                   : null
             }
             onEditingMaskChange={(mask) => updateMasksPanelMask(mask)}
             onVideoMaskChange={handleVideoMaskChange}
             onMaskEditStart={beginHistoryTransaction}
-            onMaskEditEnd={() => window.requestAnimationFrame(() => endHistoryTransaction())}
+            onMaskEditEnd={() =>
+              window.requestAnimationFrame(() => endHistoryTransaction())
+            }
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
@@ -4820,17 +5029,23 @@ function App() {
       />
 
       <AdjustmentLayerPanel
-        layer={adjustmentLayers.find((layer) => layer.id === selectedAdjustmentLayerId) ?? null}
+        layer={
+          adjustmentLayers.find(
+            (layer) => layer.id === selectedAdjustmentLayerId,
+          ) ?? null
+        }
         open={adjustmentPanelOpen}
         currentTime={currentTime}
         onClose={() => setAdjustmentPanelOpen(false)}
         onChange={updateAdjustmentLayer}
         onSeek={requestSeek}
         onOpenEffects={() => {
-          if (selectedAdjustmentLayerId) openAdjustmentEffects(selectedAdjustmentLayerId);
+          if (selectedAdjustmentLayerId)
+            openAdjustmentEffects(selectedAdjustmentLayerId);
         }}
         onOpenMasks={() => {
-          if (selectedAdjustmentLayerId) openAdjustmentMasks(selectedAdjustmentLayerId);
+          if (selectedAdjustmentLayerId)
+            openAdjustmentMasks(selectedAdjustmentLayerId);
         }}
       />
 
@@ -4848,13 +5063,15 @@ function App() {
               ? effectsPanelAdjustmentLayer.trackId.replace("video-", "V")
               : undefined
         }
-        effects={effectsPanelVideoClip?.effects ?? effectsPanelAdjustmentLayer?.effects}
+        effects={
+          effectsPanelVideoClip?.effects ?? effectsPanelAdjustmentLayer?.effects
+        }
         disabled={Boolean(
           effectsPanelVideoClip
             ? trackSettings[effectsPanelVideoClip.trackId]?.locked
             : effectsPanelAdjustmentLayer
               ? trackSettings[effectsPanelAdjustmentLayer.trackId]?.locked
-              : false
+              : false,
         )}
         onChange={updateEffectsPanelStack}
         onBeginContinuousChange={beginHistoryTransaction}
@@ -4867,7 +5084,11 @@ function App() {
 
       <MasksPanel
         open={masksPanelTarget !== null}
-        targetName={masksPanelVideoClip?.sourceName ?? masksPanelAdjustmentLayer?.name ?? "Masks"}
+        targetName={
+          masksPanelVideoClip?.sourceName ??
+          masksPanelAdjustmentLayer?.name ??
+          "Masks"
+        }
         targetDetail={
           masksPanelVideoClip
             ? masksPanelVideoClip.trackId.replace("video-", "V")
@@ -4882,7 +5103,7 @@ function App() {
             ? trackSettings[masksPanelVideoClip.trackId]?.locked
             : masksPanelAdjustmentLayer
               ? trackSettings[masksPanelAdjustmentLayer.trackId]?.locked
-              : false
+              : false,
         )}
         onChange={updateMasksPanelMask}
         getDefaultGeometry={
@@ -4894,7 +5115,9 @@ function App() {
             : undefined
         }
         onBeginContinuousChange={beginHistoryTransaction}
-        onEndContinuousChange={() => window.requestAnimationFrame(() => endHistoryTransaction())}
+        onEndContinuousChange={() =>
+          window.requestAnimationFrame(() => endHistoryTransaction())
+        }
         onDiscreteChange={markNextChangeImmediate}
         onClose={() => setMasksPanelTarget(null)}
       />
