@@ -796,6 +796,13 @@ export async function loadMatchingProjectFile(
   }
 }
 
+function serializableVideoClip(clip: VideoTimelineClip): VideoTimelineClip {
+  const persisted = { ...clip };
+  delete persisted.compoundDisplay;
+  delete persisted.compoundMemberCount;
+  return persisted;
+}
+
 export async function saveProjectFile(
   projectId: string,
   videoPath: string,
@@ -816,9 +823,9 @@ export async function saveProjectFile(
     languages: metadata?.languages ?? [],
     subtitles,
     markers: [...markers].sort((a, b) => a.time - b.time),
-    videoClips: [...videoClips].sort(
-      (a, b) => a.timelineStart - b.timelineStart,
-    ),
+    videoClips: videoClips
+      .map(serializableVideoClip)
+      .sort((a, b) => a.timelineStart - b.timelineStart),
     audioClips: [...audioClips].sort(
       (a, b) => a.timelineStart - b.timelineStart,
     ),

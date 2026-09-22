@@ -2147,6 +2147,7 @@ function App() {
       mode,
       videoClips,
       audioClips,
+      adjustmentLayers,
       subtitles,
       markers,
       trackSettings,
@@ -2161,8 +2162,12 @@ function App() {
     markNextChangeImmediate();
     clearSubtitleSelection();
     clearVideoClipSelection();
+    clearAudioClipSelection();
+    setSelectedAdjustmentLayerId(null);
+    setAdjustmentPanelOpen(false);
     replaceVideoClips(result.videoClips);
     replaceAudioClips(result.audioClips);
+    setAdjustmentLayers(result.adjustmentLayers);
     replaceSubtitles(result.subtitles);
     setMarkers(result.markers);
     setTimelineRange(null);
@@ -3802,6 +3807,36 @@ function App() {
       );
 
       if (oldProject) {
+        const replacementName =
+          replacementPath.split(/[\\/]/).pop() ?? "Relinked media";
+        const relinkSourceId = (sourceId: string) =>
+          sourceId === project.videoPath ? replacementPath : sourceId;
+        const relinkedVideoClips = oldProject.videoClips.map((clip) =>
+          clip.sourcePath === project.videoPath
+            ? {
+                ...clip,
+                sourceId: relinkSourceId(clip.sourceId),
+                sourcePath: replacementPath,
+                sourceName: replacementName,
+              }
+            : clip,
+        );
+        const relinkedAudioClips = oldProject.audioClips.map((clip) =>
+          clip.sourcePath === project.videoPath
+            ? {
+                ...clip,
+                sourceId: relinkSourceId(clip.sourceId),
+                sourcePath: replacementPath,
+                sourceName: replacementName,
+              }
+            : clip,
+        );
+        const relinkedMediaAssets = oldProject.mediaAssets.map((asset) =>
+          asset.path === project.videoPath
+            ? { ...asset, path: replacementPath, name: replacementName }
+            : asset,
+        );
+
         await saveProjectFile(
           project.projectId,
           replacementPath,
@@ -3814,10 +3849,10 @@ function App() {
                 ? oldProject.languages
                 : project.languages,
           },
-          oldProject.videoClips,
-          oldProject.audioClips,
+          relinkedVideoClips,
+          relinkedAudioClips,
           oldProject.adjustmentLayers,
-          oldProject.mediaAssets,
+          relinkedMediaAssets,
           oldProject.trackSettings,
         );
       }

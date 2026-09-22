@@ -1,11 +1,16 @@
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type { TimelineMarker } from "../types/timeline";
 import type {
+  AdjustmentLayerClip,
   AudioTimelineClip,
   TimelineTrackSettings,
   VideoTimelineClip,
 } from "../types/timelineModel";
 import { sliceVideoTransformKeyframes } from "./videoTransformKeyframes";
+import {
+  normalizedAdjustmentLayer,
+  trimAdjustmentLayerKeyframes,
+} from "./adjustmentLayers";
 import {
   isFreezeFrameClip,
   isReverseVideoClip,
@@ -24,6 +29,7 @@ type TimelineRangeEditInput = {
   mode: TimelineRangeEditMode;
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   trackSettings: TimelineTrackSettings;
@@ -32,6 +38,7 @@ type TimelineRangeEditInput = {
 export type TimelineRangeEditResult = {
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
+  adjustmentLayers: AdjustmentLayerClip[];
   subtitles: Subtitle[];
   markers: TimelineMarker[];
   changed: boolean;
@@ -407,6 +414,93 @@ function editSubtitles(
   };
 }
 
+function sortAdjustmentLayers(layers: AdjustmentLayerClip[]) {
+  return [...layers].sort(
+    (a, b) =>
+      a.timelineStart - b.timelineStart ||
+      a.timelineEnd - b.timelineEnd ||
+      a.trackId.localeCompare(b.trackId),
+  );
+}
+
+function editAdjustmentLayers(
+  layers: AdjustmentLayerClip[],
+  range: TimelineRange,
+  mode: TimelineRangeEditMode,
+  trackSettings: TimelineTrackSettings,
+) {
+  const duration = range.end - range.start;
+  const next: AdjustmentLayerClip[] = [];
+  let changed = false;
+
+  for (const layer of layers) {
+    if (isTrackLocked(layer.trackId, trackSettings)) {
+      next.push(layer);
+      continue;
+    }
+
+    if (layer.timelineEnd <= range.start + EPSILON) {
+      next.push(layer);
+      continue;
+    }
+
+    if (layer.timelineStart >= range.end - EPSILON) {
+      if (mode === "extract") {
+        next.push({
+          ...layer,
+          timelineStart: Math.max(0, layer.timelineStart - duration),
+          timelineEnd: Math.max(0, layer.timelineEnd - duration),
+        });
+        changed = true;
+      } else {
+        next.push(layer);
+      }
+      continue;
+    }
+
+    changed = true;
+    const hasLeft = layer.timelineStart < range.start - EPSILON;
+    const hasRight = layer.timelineEnd > range.end + EPSILON;
+
+    if (hasLeft) {
+      next.push(
+        normalizedAdjustmentLayer({
+          ...layer,
+          timelineEnd: range.start,
+          keyframes: trimAdjustmentLayerKeyframes(
+            layer,
+            layer.timelineStart,
+            range.start,
+          ),
+        }),
+      );
+    }
+
+    if (hasRight) {
+      const originalStart = range.end;
+      const originalEnd = layer.timelineEnd;
+      const shiftedStart = mode === "extract" ? range.start : originalStart;
+      const shiftedEnd =
+        mode === "extract" ? originalEnd - duration : originalEnd;
+      next.push(
+        normalizedAdjustmentLayer({
+          ...layer,
+          id: hasLeft ? crypto.randomUUID() : layer.id,
+          timelineStart: shiftedStart,
+          timelineEnd: shiftedEnd,
+          keyframes: trimAdjustmentLayerKeyframes(
+            layer,
+            originalStart,
+            originalEnd,
+          ),
+        }),
+      );
+    }
+  }
+
+  return { layers: sortAdjustmentLayers(next), changed };
+}
+
 function editMarkers(
   markers: TimelineMarker[],
   range: TimelineRange,
@@ -453,6 +547,7 @@ export function applyTimelineRangeEdit({
   mode,
   videoClips,
   audioClips,
+  adjustmentLayers,
   subtitles,
   markers,
   trackSettings,
@@ -463,6 +558,7 @@ export function applyTimelineRangeEdit({
     return {
       videoClips,
       audioClips,
+      adjustmentLayers,
       subtitles,
       markers,
       changed: false,
@@ -471,17 +567,25 @@ export function applyTimelineRangeEdit({
 
   const videoResult = editVideoClips(videoClips, range, mode, trackSettings);
   const audioResult = editAudioClips(audioClips, range, mode, trackSettings);
+  const adjustmentResult = editAdjustmentLayers(
+    adjustmentLayers,
+    range,
+    mode,
+    trackSettings,
+  );
   const subtitleResult = editSubtitles(subtitles, range, mode, trackSettings);
   const markerResult = editMarkers(markers, range, mode);
 
   return {
     videoClips: videoResult.clips,
     audioClips: audioResult.clips,
+    adjustmentLayers: adjustmentResult.layers,
     subtitles: subtitleResult.subtitles,
     markers: markerResult.markers,
     changed:
       videoResult.changed ||
       audioResult.changed ||
+      adjustmentResult.changed ||
       subtitleResult.changed ||
       markerResult.changed,
   };

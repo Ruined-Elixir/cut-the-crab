@@ -537,10 +537,10 @@ function buildTimelineFilterGraph(
   const filterParts: string[] = [];
 
   filterParts.push(
-    `color=c=black:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(
+    `color=c=black@0:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(
       safeDuration,
       3,
-    )}[basev]`,
+    )},format=rgba[basev]`,
   );
 
   const renderableClips = [...videoClips]
@@ -822,77 +822,94 @@ function buildTimelineFilterGraph(
       const shadows = ffmpegAdjustmentPropertyExpression(layer, "shadows");
       const whites = ffmpegAdjustmentPropertyExpression(layer, "whites");
       const blacks = ffmpegAdjustmentPropertyExpression(layer, "blacks");
-      const strength = `((${opacity})/100)`;
 
-      const brightness = `clip(((${exposure})*0.12+(${whites})*0.0016+(${blacks})*0.0009)*${strength},-1,1)`;
-      const contrast = `clip(1+((${contrastControl})/100*0.75+(${whites})*0.0012-(${blacks})*0.0010)*${strength},0.05,2)`;
-      const saturation = `clip(1+(((${saturationControl})/100)-1)*${strength},0,3)`;
-      const gamma = `clip(1+(((${shadows})/100)*0.5-((${highlights})/100)*0.18)*${strength},0.4,3)`;
-      const gammaWeight = `clip(1-max(0,((${shadows})/100)*${strength})*0.55,0.1,1)`;
-      const gammaR = `clip(1+(((${temperature})/100)*0.14+((${tint})/100)*0.07)*${strength},0.5,2)`;
-      const gammaG = `clip(1-((${tint})/100)*0.12*${strength},0.5,2)`;
-      const gammaB = `clip(1+(-(((${temperature})/100)*0.14)+((${tint})/100)*0.07)*${strength},0.5,2)`;
+      // Build the Adjustment Layer at full strength first, then mix that full
+      // result back over the untouched lower composite using the animated
+      // Opacity channel. This makes Opacity consistently govern color controls,
+      // Blur/Sharpen/Vignette, masks, and non-Normal blend modes.
+      const brightness = `clip(((${exposure})*0.12+(${whites})*0.0016+(${blacks})*0.0009),-1,1)`;
+      const contrast = `clip(1+((${contrastControl})/100*0.75+(${whites})*0.0012-(${blacks})*0.0010),0.05,2)`;
+      const saturation = `clip(((${saturationControl})/100),0,3)`;
+      const gamma = `clip(1+((${shadows})/100)*0.5-((${highlights})/100)*0.18,0.4,3)`;
+      const gammaWeight = `clip(1-max(0,((${shadows})/100))*0.55,0.1,1)`;
+      const gammaR = `clip(1+((${temperature})/100)*0.14+((${tint})/100)*0.07,0.5,2)`;
+      const gammaG = `clip(1-((${tint})/100)*0.12,0.5,2)`;
+      const gammaB = `clip(1-((${temperature})/100)*0.14+((${tint})/100)*0.07,0.5,2)`;
       const enable = `between(t,${n(layer.timelineStart, 6)},${n(layer.timelineEnd, 6)})`;
+      const mixStrength = `clip(((${opacity})/100)*(${enable}),0,1)`;
       const layerMask = activeVideoMask(layer.mask);
       const blendMode = normalizeVideoBlendMode(layer.blendMode);
       const usesBlendMode = !isNormalBlendMode(blendMode);
-      const originalBeforeLayer = currentVideoLabel;
-      let adjustmentInputLabel = currentVideoLabel;
-      let baseBranchLabel: string | null = null;
-      let blendBaseLabel: string | null = null;
 
-      if (layerMask && usesBlendMode) {
-        baseBranchLabel = `vadjbase${compositeStage++}`;
+      const mixBaseLabel = `vadjmixbase${compositeStage++}`;
+      const workBranchLabel = `vadjwork${compositeStage++}`;
+      const extraLabels: string[] = [];
+      let blendBaseLabel: string | null = null;
+      let maskBaseLabel: string | null = null;
+
+      if (usesBlendMode) {
         blendBaseLabel = `vadjblendbase${compositeStage++}`;
-        const workBranchLabel = `vadjwork${compositeStage++}`;
-        filterParts.push(
-          `[${currentVideoLabel}]split=3[${baseBranchLabel}][${blendBaseLabel}][${workBranchLabel}]`,
-        );
-        adjustmentInputLabel = workBranchLabel;
-      } else if (layerMask) {
-        baseBranchLabel = `vadjbase${compositeStage++}`;
-        const workBranchLabel = `vadjwork${compositeStage++}`;
-        filterParts.push(
-          `[${currentVideoLabel}]split=2[${baseBranchLabel}][${workBranchLabel}]`,
-        );
-        adjustmentInputLabel = workBranchLabel;
-      } else if (usesBlendMode) {
-        blendBaseLabel = `vadjblendbase${compositeStage++}`;
-        const workBranchLabel = `vadjwork${compositeStage++}`;
-        filterParts.push(
-          `[${currentVideoLabel}]split=2[${blendBaseLabel}][${workBranchLabel}]`,
-        );
-        adjustmentInputLabel = workBranchLabel;
+        extraLabels.push(blendBaseLabel);
+      }
+      if (layerMask) {
+        maskBaseLabel = `vadjmaskbase${compositeStage++}`;
+        extraLabels.push(maskBaseLabel);
       }
 
-      const nextLabel = `vadj${compositeStage++}`;
+      const splitLabels = [mixBaseLabel, workBranchLabel, ...extraLabels];
       filterParts.push(
-        `[${adjustmentInputLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${nextLabel}]`,
+        `[${currentVideoLabel}]split=${splitLabels.length}${splitLabels
+          .map((label) => `[${label}]`)
+          .join("")}`,
       );
-      currentVideoLabel = nextLabel;
+
+      let fullResultLabel = `vadj${compositeStage++}`;
+      filterParts.push(
+        `[${workBranchLabel}]eq=brightness='${brightness}':contrast='${contrast}':saturation='${saturation}':gamma='${gamma}':gamma_weight='${gammaWeight}':gamma_r='${gammaR}':gamma_g='${gammaG}':gamma_b='${gammaB}':eval=frame:enable='${enable}'[${fullResultLabel}]`,
+      );
 
       for (const effectFilter of videoEffectFfmpegFilters(
         layer.effects,
         enable,
       )) {
         const effectLabel = `vfx${compositeStage++}`;
-        filterParts.push(
-          `[${currentVideoLabel}]${effectFilter}[${effectLabel}]`,
-        );
-        currentVideoLabel = effectLabel;
+        filterParts.push(`[${fullResultLabel}]${effectFilter}[${effectLabel}]`);
+        fullResultLabel = effectLabel;
       }
 
       if (usesBlendMode && blendBaseLabel) {
-        const blendedLabel = `vadjblend${compositeStage++}`;
+        const blendBaseColorLabel = `vadjblendbasecolor${compositeStage++}`;
+        const blendBaseAlphaSourceLabel = `vadjblendbasealphasrc${compositeStage++}`;
+        const blendBaseAlphaLabel = `vadjblendbasealpha${compositeStage++}`;
+        const adjustedBlendLabel = `vadjblendsource${compositeStage++}`;
+        const rawBlendLabel = `vadjblendraw${compositeStage++}`;
+        const rawBlendColorLabel = `vadjblendrawcolor${compositeStage++}`;
+        const blendedRgbaLabel = `vadjblendrgba${compositeStage++}`;
+
         filterParts.push(
-          `[${currentVideoLabel}][${blendBaseLabel}]blend=all_mode=${ffmpegBlendMode(
-            blendMode,
-          )}:enable='${enable}':eof_action=pass:repeatlast=0:shortest=0[${blendedLabel}]`,
+          `[${blendBaseLabel}]split=2[${blendBaseColorLabel}][${blendBaseAlphaSourceLabel}]`,
         );
-        currentVideoLabel = blendedLabel;
+        filterParts.push(
+          `[${blendBaseAlphaSourceLabel}]alphaextract[${blendBaseAlphaLabel}]`,
+        );
+        filterParts.push(
+          `[${fullResultLabel}]format=rgba[${adjustedBlendLabel}]`,
+        );
+        filterParts.push(
+          `[${adjustedBlendLabel}][${blendBaseColorLabel}]blend=all_mode=${ffmpegBlendMode(
+            blendMode,
+          )}:enable='${enable}':eof_action=pass:repeatlast=0:shortest=0[${rawBlendLabel}]`,
+        );
+        filterParts.push(
+          `[${rawBlendLabel}]format=gbrp[${rawBlendColorLabel}]`,
+        );
+        filterParts.push(
+          `[${rawBlendColorLabel}][${blendBaseAlphaLabel}]alphamerge[${blendedRgbaLabel}]`,
+        );
+        fullResultLabel = blendedRgbaLabel;
       }
 
-      if (layerMask && baseBranchLabel) {
+      if (layerMask && maskBaseLabel) {
         const maskLabel = `vadjmasksource${compositeStage++}`;
         appendStaticMaskSource(
           filterParts,
@@ -904,18 +921,22 @@ function buildTimelineFilterGraph(
         );
         const maskedLabel = appendMaskToRgba(
           filterParts,
-          currentVideoLabel,
+          fullResultLabel,
           maskLabel,
           compositeStage++,
         );
         const mergedLabel = `vadjmaskedmerge${compositeStage++}`;
         filterParts.push(
-          `[${baseBranchLabel}][${maskedLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${mergedLabel}]`,
+          `[${maskBaseLabel}][${maskedLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${mergedLabel}]`,
         );
-        currentVideoLabel = mergedLabel;
-      } else if (originalBeforeLayer === currentVideoLabel) {
-        currentVideoLabel = originalBeforeLayer;
+        fullResultLabel = mergedLabel;
       }
+
+      const mixedLabel = `vadjmixed${compositeStage++}`;
+      filterParts.push(
+        `[${mixBaseLabel}][${fullResultLabel}]blend=all_expr='A*(1-(${mixStrength}))+B*(${mixStrength})':eof_action=pass:repeatlast=0:shortest=0[${mixedLabel}]`,
+      );
+      currentVideoLabel = mixedLabel;
     }
 
     const trackClips = orderedVideoClips.filter(
@@ -975,28 +996,52 @@ function buildTimelineFilterGraph(
         if (usesBlendMode) {
           const baseKeepLabel = `vblendbasekeep${compositeStage++}`;
           const baseBlendLabel = `vblendbase${compositeStage++}`;
+          const baseAlphaSourceLabel = `vblendbasealphasrc${compositeStage++}`;
+          const baseAlphaLabel = `vblendbasealpha${compositeStage++}`;
           const sourceBlendLabel = `vblendsource${compositeStage++}`;
-          const sourceAlphaLabel = `vblendalphasrc${compositeStage++}`;
-          const alphaLabel = `vblendalpha${compositeStage++}`;
+          const sourceAlphaSourceLabel = `vblendalphasrc${compositeStage++}`;
+          const sourceColorSourceLabel = `vblendcolorsrc${compositeStage++}`;
+          const sourceAlphaLabel = `vblendalpha${compositeStage++}`;
+          const sourceColorLabel = `vblendsourcecolor${compositeStage++}`;
           const rawBlendLabel = `vblendraw${compositeStage++}`;
-          const colorLabel = `vblendcolor${compositeStage++}`;
+          const rawBlendColorLabel = `vblendrawcolor${compositeStage++}`;
+          const resolvedColorLabel = `vblendresolvedcolor${compositeStage++}`;
           const rgbaLabel = `vblendrgba${compositeStage++}`;
 
+          // Blend modes belong to the transparent video stack, not the black
+          // Program Monitor background. Preserve the source color wherever the
+          // current stack has no alpha, and use the blended color only where a
+          // real lower video layer exists. This mirrors CSS isolated-group
+          // compositing and prevents bottom/gap regions from multiplying with
+          // black during export.
           filterParts.push(
-            `[${currentVideoLabel}]split=2[${baseKeepLabel}][${baseBlendLabel}]`,
+            `[${currentVideoLabel}]split=3[${baseKeepLabel}][${baseBlendLabel}][${baseAlphaSourceLabel}]`,
           );
           filterParts.push(
-            `[${sourceLabel}]split=2[${sourceBlendLabel}][${sourceAlphaLabel}]`,
+            `[${sourceLabel}]split=3[${sourceBlendLabel}][${sourceAlphaSourceLabel}][${sourceColorSourceLabel}]`,
           );
-          filterParts.push(`[${sourceAlphaLabel}]alphaextract[${alphaLabel}]`);
+          filterParts.push(
+            `[${baseAlphaSourceLabel}]alphaextract[${baseAlphaLabel}]`,
+          );
+          filterParts.push(
+            `[${sourceAlphaSourceLabel}]alphaextract[${sourceAlphaLabel}]`,
+          );
+          filterParts.push(
+            `[${sourceColorSourceLabel}]format=gbrp[${sourceColorLabel}]`,
+          );
           filterParts.push(
             `[${sourceBlendLabel}][${baseBlendLabel}]blend=all_mode=${ffmpegBlendMode(
               blendMode,
             )}:eof_action=pass:repeatlast=0:shortest=0[${rawBlendLabel}]`,
           );
-          filterParts.push(`[${rawBlendLabel}]format=rgb24[${colorLabel}]`);
           filterParts.push(
-            `[${colorLabel}][${alphaLabel}]alphamerge[${rgbaLabel}]`,
+            `[${rawBlendLabel}]format=gbrp[${rawBlendColorLabel}]`,
+          );
+          filterParts.push(
+            `[${sourceColorLabel}][${rawBlendColorLabel}][${baseAlphaLabel}]maskedmerge[${resolvedColorLabel}]`,
+          );
+          filterParts.push(
+            `[${resolvedColorLabel}][${sourceAlphaLabel}]alphamerge[${rgbaLabel}]`,
           );
           filterParts.push(
             `[${baseKeepLabel}][${rgbaLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
@@ -1015,13 +1060,28 @@ function buildTimelineFilterGraph(
     }
   }
 
+  // The Program Monitor's black is a viewer background, not a blend source.
+  // Flatten the finished transparent video stack onto black only after all
+  // clip/Adjustment blend operations are complete.
+  const finalBackgroundLabel = `vfinalbg${compositeStage++}`;
+  const opaqueCompositionLabel = `vopaque${compositeStage++}`;
+  filterParts.push(
+    `color=c=black:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(
+      safeDuration,
+      3,
+    )}[${finalBackgroundLabel}]`,
+  );
+  filterParts.push(
+    `[${finalBackgroundLabel}][${currentVideoLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${opaqueCompositionLabel}]`,
+  );
+
   // Crop the finished Program-Monitor composition to the chosen guide, then
   // scale that viewport to the requested output resolution. Keeping this step
   // after all clip transforms/layers is what makes the export a literal
   // "what is inside the dashed box" result.
   const viewportLabel = `vviewport${compositeStage++}`;
   filterParts.push(
-    `[${currentVideoLabel}]crop=w=${n(exportViewport.width, 6)}:h=${n(
+    `[${opaqueCompositionLabel}]crop=w=${n(exportViewport.width, 6)}:h=${n(
       exportViewport.height,
       6,
     )}:x=${n(exportViewport.left, 6)}:y=${n(

@@ -1,151 +1,150 @@
 .video-player {
-  width:100%;
-  height:100%;
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  gap:8px
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .video-player-toolbar {
-  min-height:28px;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width:0;
-  padding:0 2px
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px;
 }
 
 .video-player-toolbar::before {
-  content:"Program";
-  flex-shrink:0;
-  color:var(--secondary-label);
-  font-size:11px;
-  font-weight:600
+  content: "Program";
+  flex-shrink: 0;
+  color: var(--secondary-label);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .video-file-button {
-  flex-shrink:0;
-  order:3;
-  margin-left:0;
-  min-height:28px;
-  padding:0 9px;
-  border:none;
-  border-radius:8px;
-  background:var(--control-fill);
-  color:var(--secondary-label);
-  font-size:11px;
-  font-weight:500
+  flex-shrink: 0;
+  order: 3;
+  margin-left: 0;
+  min-height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 8px;
+  background: var(--control-fill);
+  color: var(--secondary-label);
+  font-size: 11px;
+  font-weight: 500;
 }
 
-
 .program-layers-button {
-  flex-shrink:0;
-  order:2;
-  margin-left:auto;
-  min-height:28px;
-  padding:0 9px;
-  border:none;
-  border-radius:8px;
-  background:var(--control-fill);
-  color:var(--secondary-label);
-  font-size:11px;
-  font-weight:500
+  flex-shrink: 0;
+  order: 2;
+  margin-left: auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 8px;
+  background: var(--control-fill);
+  color: var(--secondary-label);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .program-layers-button:hover,
 .program-layers-button.active {
-  background:var(--control-fill-hover);
-  color:var(--label)
+  background: var(--control-fill-hover);
+  color: var(--label);
 }
 
 .video-file-button:hover {
-  background:var(--control-fill-hover);
-  color:var(--label)
+  background: var(--control-fill-hover);
+  color: var(--label);
 }
 
 .video-name {
-  min-width:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  color:var(--tertiary-label);
-  font-size:11px
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tertiary-label);
+  font-size: 11px;
 }
 
 .video-monitor {
-  flex:1;
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  border:none;
-  border-radius:12px;
-  background:#101010;
-  box-shadow:inset 0 1px rgba(255,255,255,.025),0 8px 22px rgba(0,0,0,.16)
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: none;
+  border-radius: 12px;
+  background: #101010;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.025),
+    0 8px 22px rgba(0, 0, 0, 0.16);
 }
 
 .video-shell {
-  position:relative;
-  flex:1;
-  min-height:0;
-  width:100%;
-  overflow:hidden;
-  background:#000
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  background: #000;
 }
 
 .video-element {
-  display:block;
-  width:100%;
-  height:100%;
-  object-fit:contain;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   /*
    * The Program canvas owns the black background. Individual video layers
    * stay transparent outside their contained source image so letterbox /
    * pillarbox space is not transformed as part of a resized overlay clip.
    * This applies equally to V1, V2, V3 and every later video track.
    */
-  background:transparent;
-  cursor:default
+  background: transparent;
+  cursor: default;
 }
 
 .video-placeholder {
-  flex:1;
-  width:100%;
-  min-height:240px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:11px;
-  border:none;
-  border-radius:12px;
-  background:rgba(255,255,255,.028);
-  color:var(--secondary-label)
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.028);
+  color: var(--secondary-label);
 }
 
 .video-placeholder:hover {
-  background:rgba(255,255,255,.045);
-  color:var(--label)
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--label);
 }
 
 .video-placeholder-icon {
-  width:42px;
-  height:42px;
-  display:grid;
-  place-items:center;
-  border-radius:14px;
-  background:var(--control-fill);
-  color:var(--label)
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--control-fill);
+  color: var(--label);
 }
 
 /* Phase 4 — stacked video tracks */
 .video-track-layer {
-  position:absolute;
-  inset:0;
+  position: absolute;
+  inset: 0;
 }
-
-
 
 /* Clip transform preview: update immediately while dragging Program Monitor controls. */
 .video-track-layer {
@@ -155,300 +154,300 @@
 
 /* Program Monitor direct transform controls */
 .program-transform-layer {
-  position:absolute;
-  inset:0;
-  z-index:200;
-  pointer-events:none;
-  transform-origin:center center;
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  transform-origin: center center;
 }
 
 .program-transform-box {
-  position:absolute;
-  pointer-events:auto;
-  border:1px dashed rgba(255,255,255,.92);
-  border-radius:2px;
-  box-shadow:0 0 0 1px rgba(0,0,0,.35),0 0 10px rgba(0,0,0,.22);
-  cursor:move;
-  touch-action:none;
+  position: absolute;
+  pointer-events: auto;
+  border: 1px dashed rgba(255, 255, 255, 0.92);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(0, 0, 0, 0.22);
+  cursor: move;
+  touch-action: none;
 }
 
 .program-transform-layer.locked .program-transform-box {
-  border-color:rgba(255,255,255,.44);
-  cursor:default;
+  border-color: rgba(255, 255, 255, 0.44);
+  cursor: default;
 }
 
 .program-transform-track-badge {
-  position:absolute;
-  left:6px;
-  top:6px;
-  min-width:22px;
-  height:18px;
-  display:grid;
-  place-items:center;
-  padding:0 5px;
-  border-radius:5px;
-  background:rgba(0,0,0,.62);
-  color:rgba(255,255,255,.9);
-  font-size:9px;
-  font-weight:700;
-  letter-spacing:.02em;
-  pointer-events:none;
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  min-width: 22px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .program-transform-handle {
-  position:absolute;
-  z-index:2;
-  display:grid;
-  place-items:center;
-  padding:0;
-  border:1px solid rgba(0,0,0,.56);
-  background:#fff;
-  color:#161616;
-  box-shadow:0 1px 4px rgba(0,0,0,.38);
-  touch-action:none;
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.56);
+  background: #fff;
+  color: #161616;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.38);
+  touch-action: none;
 }
 
 .program-transform-handle.corner {
-  width:10px;
-  height:10px;
-  border-radius:3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
 
 .program-transform-handle.corner.top-left {
-  left:0;
-  top:0;
-  transform:translate(-50%,-50%) scale(var(--program-control-inverse-scale, 1));
-  cursor:nwse-resize;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%)
+    scale(var(--program-control-inverse-scale, 1));
+  cursor: nwse-resize;
 }
 
 .program-transform-handle.corner.top-right {
-  right:0;
-  top:0;
-  transform:translate(50%,-50%) scale(var(--program-control-inverse-scale, 1));
-  cursor:nesw-resize;
+  right: 0;
+  top: 0;
+  transform: translate(50%, -50%) scale(var(--program-control-inverse-scale, 1));
+  cursor: nesw-resize;
 }
 
 .program-transform-handle.corner.bottom-left {
-  left:0;
-  bottom:0;
-  transform:translate(-50%,50%) scale(var(--program-control-inverse-scale, 1));
-  cursor:nesw-resize;
+  left: 0;
+  bottom: 0;
+  transform: translate(-50%, 50%) scale(var(--program-control-inverse-scale, 1));
+  cursor: nesw-resize;
 }
 
 .program-transform-handle.corner.bottom-right {
-  right:0;
-  bottom:0;
-  transform:translate(50%,50%) scale(var(--program-control-inverse-scale, 1));
-  cursor:nwse-resize;
+  right: 0;
+  bottom: 0;
+  transform: translate(50%, 50%) scale(var(--program-control-inverse-scale, 1));
+  cursor: nwse-resize;
 }
 
 .program-transform-rotation-stem {
-  position:absolute;
-  left:50%;
-  top:calc(-28px * var(--program-control-inverse-scale, 1));
-  width:1px;
-  height:calc(27px * var(--program-control-inverse-scale, 1));
-  transform:translateX(-50%);
-  background:rgba(255,255,255,.85);
-  box-shadow:0 0 0 1px rgba(0,0,0,.18);
-  pointer-events:none;
+  position: absolute;
+  left: 50%;
+  top: calc(-28px * var(--program-control-inverse-scale, 1));
+  width: 1px;
+  height: calc(27px * var(--program-control-inverse-scale, 1));
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 .program-transform-handle.rotation {
-  left:50%;
-  top:calc(-40px * var(--program-control-inverse-scale, 1));
-  width:22px;
-  height:22px;
-  transform:translateX(-50%) scale(var(--program-control-inverse-scale, 1));
-  border-radius:50%;
-  font-size:13px;
-  line-height:1;
-  cursor:grab;
+  left: 50%;
+  top: calc(-40px * var(--program-control-inverse-scale, 1));
+  width: 22px;
+  height: 22px;
+  transform: translateX(-50%) scale(var(--program-control-inverse-scale, 1));
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  cursor: grab;
 }
 
 .program-transform-handle.rotation:active {
-  cursor:grabbing;
+  cursor: grabbing;
 }
 
 .program-transform-angle-readout {
-  position:absolute;
-  left:calc(50% + (17px * var(--program-control-inverse-scale, 1)));
-  top:calc(-40px * var(--program-control-inverse-scale, 1));
-  min-width:34px;
-  height:20px;
-  padding:0 6px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:1px solid rgba(255,255,255,.18);
-  border-radius:6px;
-  background:rgba(18,18,20,.9);
-  box-shadow:0 2px 8px rgba(0,0,0,.28);
-  color:rgba(255,255,255,.96);
-  font-size:10px;
-  font-weight:600;
-  font-variant-numeric:tabular-nums;
-  line-height:1;
-  letter-spacing:.01em;
-  pointer-events:none;
-  user-select:none;
-  transform-origin:left center;
-  transform:scale(var(--program-control-inverse-scale, 1)) rotate(var(--program-control-counter-rotation, 0deg));
+  position: absolute;
+  left: calc(50% + (17px * var(--program-control-inverse-scale, 1)));
+  top: calc(-40px * var(--program-control-inverse-scale, 1));
+  min-width: 34px;
+  height: 20px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(18, 18, 20, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: left center;
+  transform: scale(var(--program-control-inverse-scale, 1))
+    rotate(var(--program-control-counter-rotation, 0deg));
 }
 
 .program-transform-box:hover {
-  border-style:solid;
+  border-style: solid;
 }
 
 /* True same-track A→B dissolve layers. These temporarily replace the normal
    track video while the playhead is inside a centered dissolve region. */
 .program-dissolve-layer {
-  pointer-events:none;
-  transform-origin:center center;
-  will-change:opacity,transform;
+  pointer-events: none;
+  transform-origin: center center;
+  will-change: opacity, transform;
 }
-
-
-
-
 
 /* -------------------------------------------------------------------------- */
 /* Program crop mode                                                          */
 /* -------------------------------------------------------------------------- */
 
 .program-crop-toolbar {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  margin-right:auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
 }
 
 .program-crop-button {
-  height:28px;
-  padding:0 10px;
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:7px;
-  background:rgba(255,255,255,.065);
-  color:rgba(255,255,255,.9);
-  font:inherit;
-  font-size:11px;
-  font-weight:600;
-  cursor:pointer;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.065);
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .program-crop-button:hover:not(:disabled) {
-  background:rgba(255,255,255,.11);
+  background: rgba(255, 255, 255, 0.11);
 }
 
 .program-crop-button.primary {
-  background:rgba(255,255,255,.16);
-  border-color:rgba(255,255,255,.22);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .program-crop-button:disabled {
-  opacity:.42;
-  cursor:default;
+  opacity: 0.42;
+  cursor: default;
 }
 
 .program-transform-box.crop-mode {
-  cursor:default;
-  overflow:hidden;
-  border-style:dashed;
-  border-color:rgba(255,255,255,.5);
+  cursor: default;
+  overflow: hidden;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .program-transform-box.crop-mode:hover {
-  border-style:dashed;
+  border-style: dashed;
 }
 
 .program-crop-window {
-  position:absolute;
-  z-index:4;
-  border:1px solid rgba(255,255,255,.98);
+  position: absolute;
+  z-index: 4;
+  border: 1px solid rgba(255, 255, 255, 0.98);
   box-shadow:
-    0 0 0 9999px rgba(0,0,0,.48),
-    0 0 0 1px rgba(0,0,0,.4),
-    0 0 12px rgba(0,0,0,.3);
-  pointer-events:none;
+    0 0 0 9999px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
 }
 
 .program-crop-window::before,
 .program-crop-window::after {
-  content:"";
-  position:absolute;
-  pointer-events:none;
-  opacity:.58;
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.58;
 }
 
 .program-crop-window::before {
-  left:33.333%;
-  top:0;
-  bottom:0;
-  width:33.333%;
-  border-left:1px solid rgba(255,255,255,.35);
-  border-right:1px solid rgba(255,255,255,.35);
+  left: 33.333%;
+  top: 0;
+  bottom: 0;
+  width: 33.333%;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .program-crop-window::after {
-  top:33.333%;
-  left:0;
-  right:0;
-  height:33.333%;
-  border-top:1px solid rgba(255,255,255,.35);
-  border-bottom:1px solid rgba(255,255,255,.35);
+  top: 33.333%;
+  left: 0;
+  right: 0;
+  height: 33.333%;
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .program-crop-handle {
-  position:absolute;
-  z-index:5;
-  padding:0;
-  border:0;
-  background:#fff;
-  box-shadow:0 1px 5px rgba(0,0,0,.5);
-  pointer-events:auto;
-  touch-action:none;
+  position: absolute;
+  z-index: 5;
+  padding: 0;
+  border: 0;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .program-crop-handle.top,
 .program-crop-handle.bottom {
-  left:50%;
-  width:36px;
-  height:5px;
-  border-radius:3px;
-  transform:translateX(-50%) scale(var(--program-control-inverse-scale, 1));
-  transform-origin:center center;
-  cursor:ns-resize;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  transform: translateX(-50%) scale(var(--program-control-inverse-scale, 1));
+  transform-origin: center center;
+  cursor: ns-resize;
 }
 
 .program-crop-handle.top {
-  top:0;
-  translate:0 -50%;
+  top: 0;
+  translate: 0 -50%;
 }
 
 .program-crop-handle.bottom {
-  bottom:0;
-  translate:0 50%;
+  bottom: 0;
+  translate: 0 50%;
 }
 
 .program-crop-handle.left,
 .program-crop-handle.right {
-  top:50%;
-  width:5px;
-  height:36px;
-  border-radius:3px;
-  transform:translateY(-50%) scale(var(--program-control-inverse-scale, 1));
-  transform-origin:center center;
-  cursor:ew-resize;
+  top: 50%;
+  width: 5px;
+  height: 36px;
+  border-radius: 3px;
+  transform: translateY(-50%) scale(var(--program-control-inverse-scale, 1));
+  transform-origin: center center;
+  cursor: ew-resize;
 }
 
 .program-crop-handle.left {
-  left:0;
-  translate:-50% 0;
+  left: 0;
+  translate: -50% 0;
 }
 
 .program-crop-handle.right {
-  right:0;
-  translate:50% 0;
+  right: 0;
+  translate: 50% 0;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -456,73 +455,84 @@
 /* -------------------------------------------------------------------------- */
 
 .program-opacity-popover {
-  position:fixed;
-  z-index:4000;
-  width:230px;
-  padding:11px 12px 12px;
-  border:1px solid rgba(255,255,255,.14);
-  border-radius:12px;
-  background:rgba(34,34,36,.94);
-  -webkit-backdrop-filter:blur(24px) saturate(1.2);
-  backdrop-filter:blur(24px) saturate(1.2);
-  box-shadow:0 14px 38px rgba(0,0,0,.38),0 2px 8px rgba(0,0,0,.26);
-  color:rgba(255,255,255,.94);
-  user-select:none;
+  position: fixed;
+  z-index: 4000;
+  width: 230px;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(34, 34, 36, 0.94);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.26);
+  color: rgba(255, 255, 255, 0.94);
+  user-select: none;
 }
 
 .program-opacity-popover-header {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:8px;
-  font-size:12px;
-  line-height:1.2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .program-opacity-popover-header strong {
-  min-width:38px;
-  color:rgba(255,255,255,.72);
-  font-size:11px;
-  font-weight:600;
-  text-align:right;
-  font-variant-numeric:tabular-nums;
+  min-width: 38px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .program-opacity-slider {
-  display:block;
-  width:100%;
-  margin:0;
-  accent-color:var(--system-blue,#0a84ff);
+  display: block;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--system-blue, #0a84ff);
 }
 
 .program-opacity-slider:disabled {
-  opacity:.42;
+  opacity: 0.42;
 }
 
 .program-opacity-locked {
-  display:block;
-  margin-top:6px;
-  color:rgba(255,255,255,.48);
-  font-size:10px;
+  display: block;
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
 }
 
 .program-effects-button {
-  flex-shrink:0;
-  order:1;
-  min-height:28px;
-  padding:0 9px;
-  border:none;
-  border-radius:8px;
-  background:var(--control-fill);
-  color:var(--secondary-label);
-  font-size:11px;
-  font-weight:500;
-  cursor:pointer
+  flex-shrink: 0;
+  order: 1;
+  min-height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 8px;
+  background: var(--control-fill);
+  color: var(--secondary-label);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
 }
-.program-effects-button:hover:not(:disabled) { background:var(--control-fill-hover);color:var(--label) }
-.program-effects-button:disabled { opacity:.42;cursor:default }
-.program-video-vignette { will-change:transform,opacity;transform-origin:center center }
+.program-effects-button:hover:not(:disabled) {
+  background: var(--control-fill-hover);
+  color: var(--label);
+}
+.program-effects-button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.program-video-vignette {
+  will-change: transform, opacity;
+  transform-origin: center center;
+}
 
 /* Blend Modes v1 preview compositor.
  *
@@ -558,7 +568,10 @@
   contain: paint;
   backface-visibility: hidden;
   transform: translateZ(0);
-  will-change: clip-path, -webkit-mask-image, mask-image;
+  will-change:
+    clip-path,
+    -webkit-mask-image,
+    mask-image;
 }
 
 .program-video-mask-wrapper > .video-element {
@@ -577,7 +590,11 @@
   contain: paint;
   backface-visibility: hidden;
   transform: translateZ(0);
-  will-change: clip-path, -webkit-mask-image, mask-image, backdrop-filter;
+  will-change:
+    clip-path,
+    -webkit-mask-image,
+    mask-image,
+    backdrop-filter;
   background-color: rgba(0, 0, 0, 0.001);
 }
 

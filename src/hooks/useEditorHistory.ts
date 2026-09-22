@@ -9,6 +9,7 @@ import type {
   VideoTimelineClip,
 } from "../types/timelineModel";
 import { cloneVideoEffects } from "../utils/videoEffects";
+import { cloneVideoMask } from "../utils/videoMasks";
 
 export type EditorHistorySnapshot = {
   subtitles: Subtitle[];
@@ -37,8 +38,19 @@ function cloneSnapshot(snapshot: EditorHistorySnapshot): EditorHistorySnapshot {
     })),
     videoClips: snapshot.videoClips.map((clip) => ({
       ...clip,
+      transformKeyframes: clip.transformKeyframes
+        ? Object.fromEntries(
+            Object.entries(clip.transformKeyframes).map(
+              ([property, channel]) => [
+                property,
+                channel?.map((keyframe) => ({ ...keyframe })),
+              ],
+            ),
+          )
+        : undefined,
       effects: cloneVideoEffects(clip.effects),
-    })),
+      mask: cloneVideoMask(clip.mask),
+    })) as VideoTimelineClip[],
     audioClips: snapshot.audioClips.map((clip) => ({ ...clip })),
     adjustmentLayers: snapshot.adjustmentLayers.map((layer) => ({
       ...layer,
@@ -51,6 +63,7 @@ function cloneSnapshot(snapshot: EditorHistorySnapshot): EditorHistorySnapshot {
           )
         : undefined,
       effects: cloneVideoEffects(layer.effects),
+      mask: cloneVideoMask(layer.mask),
     })) as AdjustmentLayerClip[],
     trackSettings: Object.fromEntries(
       Object.entries(snapshot.trackSettings).map(([trackId, settings]) => [

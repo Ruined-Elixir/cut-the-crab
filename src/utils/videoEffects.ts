@@ -6,7 +6,10 @@ import type {
   VideoTimelineClip,
   VignetteVideoEffect,
 } from "../types/timelineModel";
-import { adjustmentLayersAffectingVideoTrack } from "./adjustmentLayers";
+import {
+  adjustmentLayerStrength,
+  adjustmentLayersAffectingVideoTrack,
+} from "./adjustmentLayers";
 
 export const VIDEO_EFFECT_KINDS: VideoEffectKind[] = [
   "gaussian-blur",
@@ -147,6 +150,25 @@ export function enabledVideoEffects(
   return (effects ?? []).filter((effect) => effect.enabled !== false);
 }
 
+export function scaleVideoEffectStrength(
+  effect: VideoEffectInstance,
+  strength: number,
+): VideoEffectInstance {
+  const safeStrength = Math.max(
+    0,
+    Math.min(1, Number.isFinite(strength) ? strength : 1),
+  );
+
+  switch (effect.kind) {
+    case "gaussian-blur":
+      return { ...effect, radius: effect.radius * safeStrength };
+    case "sharpen":
+      return { ...effect, amount: effect.amount * safeStrength };
+    case "vignette":
+      return { ...effect, amount: effect.amount * safeStrength };
+  }
+}
+
 export function videoEffectsForClipAtTime(
   clip: VideoTimelineClip,
   adjustmentLayers: AdjustmentLayerClip[],
@@ -158,7 +180,12 @@ export function videoEffectsForClipAtTime(
     timelineTime,
     clip.trackId,
     trackSettings,
-  ).flatMap((layer) => layer.effects ?? []);
+  ).flatMap((layer) => {
+    const strength = adjustmentLayerStrength(layer, timelineTime);
+    return (layer.effects ?? []).map((effect) =>
+      scaleVideoEffectStrength(effect, strength),
+    );
+  });
 
   return [...(clip.effects ?? []), ...adjustmentEffects].filter(
     (effect) => effect.enabled !== false,
