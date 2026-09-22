@@ -8,6 +8,7 @@ import {
 import type {
   AdjustmentLayerClip,
   AdjustmentLayerProperty,
+  VideoBlendMode,
 } from "../../types/timelineModel";
 import {
   ADJUSTMENT_KEYFRAME_EPSILON,
@@ -18,6 +19,12 @@ import {
   removeAdjustmentPropertyKeyframe,
   setAdjustmentPropertyKeyframe,
 } from "../../utils/adjustmentLayers";
+
+import {
+  VIDEO_BLEND_MODES,
+  VIDEO_BLEND_MODE_LABELS,
+  normalizeVideoBlendMode,
+} from "../../utils/blendModes";
 
 import "./AdjustmentLayerPanel.css";
 
@@ -219,6 +226,7 @@ export default function AdjustmentLayerPanel({
   const reset = () =>
     onChange(layer.id, {
       ...DEFAULT_ADJUSTMENT_LAYER_VALUES,
+      blendMode: "normal",
       keyframes: undefined,
     });
 
@@ -388,8 +396,25 @@ export default function AdjustmentLayerPanel({
         <section>
           <div className="adjustment-section-title">
             <span>Blend</span>
-            <small>Effect strength</small>
+            <small>Composite over tracks below</small>
           </div>
+          <label className="adjustment-blend-mode-row">
+            <span>Mode</span>
+            <select
+              value={normalizeVideoBlendMode(layer.blendMode)}
+              onChange={(event) =>
+                onChange(layer.id, {
+                  blendMode: event.target.value as VideoBlendMode,
+                })
+              }
+            >
+              {VIDEO_BLEND_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {VIDEO_BLEND_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </label>
           {renderSlider("opacity", "Opacity", 0, 100, 1, "%")}
         </section>
 

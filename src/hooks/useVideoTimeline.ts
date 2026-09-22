@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectMediaAsset } from "../types/project";
 import type {
   TimelineTrackId,
+  VideoBlendMode,
   VideoEffectInstance,
   VideoMask,
   VideoTimelineClip,
@@ -1408,6 +1409,12 @@ export function useVideoTimeline({
     );
   };
 
+  const updateVideoClipBlendMode = (id: string, blendMode: VideoBlendMode) => {
+    setVideoClips((current) =>
+      current.map((clip) => (clip.id === id ? { ...clip, blendMode } : clip)),
+    );
+  };
+
   const toggleVideoClipTransformKeyframe = (
     id: string,
     property: VideoTransformKeyframeProperty,
@@ -1682,6 +1689,7 @@ export function useVideoTimeline({
     updateVideoClipTransform,
     updateVideoClipEffects,
     updateVideoClipMask,
+    updateVideoClipBlendMode,
     toggleVideoClipTransformKeyframe,
     applyVideoClipCropToTrack,
     resetVideoClipTransform,

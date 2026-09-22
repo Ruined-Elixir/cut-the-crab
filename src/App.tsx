@@ -75,6 +75,7 @@ import type {
   TimelineTrackId,
   TimelineTrackKind,
   TimelineTrackSettings,
+  VideoBlendMode,
   VideoEffectInstance,
   VideoMask,
   VideoTimelineClip,
@@ -687,6 +688,7 @@ function App() {
     updateVideoClipTransform,
     updateVideoClipEffects,
     updateVideoClipMask,
+    updateVideoClipBlendMode,
     applyVideoClipCropToTrack,
     updateVideoClipTransition,
     updateVideoClipOpacityFade,
@@ -2700,6 +2702,20 @@ function App() {
     }
 
     updateVideoClipMask(id, mask);
+  };
+
+  const handleVideoBlendModeChange = (
+    id: string,
+    blendMode: VideoBlendMode,
+  ) => {
+    const clip = videoClips.find((item) => item.id === id);
+
+    if (!clip || trackSettings[clip.trackId]?.locked) {
+      return;
+    }
+
+    markNextChangeImmediate();
+    updateVideoClipBlendMode(id, blendMode);
   };
 
   const handleApplyVideoCropToTrack = (id: string) => {
@@ -4880,6 +4896,7 @@ function App() {
             }
             onEditingMaskChange={(mask) => updateMasksPanelMask(mask)}
             onVideoMaskChange={handleVideoMaskChange}
+            onVideoBlendModeChange={handleVideoBlendModeChange}
             onMaskEditStart={beginHistoryTransaction}
             onMaskEditEnd={() =>
               window.requestAnimationFrame(() => endHistoryTransaction())

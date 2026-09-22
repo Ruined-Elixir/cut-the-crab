@@ -27,13 +27,14 @@ import {
 import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
 import { normalizeVideoEffects } from "../utils/videoEffects";
 import { normalizeVideoMask } from "../utils/videoMasks";
+import { normalizeVideoBlendMode } from "../utils/blendModes";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 24;
+export const CURRENT_PROJECT_VERSION = 25;
 
 export type SubtitleProject = {
   version: number;
@@ -407,6 +408,7 @@ function normalizeVideoClip(
     ),
     effects: parseVideoEffects(value.effects),
     mask: parseVideoMask(value.mask),
+    blendMode: normalizeVideoBlendMode(value.blendMode),
     cropTop: Math.max(0, Math.min(49, asNumber(value.cropTop, 0))),
     cropRight: Math.max(0, Math.min(49, asNumber(value.cropRight, 0))),
     cropBottom: Math.max(0, Math.min(49, asNumber(value.cropBottom, 0))),
@@ -579,6 +581,7 @@ function normalizeAdjustmentLayer(
     keyframes: parseAdjustmentKeyframes(value.keyframes, duration),
     effects: parseVideoEffects(value.effects),
     mask: parseVideoMask(value.mask),
+    blendMode: normalizeVideoBlendMode(value.blendMode),
   };
 }
 

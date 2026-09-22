@@ -257,3 +257,25 @@
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
+
+.adjustment-blend-mode-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 27px;
+  color: var(--secondary-label);
+  font-size: 10px;
+}
+
+.adjustment-blend-mode-row select {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: var(--control-fill);
+  color: var(--label);
+  font: inherit;
+}

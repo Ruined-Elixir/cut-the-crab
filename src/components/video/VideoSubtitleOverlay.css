@@ -6,12 +6,15 @@
   position: absolute;
   inset: 0;
 
-  z-index: 100;
+  /* Always above video transforms (200) and mask editor (500). */
+  z-index: 2000;
 
   overflow: hidden;
 
   pointer-events: none;
 }
+
+
 
 /*
  * Dedicated subtitle render frame.
@@ -23,17 +26,17 @@
  * export on the same coordinate rectangle.
  */
 .ass-subtitle-frame {
-  position: absolute;
-  z-index: 100;
-  overflow: hidden;
-  pointer-events: none;
+  position:absolute;
+  z-index:100;
+  overflow:hidden;
+  pointer-events:none;
 }
 
 .ass-subtitle-frame > .ass-subtitle-canvas {
-  left: 0 !important;
-  top: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  left:0!important;
+  top:0!important;
+  width:100%!important;
+  height:100%!important;
 }
 
 .ass-subtitle-canvas {
@@ -130,27 +133,27 @@
 
 /* Subtitle magnetic snapping guides, constrained to the rendered video rect. */
 .subtitle-snap-guide-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 103;
-  pointer-events: none;
+  position:absolute;
+  inset:0;
+  z-index:103;
+  pointer-events:none;
 }
 
 .subtitle-snap-guide {
-  position: absolute;
-  pointer-events: none;
-  opacity: 0.95;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.65));
+  position:absolute;
+  pointer-events:none;
+  opacity:.95;
+  filter:drop-shadow(0 0 2px rgba(0,0,0,.65));
 }
 
 .subtitle-snap-guide.x {
-  width: 0;
-  border-left: 1px dashed rgba(255, 255, 255, 0.92);
-  transform: translateX(-0.5px);
+  width:0;
+  border-left:1px dashed rgba(255,255,255,.92);
+  transform:translateX(-.5px);
 }
 
 .subtitle-snap-guide.y {
-  height: 0;
-  border-top: 1px dashed rgba(255, 255, 255, 0.92);
-  transform: translateY(-0.5px);
+  height:0;
+  border-top:1px dashed rgba(255,255,255,.92);
+  transform:translateY(-.5px);
 }

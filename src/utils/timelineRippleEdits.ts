@@ -74,7 +74,8 @@ function sameContinuousClipProperties(
     optionalNumberEqual(left.audioVolume, right.audioVolume, 100) &&
     (left.audioMuted ?? false) === (right.audioMuted ?? false) &&
     videoEffectStacksEqual(left.effects, right.effects) &&
-    videoMasksEqual(left.mask, right.mask)
+    videoMasksEqual(left.mask, right.mask) &&
+    (left.blendMode ?? "normal") === (right.blendMode ?? "normal")
   );
 }
 

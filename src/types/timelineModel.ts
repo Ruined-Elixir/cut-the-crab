@@ -15,6 +15,19 @@ export type TimelineClipBase = {
 
 export type VideoTransitionType = "none" | "cross-dissolve" | "fade-black";
 
+export type VideoBlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "difference"
+  | "soft-light"
+  | "hard-light";
+
 export type VideoMaskShape = "rectangle" | "ellipse";
 
 export type VideoMask = {
@@ -117,6 +130,8 @@ export type AdjustmentLayerClip = {
   effects?: VideoEffectInstance[];
   /** Optional Program-space mask restricting this Adjustment Layer. */
   mask?: VideoMask;
+  /** How the adjusted result composites over the tracks below. */
+  blendMode?: VideoBlendMode;
 };
 
 export type VideoTransformKeyframeProperty =
@@ -185,6 +200,8 @@ export type VideoTimelineClip = TimelineClipBase & {
   effects?: VideoEffectInstance[];
   /** Optional Program-space mask applied after clip transform/compositing. */
   mask?: VideoMask;
+  /** How this clip composites over video layers below it. */
+  blendMode?: VideoBlendMode;
 };
 
 export type SubtitleTimelineClip = TimelineClipBase & {

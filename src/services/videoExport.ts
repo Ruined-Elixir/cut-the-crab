@@ -31,6 +31,11 @@ import {
 } from "../utils/videoTransformKeyframes";
 import { videoEffectFfmpegFilters } from "../utils/videoEffects";
 import { activeVideoMask, normalizeVideoMask } from "../utils/videoMasks";
+import {
+  ffmpegBlendMode,
+  isNormalBlendMode,
+  normalizeVideoBlendMode,
+} from "../utils/blendModes";
 
 export type VideoExportProgress = {
   progress: number;
@@ -829,15 +834,33 @@ function buildTimelineFilterGraph(
       const gammaB = `clip(1+(-(((${temperature})/100)*0.14)+((${tint})/100)*0.07)*${strength},0.5,2)`;
       const enable = `between(t,${n(layer.timelineStart, 6)},${n(layer.timelineEnd, 6)})`;
       const layerMask = activeVideoMask(layer.mask);
+      const blendMode = normalizeVideoBlendMode(layer.blendMode);
+      const usesBlendMode = !isNormalBlendMode(blendMode);
       const originalBeforeLayer = currentVideoLabel;
       let adjustmentInputLabel = currentVideoLabel;
       let baseBranchLabel: string | null = null;
+      let blendBaseLabel: string | null = null;
 
-      if (layerMask) {
+      if (layerMask && usesBlendMode) {
+        baseBranchLabel = `vadjbase${compositeStage++}`;
+        blendBaseLabel = `vadjblendbase${compositeStage++}`;
+        const workBranchLabel = `vadjwork${compositeStage++}`;
+        filterParts.push(
+          `[${currentVideoLabel}]split=3[${baseBranchLabel}][${blendBaseLabel}][${workBranchLabel}]`,
+        );
+        adjustmentInputLabel = workBranchLabel;
+      } else if (layerMask) {
         baseBranchLabel = `vadjbase${compositeStage++}`;
         const workBranchLabel = `vadjwork${compositeStage++}`;
         filterParts.push(
           `[${currentVideoLabel}]split=2[${baseBranchLabel}][${workBranchLabel}]`,
+        );
+        adjustmentInputLabel = workBranchLabel;
+      } else if (usesBlendMode) {
+        blendBaseLabel = `vadjblendbase${compositeStage++}`;
+        const workBranchLabel = `vadjwork${compositeStage++}`;
+        filterParts.push(
+          `[${currentVideoLabel}]split=2[${blendBaseLabel}][${workBranchLabel}]`,
         );
         adjustmentInputLabel = workBranchLabel;
       }
@@ -857,6 +880,16 @@ function buildTimelineFilterGraph(
           `[${currentVideoLabel}]${effectFilter}[${effectLabel}]`,
         );
         currentVideoLabel = effectLabel;
+      }
+
+      if (usesBlendMode && blendBaseLabel) {
+        const blendedLabel = `vadjblend${compositeStage++}`;
+        filterParts.push(
+          `[${currentVideoLabel}][${blendBaseLabel}]blend=all_mode=${ffmpegBlendMode(
+            blendMode,
+          )}:enable='${enable}':eof_action=pass:repeatlast=0:shortest=0[${blendedLabel}]`,
+        );
+        currentVideoLabel = blendedLabel;
       }
 
       if (layerMask && baseBranchLabel) {
@@ -907,33 +940,72 @@ function buildTimelineFilterGraph(
       const y = `(main_h-overlay_h)/2+((${positionYExpression})/100)*main_h`;
 
       const clipMask = activeVideoMask(clip.mask);
-      if (clipMask) {
+      const blendMode = normalizeVideoBlendMode(clip.blendMode);
+      const usesBlendMode = !isNormalBlendMode(blendMode);
+
+      if (clipMask || usesBlendMode) {
         const transparentLabel = `vtransparent${compositeStage++}`;
         const placedLabel = `vplaced${compositeStage++}`;
-        const maskLabel = `vmasksource${compositeStage++}`;
         filterParts.push(
           `color=c=black@0:s=${compositionWidth}x${compositionHeight}:r=${OUTPUT_FPS}:d=${n(safeDuration, 3)},format=rgba[${transparentLabel}]`,
         );
         filterParts.push(
           `[${transparentLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${placedLabel}]`,
         );
-        appendStaticMaskSource(
-          filterParts,
-          clipMask,
-          compositionWidth,
-          compositionHeight,
-          safeDuration,
-          maskLabel,
-        );
-        const maskedLabel = appendMaskToRgba(
-          filterParts,
-          placedLabel,
-          maskLabel,
-          compositeStage++,
-        );
-        filterParts.push(
-          `[${currentVideoLabel}][${maskedLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
-        );
+
+        let sourceLabel = placedLabel;
+        if (clipMask) {
+          const maskLabel = `vmasksource${compositeStage++}`;
+          appendStaticMaskSource(
+            filterParts,
+            clipMask,
+            compositionWidth,
+            compositionHeight,
+            safeDuration,
+            maskLabel,
+          );
+          sourceLabel = appendMaskToRgba(
+            filterParts,
+            sourceLabel,
+            maskLabel,
+            compositeStage++,
+          );
+        }
+
+        if (usesBlendMode) {
+          const baseKeepLabel = `vblendbasekeep${compositeStage++}`;
+          const baseBlendLabel = `vblendbase${compositeStage++}`;
+          const sourceBlendLabel = `vblendsource${compositeStage++}`;
+          const sourceAlphaLabel = `vblendalphasrc${compositeStage++}`;
+          const alphaLabel = `vblendalpha${compositeStage++}`;
+          const rawBlendLabel = `vblendraw${compositeStage++}`;
+          const colorLabel = `vblendcolor${compositeStage++}`;
+          const rgbaLabel = `vblendrgba${compositeStage++}`;
+
+          filterParts.push(
+            `[${currentVideoLabel}]split=2[${baseKeepLabel}][${baseBlendLabel}]`,
+          );
+          filterParts.push(
+            `[${sourceLabel}]split=2[${sourceBlendLabel}][${sourceAlphaLabel}]`,
+          );
+          filterParts.push(`[${sourceAlphaLabel}]alphaextract[${alphaLabel}]`);
+          filterParts.push(
+            `[${sourceBlendLabel}][${baseBlendLabel}]blend=all_mode=${ffmpegBlendMode(
+              blendMode,
+            )}:eof_action=pass:repeatlast=0:shortest=0[${rawBlendLabel}]`,
+          );
+          filterParts.push(`[${rawBlendLabel}]format=rgb24[${colorLabel}]`);
+          filterParts.push(
+            `[${colorLabel}][${alphaLabel}]alphamerge[${rgbaLabel}]`,
+          );
+          filterParts.push(
+            `[${baseKeepLabel}][${rgbaLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
+          );
+        } else {
+          filterParts.push(
+            `[${currentVideoLabel}][${sourceLabel}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
+          );
+        }
       } else {
         filterParts.push(
           `[${currentVideoLabel}][${overlayLabel}]overlay=x='${x}':y='${y}':eof_action=pass:repeatlast=0:shortest=0[${nextLabel}]`,
