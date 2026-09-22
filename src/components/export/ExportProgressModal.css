@@ -78,3 +78,79 @@
     transform: rotate(360deg);
   }
 }
+
+.export-progress-error-icon {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 69, 58, 0.18);
+  color: rgb(255, 110, 100);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.export-progress-inline-error {
+  margin-top: 12px !important;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(255, 69, 58, 0.12);
+  color: rgb(255, 130, 120) !important;
+  text-align: left;
+}
+
+.export-progress-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.export-progress-button {
+  min-width: 86px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--label);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.export-progress-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.export-progress-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.export-progress-primary {
+  background: var(--system-blue);
+  color: white;
+}
+
+.export-progress-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.export-progress-backdrop.export-progress-failed {
+  cursor: default;
+}
+
+.export-progress-error-message {
+  max-height: 170px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--secondary-label) !important;
+  text-align: left;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

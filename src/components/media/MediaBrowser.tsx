@@ -8,6 +8,7 @@ import {
 import type { ProjectMediaAsset } from "../../types/project";
 import type { VideoProxyStates } from "../../hooks/useVideoProxies";
 import type { TimelineTrackId } from "../../types/timelineModel";
+import { showNativeContextMenu } from "../../services/nativeContextMenu";
 
 import "./MediaBrowser.css";
 
@@ -16,6 +17,7 @@ type MediaBrowserProps = {
   primaryVideoPath: string | null;
   onImportMedia: () => void | Promise<void>;
   onInsertMedia: (asset: ProjectMediaAsset) => void;
+  onDeleteMedia: (asset: ProjectMediaAsset) => void | Promise<void>;
   timelineDuration: number;
   onDropMedia: (
     assetId: string,
@@ -36,6 +38,7 @@ function MediaBrowser({
   primaryVideoPath,
   onImportMedia,
   onInsertMedia,
+  onDeleteMedia,
   timelineDuration,
   onDropMedia,
   proxyStatesBySource = {},
@@ -239,6 +242,19 @@ function MediaBrowser({
                 }}
                 onDoubleClick={() => {
                   if (!didDragRef.current) onInsertMedia(asset);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSelectedAssetId(asset.id);
+                  void showNativeContextMenu([
+                    {
+                      id: `media.delete:${asset.id}`,
+                      text: "Delete Media",
+                      action: () => void onDeleteMedia(asset),
+                    },
+                  ]).catch((error) => {
+                    console.error("Failed to show media context menu:", error);
+                  });
                 }}
                 title={
                   asset.kind === "audio"

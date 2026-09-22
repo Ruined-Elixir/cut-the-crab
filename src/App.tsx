@@ -7,6 +7,7 @@ import CtcLogo from "./components/brand/CtcLogo";
 
 import HomeScreen from "./components/home/HomeScreen";
 import MediaBrowser from "./components/media/MediaBrowser";
+import MissingMediaModal from "./components/media/MissingMediaModal";
 import VideoPlayer, {
   type VideoPlayerHandle,
 } from "./components/video/VideoPlayer";
@@ -48,8 +49,16 @@ import {
   upsertRecentProject,
   videoPathExists,
 } from "./services/projectRegistry";
+import {
+  collectProjectMediaReferences,
+  findMissingProjectMedia,
+  relinkProjectMediaPath,
+  removeProjectMediaPath,
+  type MissingMediaIssue,
+} from "./services/missingMedia";
 
 import {
+  cancelVideoExport,
   DEFAULT_EXPORT_FRAME_SIZE,
   exportStyledVideo,
   type ExportFrameSize,
@@ -557,13 +566,29 @@ function App() {
   // ==========================================================================
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isCancellingExport, setIsCancellingExport] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("Preparing export...");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportCancelError, setExportCancelError] = useState<string | null>(null);
+  const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null);
+  const exportCancelRequestedRef = useRef(false);
   const [exportSettingsRequest, setExportSettingsRequest] = useState<{
     range: TimelineRange | null;
   } | null>(null);
   const [lastExportFrameSize, setLastExportFrameSize] =
     useState<ExportFrameSize>({ ...DEFAULT_EXPORT_FRAME_SIZE });
+
+  const [missingMediaIssues, setMissingMediaIssues] = useState<
+    MissingMediaIssue[]
+  >([]);
+  const [missingMediaDialogOpen, setMissingMediaDialogOpen] = useState(false);
+  const [relinkingMissingMediaPath, setRelinkingMissingMediaPath] = useState<
+    string | null
+  >(null);
+  const [deletingMissingMediaPath, setDeletingMissingMediaPath] = useState<
+    string | null
+  >(null);
 
   // ==========================================================================
   // Project save state
@@ -3340,6 +3365,9 @@ function App() {
     setVideoName(name);
     setVideoPath(path);
     setMediaAssets([]);
+    setMissingMediaIssues([]);
+    setMissingMediaDialogOpen(false);
+    setRelinkingMissingMediaPath(null);
     setTimelineRange(null);
 
     replaceSubtitles([]);
@@ -3399,6 +3427,19 @@ function App() {
         setMediaAssets(loadedMediaAssets);
         setTrackSettings(matchingProject.trackSettings);
         setProjectMetadata(resolvedMetadata);
+
+        try {
+          const missingIssues = await findMissingProjectMedia({
+            primaryVideoPath: path,
+            videoClips: loadedVideoClips,
+            audioClips: loadedAudioClips,
+            mediaAssets: loadedMediaAssets,
+          });
+          setMissingMediaIssues(missingIssues);
+          setMissingMediaDialogOpen(missingIssues.length > 0);
+        } catch (availabilityError) {
+          console.warn("Unable to inspect all project media paths:", availabilityError);
+        }
 
         loadedHistorySnapshot = {
           subtitles: loadedSubtitles,
@@ -3517,6 +3558,219 @@ function App() {
     }
 
     return selected;
+  };
+
+  const chooseReplacementMediaPath = async (issue: MissingMediaIssue) => {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        issue.kind === "audio"
+          ? {
+              name: "Audio",
+              extensions: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"],
+            }
+          : {
+              name: "Video",
+              extensions: ["mp4", "mov", "webm", "mkv"],
+            },
+      ],
+    });
+
+    if (!selected || Array.isArray(selected)) return null;
+    return selected;
+  };
+
+  const handleRelinkMissingMedia = async (issue: MissingMediaIssue) => {
+    if (relinkingMissingMediaPath) return;
+
+    const replacementPath = await chooseReplacementMediaPath(issue);
+    if (!replacementPath) return;
+
+    setRelinkingMissingMediaPath(issue.path);
+
+    try {
+      const replacementName = getFileName(replacementPath);
+      const replacementDuration = await probeMediaDuration(
+        replacementPath,
+        issue.kind,
+      );
+
+      if (
+        issue.requiredDuration > 0 &&
+        replacementDuration > 0 &&
+        replacementDuration + 0.05 < issue.requiredDuration
+      ) {
+        const proceed = window.confirm(
+          `${replacementName} is shorter than the media used by this project.\n\n` +
+            `Replacement duration: ${replacementDuration.toFixed(2)} s\n` +
+            `Required source range: ${issue.requiredDuration.toFixed(2)} s\n\n` +
+            "Continuing may leave later portions of clips unavailable. Relink anyway?",
+        );
+
+        if (!proceed) return;
+      }
+
+      const relinked = relinkProjectMediaPath({
+        primaryVideoPath: videoPath ?? issue.path,
+        videoClips,
+        audioClips,
+        mediaAssets,
+        missingPath: issue.path,
+        replacementPath,
+        replacementName,
+        replacementDuration,
+      });
+
+      replaceVideoClips(relinked.videoClips,
+        issue.isPrimary
+          ? { markSourceInitializedFor: replacementPath }
+          : undefined,
+      );
+      replaceAudioClips(relinked.audioClips);
+      setMediaAssets(relinked.mediaAssets);
+      void generateWaveform(replacementPath);
+
+      if (issue.isPrimary) {
+        setVideoPath(replacementPath);
+        setVideoName(replacementName);
+
+        if (activeProjectId && projectMetadata) {
+          await removeRecentProject(activeProjectId);
+          await recordRecentProject(
+            activeProjectId,
+            replacementPath,
+            projectMetadata,
+            replacementDuration || videoDuration,
+          );
+        }
+      }
+
+      const remainingIssues = missingMediaIssues.filter(
+        (item) => item.path !== issue.path,
+      );
+      setMissingMediaIssues(remainingIssues);
+      if (remainingIssues.length === 0) {
+        setMissingMediaDialogOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to relink missing media:", error);
+      window.alert(
+        error instanceof Error
+          ? `Unable to relink media: ${error.message}`
+          : "Unable to relink the selected media file.",
+      );
+    } finally {
+      setRelinkingMissingMediaPath(null);
+    }
+  };
+
+  const handleDeleteProjectMedia = async (
+    path: string,
+    name: string,
+  ): Promise<boolean> => {
+    const isPrimary = path === videoPath;
+    const fallbackPrimary = isPrimary
+      ? mediaAssets.find(
+          (asset) =>
+            asset.kind === "video" &&
+            asset.path !== path &&
+            !missingMediaIssues.some((issue) => issue.path === asset.path),
+        ) ?? null
+      : null;
+
+    if (isPrimary && !fallbackPrimary) {
+      window.alert(
+        "The primary project video cannot be removed until another available video is imported. Import another video first, or relink this source.",
+      );
+      return false;
+    }
+
+    const videoReferenceCount = videoClips.filter(
+      (clip) => clip.sourcePath === path,
+    ).length;
+    const audioReferenceCount = audioClips.filter(
+      (clip) => clip.sourcePath === path,
+    ).length;
+    const timelineReferenceCount = videoReferenceCount + audioReferenceCount;
+
+    const confirmed = window.confirm(
+      `Delete “${name}” from this project?` +
+        (timelineReferenceCount > 0
+          ? `\n\nThis will also remove ${timelineReferenceCount} timeline clip${timelineReferenceCount === 1 ? "" : "s"} that use this media.`
+          : "") +
+        "\n\nThe original file on your Mac will not be deleted.",
+    );
+
+    if (!confirmed) return false;
+
+    const next = removeProjectMediaPath({
+      primaryVideoPath: videoPath ?? path,
+      videoClips,
+      audioClips,
+      mediaAssets,
+      subtitles,
+      removedPath: path,
+    });
+
+    markNextChangeImmediate();
+    replaceVideoClips(
+      next.videoClips,
+      isPrimary && fallbackPrimary
+        ? { markSourceInitializedFor: fallbackPrimary.path }
+        : undefined,
+    );
+    replaceAudioClips(next.audioClips);
+    if (next.affectedCompoundIds.length > 0) {
+      replaceSubtitles(next.subtitles);
+    }
+    setMediaAssets(next.mediaAssets);
+
+    const remainingIssues = missingMediaIssues.filter(
+      (issue) => issue.path !== path,
+    );
+    setMissingMediaIssues(remainingIssues);
+    if (remainingIssues.length === 0) {
+      setMissingMediaDialogOpen(false);
+    }
+
+    if (isPrimary && fallbackPrimary) {
+      setVideoPath(fallbackPrimary.path);
+      setVideoName(fallbackPrimary.name);
+      setVideoDuration(fallbackPrimary.duration);
+      void generateWaveform(fallbackPrimary.path);
+
+      if (activeProjectId && projectMetadata) {
+        await recordRecentProject(
+          activeProjectId,
+          fallbackPrimary.path,
+          projectMetadata,
+          fallbackPrimary.duration,
+        );
+      }
+    }
+
+    return true;
+  };
+
+  const handleDeleteMediaAsset = async (asset: ProjectMediaAsset) => {
+    try {
+      await handleDeleteProjectMedia(asset.path, asset.name);
+    } catch (error) {
+      console.error("Failed to delete project media:", error);
+      window.alert("Unable to delete that media from the project.");
+    }
+  };
+
+  const handleDeleteMissingMedia = async (issue: MissingMediaIssue) => {
+    if (relinkingMissingMediaPath || deletingMissingMediaPath) return;
+
+    setDeletingMissingMediaPath(issue.path);
+    try {
+      await handleDeleteProjectMedia(issue.path, issue.name);
+    } finally {
+      setDeletingMissingMediaPath(null);
+    }
   };
 
   const handleImportMedia = async () => {
@@ -3805,41 +4059,54 @@ function App() {
         project.projectId,
         project.videoPath,
       );
+      let replacementDurationForRecent = project.duration;
 
       if (oldProject) {
-        const replacementName =
-          replacementPath.split(/[\\/]/).pop() ?? "Relinked media";
-        const relinkSourceId = (sourceId: string) =>
-          sourceId === project.videoPath ? replacementPath : sourceId;
-        const relinkedVideoClips = oldProject.videoClips.map((clip) =>
-          clip.sourcePath === project.videoPath
-            ? {
-                ...clip,
-                sourceId: relinkSourceId(clip.sourceId),
-                sourcePath: replacementPath,
-                sourceName: replacementName,
-              }
-            : clip,
+        const replacementName = getFileName(replacementPath);
+        const replacementDuration = await probeMediaDuration(
+          replacementPath,
+          "video",
         );
-        const relinkedAudioClips = oldProject.audioClips.map((clip) =>
-          clip.sourcePath === project.videoPath
-            ? {
-                ...clip,
-                sourceId: relinkSourceId(clip.sourceId),
-                sourcePath: replacementPath,
-                sourceName: replacementName,
-              }
-            : clip,
-        );
-        const relinkedMediaAssets = oldProject.mediaAssets.map((asset) =>
-          asset.path === project.videoPath
-            ? { ...asset, path: replacementPath, name: replacementName }
-            : asset,
-        );
+        if (replacementDuration > 0) {
+          replacementDurationForRecent = replacementDuration;
+        }
+        const primaryReference = collectProjectMediaReferences({
+          primaryVideoPath: project.videoPath,
+          videoClips: oldProject.videoClips,
+          audioClips: oldProject.audioClips,
+          mediaAssets: oldProject.mediaAssets,
+        }).find((item) => item.path === project.videoPath);
+
+        if (
+          primaryReference &&
+          primaryReference.requiredDuration > 0 &&
+          replacementDuration > 0 &&
+          replacementDuration + 0.05 < primaryReference.requiredDuration
+        ) {
+          const proceed = window.confirm(
+            `${replacementName} is shorter than the source range used by this project.\n\n` +
+              `Replacement duration: ${replacementDuration.toFixed(2)} s\n` +
+              `Required source range: ${primaryReference.requiredDuration.toFixed(2)} s\n\n` +
+              "Continuing may leave later portions of clips unavailable. Relink anyway?",
+          );
+
+          if (!proceed) return;
+        }
+
+        const relinked = relinkProjectMediaPath({
+          primaryVideoPath: project.videoPath,
+          videoClips: oldProject.videoClips,
+          audioClips: oldProject.audioClips,
+          mediaAssets: oldProject.mediaAssets,
+          missingPath: project.videoPath,
+          replacementPath,
+          replacementName,
+          replacementDuration,
+        });
 
         await saveProjectFile(
           project.projectId,
-          replacementPath,
+          relinked.primaryVideoPath,
           oldProject.subtitles,
           oldProject.markers,
           {
@@ -3849,10 +4116,10 @@ function App() {
                 ? oldProject.languages
                 : project.languages,
           },
-          relinkedVideoClips,
-          relinkedAudioClips,
+          relinked.videoClips,
+          relinked.audioClips,
           oldProject.adjustmentLayers,
-          relinkedMediaAssets,
+          relinked.mediaAssets,
           oldProject.trackSettings,
         );
       }
@@ -3868,7 +4135,7 @@ function App() {
             ? oldProject.languages
             : project.languages,
         lastOpenedAt: new Date().toISOString(),
-        duration: project.duration,
+        duration: replacementDurationForRecent,
       });
 
       await refreshRecentProjects();
@@ -4077,6 +4344,11 @@ function App() {
     }
 
     const isRangeExport = range !== null;
+    setExportError(null);
+    setExportCancelError(null);
+    setIsCancellingExport(false);
+    setActiveExportJobId(null);
+    exportCancelRequestedRef.current = false;
 
     try {
       const outputPath = await exportStyledVideo(videoPath, subtitles, {
@@ -4094,6 +4366,10 @@ function App() {
         programPreviewSize:
           videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
 
+        onJobCreated: (jobId) => {
+          setActiveExportJobId(jobId);
+        },
+
         onStart: () => {
           setExportProgress(0);
           setExportStatus(
@@ -4106,23 +4382,73 @@ function App() {
 
         onProgress: ({ progress, status }) => {
           setExportProgress(progress);
-          setExportStatus(status);
+          if (!exportCancelRequestedRef.current) {
+            setExportStatus(status);
+          }
         },
       });
 
-      if (outputPath) {
+      if (outputPath && !exportCancelRequestedRef.current) {
         setExportProgress(100);
         setExportStatus("Export complete.");
       }
     } catch (error) {
-      console.error(
-        isRangeExport
-          ? "Selected timeline range export failed:"
-          : "Edited timeline export failed:",
-        error,
-      );
+      if (exportCancelRequestedRef.current) {
+        setExportStatus("Export cancelled.");
+      } else {
+        console.error(
+          isRangeExport
+            ? "Selected timeline range export failed:"
+            : "Edited timeline export failed:",
+          error,
+        );
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "The export could not be completed.";
+        setExportError(message || "The export could not be completed.");
+      }
     } finally {
       setIsExporting(false);
+      setIsCancellingExport(false);
+      setActiveExportJobId(null);
+      exportCancelRequestedRef.current = false;
+    }
+  };
+
+  const handleCancelExport = async () => {
+    if (!isExporting || !activeExportJobId || isCancellingExport) return;
+
+    exportCancelRequestedRef.current = true;
+    setIsCancellingExport(true);
+    setExportCancelError(null);
+    setExportStatus("Stopping export…");
+
+    try {
+      await cancelVideoExport(activeExportJobId);
+    } catch (error) {
+      exportCancelRequestedRef.current = false;
+      setIsCancellingExport(false);
+      setExportStatus("Export is still running…");
+
+      const rawMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Unable to cancel the export.";
+      const missingNativeCommand =
+        rawMessage.includes("cancel_video_export") ||
+        rawMessage.toLowerCase().includes("command not found");
+
+      setExportCancelError(
+        missingNativeCommand
+          ? "This build does not include the native export-cancellation command yet. The export is still running."
+          : `Could not cancel the export: ${rawMessage}`,
+      );
     }
   };
 
@@ -4131,6 +4457,8 @@ function App() {
       return;
     }
 
+    setExportError(null);
+    setExportCancelError(null);
     setExportSettingsRequest({
       range: range
         ? {
@@ -4862,13 +5190,25 @@ function App() {
         </div>
 
         {videoPath && (
-          <span className="project-save-status">
-            {isSavingProject
-              ? "Saving..."
-              : hasUnsavedChanges
-                ? "Unsaved changes..."
-                : "Saved"}
-          </span>
+          <div className="topbar-status-group">
+            {missingMediaIssues.length > 0 && (
+              <button
+                type="button"
+                className="missing-media-status-button"
+                onClick={() => setMissingMediaDialogOpen(true)}
+                title="Relink missing project media"
+              >
+                {missingMediaIssues.length} media missing
+              </button>
+            )}
+            <span className="project-save-status">
+              {isSavingProject
+                ? "Saving..."
+                : hasUnsavedChanges
+                  ? "Unsaved changes..."
+                  : "Saved"}
+            </span>
+          </div>
         )}
       </header>
 
@@ -4878,6 +5218,7 @@ function App() {
           primaryVideoPath={videoPath}
           onImportMedia={handleImportMedia}
           onInsertMedia={handleInsertMediaAtPlayhead}
+          onDeleteMedia={handleDeleteMediaAsset}
           timelineDuration={timelineDuration}
           onDropMedia={handleMediaDropOnTimeline}
           proxyStatesBySource={proxyStatesBySource}
@@ -5201,8 +5542,28 @@ function App() {
         }}
       />
 
-      {isExporting && (
-        <ExportProgressModal progress={exportProgress} status={exportStatus} />
+      {missingMediaDialogOpen && missingMediaIssues.length > 0 && (
+        <MissingMediaModal
+          issues={missingMediaIssues}
+          relinkingPath={relinkingMissingMediaPath}
+          deletingPath={deletingMissingMediaPath}
+          onRelink={handleRelinkMissingMedia}
+          onDelete={handleDeleteMissingMedia}
+          onClose={() => setMissingMediaDialogOpen(false)}
+        />
+      )}
+
+      {(isExporting || exportError) && (
+        <ExportProgressModal
+          progress={exportProgress}
+          status={exportStatus}
+          exporting={isExporting}
+          cancelling={isCancellingExport}
+          errorMessage={exportError}
+          cancelError={exportCancelError}
+          onCancel={activeExportJobId ? () => void handleCancelExport() : undefined}
+          onDismissError={() => setExportError(null)}
+        />
       )}
     </main>
   );

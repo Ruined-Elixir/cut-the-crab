@@ -78,6 +78,7 @@ type ExportTimelineVideoOptions = {
   programPreviewSize?: ExportProgramPreviewSize;
   onStart?: () => void;
   onProgress?: (progress: VideoExportProgress) => void;
+  onJobCreated?: (jobId: string) => void;
 };
 
 type ClipRenderWindow = {
@@ -1274,6 +1275,9 @@ export async function exportStyledVideo(
 
   const resolvedInputs = inputPaths.length > 0 ? inputPaths : [videoPath];
 
+  const exportJobId = crypto.randomUUID();
+  options.onJobCreated?.(exportJobId);
+
   const unlisten = await listen<VideoExportProgress>(
     "video-export-progress",
     (event) => {
@@ -1304,6 +1308,9 @@ export async function exportStyledVideo(
       videoDuration: outputDuration,
       inputPaths: resolvedInputs,
       filterComplex,
+      // The native exporter registers this job ID against the live FFmpeg
+      // child so cancel_video_export can terminate exactly this export.
+      exportJobId,
     });
   } finally {
     unlisten();
@@ -1311,3 +1318,9 @@ export async function exportStyledVideo(
 
   return outputPath;
 }
+export async function cancelVideoExport(exportJobId: string): Promise<void> {
+  await invoke("cancel_video_export", {
+    exportJobId,
+  });
+}
+

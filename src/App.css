@@ -162,3 +162,31 @@ button {
       );
   }
 }
+
+.topbar-status-group {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar-status-group .project-save-status {
+  margin-left: 0;
+}
+
+.missing-media-status-button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 69, 58, 0.14);
+  color: rgb(255, 125, 115);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.missing-media-status-button:hover {
+  background: rgba(255, 69, 58, 0.22);
+}

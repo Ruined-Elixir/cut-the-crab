@@ -1,8 +1,14 @@
 use std::{
+    collections::HashMap,
     fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread,
 };
 
 use serde::{Deserialize, Serialize};
@@ -744,6 +750,17 @@ struct VideoExportProgress {
     status: String,
 }
 
+#[derive(Clone)]
+struct ActiveVideoExport {
+    child: Arc<Mutex<Child>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct VideoExportRegistry {
+    active: Mutex<HashMap<String, ActiveVideoExport>>,
+}
+
 fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into<String>) {
     let payload = VideoExportProgress {
         progress: progress.clamp(0.0, 100.0),
@@ -752,6 +769,64 @@ fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into
 
     if let Err(error) = app.emit("video-export-progress", payload) {
         eprintln!("Failed to emit export progress: {error}");
+    }
+}
+
+fn ffmpeg_error_detail(stderr: &str) -> String {
+    const MAX_LINES: usize = 40;
+    const MAX_CHARS: usize = 12_000;
+
+    let lines = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+
+    if lines.is_empty() {
+        return "FFmpeg did not provide an error message.".to_string();
+    }
+
+    let start = lines.len().saturating_sub(MAX_LINES);
+    let mut detail = lines[start..].join("\n");
+
+    if detail.len() > MAX_CHARS {
+        detail = detail[detail.len() - MAX_CHARS..].to_string();
+    }
+
+    detail
+}
+
+#[tauri::command]
+fn cancel_video_export(
+    app: tauri::AppHandle,
+    export_job_id: String,
+) -> Result<(), String> {
+    let active_export = {
+        let registry = app.state::<VideoExportRegistry>();
+        let active = registry
+            .active
+            .lock()
+            .map_err(|_| "Export process registry is unavailable.".to_string())?;
+
+        active.get(&export_job_id).cloned()
+    }
+    .ok_or_else(|| "That export is no longer running.".to_string())?;
+
+    active_export.cancelled.store(true, Ordering::SeqCst);
+
+    let mut child = active_export
+        .child
+        .lock()
+        .map_err(|_| "The active FFmpeg process is unavailable.".to_string())?;
+
+    match child
+        .try_wait()
+        .map_err(|error| format!("Failed to inspect FFmpeg process: {error}"))?
+    {
+        Some(_) => Ok(()),
+        None => child
+            .kill()
+            .map_err(|error| format!("Failed to stop FFmpeg export: {error}")),
     }
 }
 
@@ -764,7 +839,12 @@ async fn export_styled_video(
     video_duration: f64,
     input_paths: Option<Vec<String>>,
     filter_complex: Option<String>,
+    export_job_id: String,
 ) -> Result<(), String> {
+    if export_job_id.trim().is_empty() {
+        return Err("Export job ID is missing.".to_string());
+    }
+
     tauri::async_runtime::spawn_blocking(move || {
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -775,7 +855,10 @@ async fn export_styled_video(
             .map_err(|error| error.to_string())?
             .as_millis();
 
-        let ass_path = std::env::temp_dir().join(format!("subtitle-editor-export-{timestamp}.ass"));
+        let ass_path = std::env::temp_dir().join(format!(
+            "cut-the-crab-export-{}-{timestamp}.ass",
+            export_job_id.replace(|character: char| !character.is_ascii_alphanumeric(), "-")
+        ));
 
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
@@ -803,7 +886,11 @@ async fn export_styled_video(
                 .unwrap_or(false);
 
         let mut command = Command::new(&ffmpeg_path);
-        command.arg("-y");
+        command
+            .arg("-hide_banner")
+            .arg("-loglevel")
+            .arg("error")
+            .arg("-y");
 
         if timeline_mode {
             let inputs = input_paths.unwrap_or_default();
@@ -852,22 +939,80 @@ async fn export_styled_video(
             .arg("-nostats")
             .arg(&output_path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::piped());
 
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("Failed to start FFmpeg: {error}"))?;
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = fs::remove_file(&ass_path);
+                return Err(format!("Failed to start FFmpeg: {error}"));
+            }
+        };
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Failed to read FFmpeg progress output.".to_string())?;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = fs::remove_file(&ass_path);
+                return Err("Failed to read FFmpeg progress output.".to_string());
+            }
+        };
+
+        let stderr = child.stderr.take();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let child = Arc::new(Mutex::new(child));
+
+        {
+            let registry = app.state::<VideoExportRegistry>();
+            let mut active = registry
+                .active
+                .lock()
+                .map_err(|_| "Export process registry is unavailable.".to_string())?;
+
+            if active.contains_key(&export_job_id) {
+                if let Ok(mut child) = child.lock() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                let _ = fs::remove_file(&ass_path);
+                return Err("An export with this job ID is already active.".to_string());
+            }
+
+            active.insert(
+                export_job_id.clone(),
+                ActiveVideoExport {
+                    child: Arc::clone(&child),
+                    cancelled: Arc::clone(&cancelled),
+                },
+            );
+        }
+
+        let stderr_thread = stderr.map(|stderr| {
+            thread::spawn(move || {
+                let mut reader = BufReader::new(stderr);
+                let mut output = String::new();
+
+                match reader.read_to_string(&mut output) {
+                    Ok(_) => output,
+                    Err(error) => format!("Failed while reading FFmpeg error output: {error}"),
+                }
+            })
+        });
 
         let reader = BufReader::new(stdout);
+        let mut progress_error: Option<String> = None;
 
         for line in reader.lines() {
-            let line =
-                line.map_err(|error| format!("Failed to read FFmpeg progress output: {error}"))?;
+            let line = match line {
+                Ok(line) => line,
+                Err(error) => {
+                    progress_error = Some(format!(
+                        "Failed to read FFmpeg progress output: {error}"
+                    ));
+                    break;
+                }
+            };
 
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
@@ -893,14 +1038,53 @@ async fn export_styled_video(
             }
         }
 
-        let status = child
+        let status_result = child
+            .lock()
+            .map_err(|_| "The active FFmpeg process is unavailable.".to_string())?
             .wait()
-            .map_err(|error| format!("Failed while waiting for FFmpeg: {error}"))?;
+            .map_err(|error| format!("Failed while waiting for FFmpeg: {error}"));
+
+        let stderr_output = stderr_thread
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| "FFmpeg error reader thread failed.".to_string())
+            })
+            .unwrap_or_default();
+
+        {
+            let registry = app.state::<VideoExportRegistry>();
+            if let Ok(mut active) = registry.active.lock() {
+                active.remove(&export_job_id);
+            };
+        }
 
         let _ = fs::remove_file(&ass_path);
 
+        if cancelled.load(Ordering::SeqCst) {
+            let _ = fs::remove_file(&output_path);
+            return Err("EXPORT_CANCELLED".to_string());
+        }
+
+        let status = match status_result {
+            Ok(status) => status,
+            Err(error) => {
+                let _ = fs::remove_file(&output_path);
+                return Err(error);
+            }
+        };
+
+        if let Some(error) = progress_error {
+            let _ = fs::remove_file(&output_path);
+            return Err(error);
+        }
+
         if !status.success() {
-            return Err(format!("FFmpeg export failed with status: {status}"));
+            let _ = fs::remove_file(&output_path);
+            return Err(format!(
+                "FFmpeg export failed with status: {status}\n{}",
+                ffmpeg_error_detail(&stderr_output)
+            ));
         }
 
         emit_export_progress(&app, 100.0, "Export complete.");
@@ -1124,6 +1308,7 @@ fn save_subtitle_project(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(VideoExportRegistry::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -1143,7 +1328,8 @@ pub fn run() {
             path_exists,
             get_project_thumbnail,
             proxy_media::ensure_video_proxy,
-            export_styled_video
+            export_styled_video,
+            cancel_video_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -95,12 +95,21 @@ function ExportSettingsModal({
       if (event.key === "Escape") {
         event.preventDefault();
         onCancel();
+        return;
+      }
+
+      if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        onExport({
+          width: nearestEven(width),
+          height: nearestEven(height),
+        });
       }
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onCancel, open]);
+  }, [height, onCancel, onExport, open, width]);
 
   const normalizedFrameSize = useMemo(
     () => ({ width: nearestEven(width), height: nearestEven(height) }),
