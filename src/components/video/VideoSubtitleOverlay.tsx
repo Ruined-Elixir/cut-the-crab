@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -13,12 +12,7 @@ import SubtitlesOctopus from "@biliblitz/libass-wasm";
 import {
   getSubtitleTrackId,
   type Subtitle,
-  type SubtitleStyle,
 } from "../../types/subtitle";
-
-import SubtitleStyleContextMenu, {
-  type SubtitleStyleScope,
-} from "../subtitles/SubtitleStyleContextMenu";
 
 import {
   ASS_HEIGHT,
@@ -49,8 +43,9 @@ import "./VideoSubtitleOverlay.css";
 type VideoSubtitleOverlayProps = {
   subtitles: Subtitle[];
   currentTime: number;
-  videoTimeOffset?: number;
   videoSourceKey?: string;
+  clockVideo?: HTMLVideoElement | null;
+  videoTimeOffset?: number;
 
   selectedSubtitleId?: string | null;
   interactiveSubtitleIds?: string[];
@@ -63,12 +58,6 @@ type VideoSubtitleOverlayProps = {
     positionX: number,
     positionY: number,
   ) => void;
-
-  onSubtitleTextChange?: (id: string, text: string) => void;
-
-  onSubtitleStyleChange?: (id: string, style: SubtitleStyle) => void;
-
-  onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
 
 type DraftPosition = {
@@ -82,19 +71,6 @@ type DraftPosition = {
   positionX: number;
   positionY: number;
 };
-
-function setRendererCurrentTime(
-  renderer: SubtitlesOctopus | null,
-  time: number,
-) {
-  const timelineRenderer = renderer as
-    | (SubtitlesOctopus & {
-        setCurrentTime?: (currentTime: number) => void;
-      })
-    | null;
-
-  timelineRenderer?.setCurrentTime?.(time);
-}
 
 function setRendererTimeOffset(
   renderer: SubtitlesOctopus | null,
@@ -114,27 +90,15 @@ function setRendererTimeOffset(
 function VideoSubtitleOverlay({
   subtitles,
   currentTime,
-  videoTimeOffset = 0,
   videoSourceKey = "",
+  clockVideo = null,
+  videoTimeOffset = 0,
   selectedSubtitleId,
   interactiveSubtitleIds,
   shellRef,
   onSubtitleSelect,
   onSubtitlePositionChange,
-  onSubtitleTextChange,
-  onSubtitleStyleChange,
-  onAllSubtitleStylesChange,
 }: VideoSubtitleOverlayProps) {
-  const [editingSubtitleId, setEditingSubtitleId] = useState<string | null>(
-    null,
-  );
-  const [editingText, setEditingText] = useState("");
-
-  const [styleMenu, setStyleMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
-  const [styleScope, setStyleScope] = useState<SubtitleStyleScope>("current");
-
   const [renderedVideoRect, setRenderedVideoRect] =
     useState<RenderedVideoRect | null>(null);
 
@@ -163,8 +127,6 @@ function VideoSubtitleOverlay({
   const [subtitleMoveSnappingActive, setSubtitleMoveSnappingActive] =
     useState(false);
 
-  const styleScopeRef = useRef<SubtitleStyleScope>("current");
-
   const interactionButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const canvas0Ref = useRef<HTMLCanvasElement | null>(null);
@@ -172,7 +134,6 @@ function VideoSubtitleOverlay({
 
   const renderer0Ref = useRef<SubtitlesOctopus | null>(null);
   const renderer1Ref = useRef<SubtitlesOctopus | null>(null);
-  const currentTimeRef = useRef(currentTime);
   const videoTimeOffsetRef = useRef(videoTimeOffset);
 
   const frontCanvasIndexRef = useRef<0 | 1>(0);
@@ -186,24 +147,16 @@ function VideoSubtitleOverlay({
   );
 
   useEffect(() => {
-    currentTimeRef.current = currentTime;
     videoTimeOffsetRef.current = videoTimeOffset;
-
     setRendererTimeOffset(renderer0Ref.current, videoTimeOffset);
     setRendererTimeOffset(renderer1Ref.current, videoTimeOffset);
-
-    // App.currentTime is canonical timeline time. Drive libass explicitly so
-    // subtitle timing stays correct even when native video time represents a
-    // trimmed or moved source clip.
-    setRendererCurrentTime(renderer0Ref.current, currentTime);
-    setRendererCurrentTime(renderer1Ref.current, currentTime);
-  }, [currentTime, videoTimeOffset]);
+  }, [videoTimeOffset]);
 
   const activeSubtitle = useMemo(() => {
     const active = subtitles.filter(
       (subtitle) =>
         currentTime >= subtitle.startTime &&
-        currentTime <= subtitle.endTime &&
+        currentTime < subtitle.endTime &&
         (!interactiveSubtitleIdSet ||
           interactiveSubtitleIdSet.has(subtitle.id)),
     );
@@ -222,8 +175,6 @@ function VideoSubtitleOverlay({
       return bIndex - aIndex;
     })[0];
   }, [currentTime, interactiveSubtitleIdSet, selectedSubtitleId, subtitles]);
-
-  const isEditing = !!activeSubtitle && editingSubtitleId === activeSubtitle.id;
 
   const previewScale = (renderedVideoRect?.height ?? ASS_HEIGHT) / ASS_HEIGHT;
 
@@ -260,8 +211,14 @@ function VideoSubtitleOverlay({
       : undefined;
 
   /*
-   * This transparent DOM button is interaction-only.
-   * Its text is never used as a visual substitute for libass.
+   * Transparent DOM proxy used only as the subtitle move handle.
+   *
+   * The box mirrors the canonical libass background geometry:
+   * - background subtitles get the same 8-design-pixel box padding
+   * - transparent subtitles have no synthetic padding
+   *
+   * The proxy itself stays transparent so the libass canvas remains the only
+   * visible subtitle renderer.
    */
   const interactionStyle =
     activeSubtitle && positionStyle
@@ -269,54 +226,25 @@ function VideoSubtitleOverlay({
           ...positionStyle,
 
           maxWidth: renderedVideoRect
-            ? `${renderedVideoRect.width * 0.8}px`
-            : "80%",
+            ? `${renderedVideoRect.width * 0.92}px`
+            : "92%",
 
           fontSize: `${(activeSubtitle.fontSize ?? 24) * previewScale}px`,
           fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
           fontWeight: activeSubtitle.isBold ? 700 : 400,
-          lineHeight: 1.35,
-          padding: `${8 * previewScale}px`,
+          fontStyle: activeSubtitle.isItalic ? "italic" : "normal",
+          lineHeight: 1,
+          padding:
+            activeSubtitle.backgroundColor &&
+            activeSubtitle.backgroundColor !== "transparent"
+              ? `${8 * previewScale}px`
+              : "0px",
           textAlign: activeSubtitle.textAlign ?? "center",
 
           color: "transparent",
           backgroundColor: "transparent",
-          textDecoration: "none",
-          textShadow: "none",
-        } as CSSProperties)
-      : undefined;
-
-  /*
-   * Text editing still needs a real DOM textarea.
-   * This is only shown while actively typing.
-   */
-  const editingStyle =
-    activeSubtitle && positionStyle
-      ? ({
-          ...positionStyle,
-
-          maxWidth: renderedVideoRect
-            ? `${renderedVideoRect.width * 0.8}px`
-            : "80%",
-
-          fontSize: `${(activeSubtitle.fontSize ?? 24) * previewScale}px`,
-          fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
-          fontWeight: activeSubtitle.isBold ? 700 : 400,
-          lineHeight: 1.35,
-          padding: `${8 * previewScale}px`,
-          textAlign: activeSubtitle.textAlign ?? "center",
-
-          color: activeSubtitle.color ?? "#ffffff",
-          backgroundColor: activeSubtitle.backgroundColor ?? "transparent",
-
           textDecoration: activeSubtitle.isUnderlined ? "underline" : "none",
-
-          textShadow: `
-            ${-2 * previewScale}px ${-2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-            ${2 * previewScale}px ${-2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-            ${-2 * previewScale}px ${2 * previewScale}px 0 rgba(0, 0, 0, 0.9),
-            ${2 * previewScale}px ${2 * previewScale}px 0 rgba(0, 0, 0, 0.9)
-          `,
+          textShadow: "none",
         } as CSSProperties)
       : undefined;
 
@@ -377,13 +305,13 @@ function VideoSubtitleOverlay({
    * the interaction proxy and the exported ASS coordinate space.
    */
   const canvas0Style: CSSProperties = {
-    opacity: frontCanvasIndex === 0 && !isEditing ? 1 : 0,
+    opacity: frontCanvasIndex === 0 ? 1 : 0,
     transform:
       frontCanvasIndex === 0 ? dragCanvasTransform : "translate(0px, 0px)",
   };
 
   const canvas1Style: CSSProperties = {
-    opacity: frontCanvasIndex === 1 && !isEditing ? 1 : 0,
+    opacity: frontCanvasIndex === 1 ? 1 : 0,
     transform:
       frontCanvasIndex === 1 ? dragCanvasTransform : "translate(0px, 0px)",
   };
@@ -393,66 +321,31 @@ function VideoSubtitleOverlay({
   }, [frontCanvasIndex]);
 
   useEffect(() => {
-    if (editingSubtitleId && !activeSubtitle) {
-      setEditingSubtitleId(null);
-    }
-
     if (!activeSubtitle) {
-      setStyleMenu(null);
       setDraftPosition(null);
       draftPositionRef.current = null;
       setSubtitleSnapGuides([]);
     }
-  }, [activeSubtitle, editingSubtitleId]);
-
-  const startEditingSubtitle = () => {
-    if (!activeSubtitle) {
-      return;
-    }
-
-    onSubtitleSelect?.(activeSubtitle.id);
-    setStyleMenu(null);
-    setEditingSubtitleId(activeSubtitle.id);
-    setEditingText(activeSubtitle.text);
-  };
-
-  const finishEditingSubtitle = () => {
-    if (!activeSubtitle) {
-      setEditingSubtitleId(null);
-      return;
-    }
-
-    if (editingText !== activeSubtitle.text) {
-      onSubtitleTextChange?.(activeSubtitle.id, editingText);
-    }
-
-    setEditingSubtitleId(null);
-  };
-
-  const cancelEditingSubtitle = () => {
-    if (activeSubtitle) {
-      setEditingText(activeSubtitle.text);
-    }
-
-    setEditingSubtitleId(null);
-  };
+  }, [activeSubtitle]);
 
   const handleSubtitlePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    if (
-      event.button !== 0 ||
-      !shellRef.current ||
-      !activeSubtitle ||
-      !renderedVideoRect
-    ) {
+    if (event.button !== 0) {
+      // The Program Monitor subtitle is move-only. Suppress WebKit/browser
+      // selection/context behavior for auxiliary buttons.
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (!shellRef.current || !activeSubtitle || !renderedVideoRect) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
 
-    setStyleMenu(null);
     setSubtitleSnapGuides([]);
     setSubtitleMoveSnappingActive(true);
     onSubtitleSelect?.(activeSubtitle.id);
@@ -555,13 +448,6 @@ function VideoSubtitleOverlay({
         return;
       }
 
-      // If a native interaction swallowed pointerup, never leave the subtitle
-      // attached to the cursor.
-      if ((moveEvent.buttons & 1) === 0) {
-        finishDrag();
-        return;
-      }
-
       const shellRect = shell.getBoundingClientRect();
 
       const centerX = moveEvent.clientX - shellRect.left - grabOffsetX;
@@ -651,64 +537,6 @@ function VideoSubtitleOverlay({
     window.addEventListener("pointercancel", handlePointerUp);
   };
 
-  const openStyleMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (!activeSubtitle) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    onSubtitleSelect?.(activeSubtitle.id);
-
-    setStyleMenu({
-      x: event.clientX,
-      y: event.clientY,
-    });
-  };
-
-  const getCurrentSubtitleStyle = (): SubtitleStyle | null => {
-    if (!activeSubtitle) {
-      return null;
-    }
-
-    return {
-      fontSize: activeSubtitle.fontSize ?? 24,
-      fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
-      color: activeSubtitle.color ?? "#ffffff",
-      backgroundColor: activeSubtitle.backgroundColor ?? "transparent",
-      isBold: activeSubtitle.isBold ?? false,
-      isUnderlined: activeSubtitle.isUnderlined ?? false,
-      textAlign: activeSubtitle.textAlign ?? "center",
-    };
-  };
-
-  const handleStyleScopeChange = (scope: SubtitleStyleScope) => {
-    styleScopeRef.current = scope;
-    setStyleScope(scope);
-
-    if (scope === "all") {
-      const currentStyle = getCurrentSubtitleStyle();
-
-      if (currentStyle) {
-        onAllSubtitleStylesChange?.(currentStyle);
-      }
-    }
-  };
-
-  const handleStyleChange = (style: SubtitleStyle) => {
-    if (!styleMenu || !activeSubtitle) {
-      return;
-    }
-
-    if (styleScopeRef.current === "all") {
-      onAllSubtitleStylesChange?.(style);
-      return;
-    }
-
-    onSubtitleStyleChange?.(activeSubtitle.id, style);
-  };
-
   /*
    * Keep canvases aligned to the actual displayed video image rather than the
    * whole shell (which may contain letterbox/pillarbox space).
@@ -720,7 +548,8 @@ function VideoSubtitleOverlay({
       return;
     }
 
-    const video = shell.querySelector<HTMLVideoElement>("video");
+    const video =
+      clockVideo ?? shell.querySelector<HTMLVideoElement>("video.video-track-layer");
 
     if (!video) {
       return;
@@ -747,7 +576,7 @@ function VideoSubtitleOverlay({
       observer.disconnect();
       video.removeEventListener("loadedmetadata", updateVideoRect);
     };
-  }, [shellRef, videoSourceKey]);
+  }, [clockVideo, shellRef, videoSourceKey]);
 
   /*
    * Double-buffered libass refresh.
@@ -756,15 +585,7 @@ function VideoSubtitleOverlay({
    * renderer is ready. This is what prevents style-change flicker.
    */
   useEffect(() => {
-    const shell = shellRef.current;
-
-    if (!shell) {
-      return;
-    }
-
-    const video = shell.querySelector<HTMLVideoElement>("video");
-
-    if (!video) {
+    if (!clockVideo) {
       return;
     }
 
@@ -798,13 +619,15 @@ function VideoSubtitleOverlay({
     let renderer: SubtitlesOctopus | null = null;
 
     /*
-     * Keep libass attached to the real video element for geometry/resizing.
-     * The renderer's clock is still driven explicitly from App.currentTime,
-     * while timeOffset keeps native video events aligned to timeline time for
-     * trimmed/moved clips.
+     * @biliblitz/libass-wasm is the video-attached fork used by CTC. Keep
+     * exactly one renderer clock: the HTMLVideoElement's native media clock.
+     * CTC updates only timeOffset so source-media time maps into canonical
+     * timeline time for moved/trimmed/retimed clips. Do not also call
+     * setCurrentTime() while a video is attached; that reintroduces the
+     * two-clock flicker/early-cue regression.
      */
     const rendererOptions = {
-      video,
+      video: clockVideo,
       canvas,
       subContent: assContent,
 
@@ -819,7 +642,6 @@ function VideoSubtitleOverlay({
 
       onReady: () => {
         setRendererTimeOffset(renderer, videoTimeOffsetRef.current);
-        setRendererCurrentTime(renderer, currentTimeRef.current);
 
         /*
          * onReady means the new worker/libass instance is initialized, but it
@@ -897,7 +719,7 @@ function VideoSubtitleOverlay({
     } else {
       renderer1Ref.current = renderer;
     }
-  }, [subtitles, shellRef, videoSourceKey]);
+  }, [clockVideo, subtitles, videoSourceKey]);
 
   useEffect(() => {
     return () => {
@@ -937,69 +759,41 @@ function VideoSubtitleOverlay({
           />
         </div>
 
-        {activeSubtitle &&
-          (isEditing && editingStyle ? (
-            <textarea
-              className="video-subtitle-editing"
-              style={editingStyle}
-              value={editingText}
-              autoFocus
-              onChange={(event) => setEditingText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  finishEditingSubtitle();
-                }
-
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  cancelEditingSubtitle();
-                }
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ) : interactionStyle ? (
-            <button
-              ref={interactionButtonRef}
-              className={[
-                "video-subtitle-interaction",
-                selectedSubtitleId === activeSubtitle.id ? "selected" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              style={interactionStyle}
-              onPointerDown={handleSubtitlePointerDown}
-              onContextMenu={openStyleMenu}
-              onDoubleClick={(event) => {
+        {activeSubtitle && interactionStyle ? (
+          <button
+            ref={interactionButtonRef}
+            className={[
+              "video-subtitle-interaction",
+              selectedSubtitleId === activeSubtitle.id ? "selected" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={interactionStyle}
+            onPointerDown={handleSubtitlePointerDown}
+            onMouseDown={(event) => {
+              if (event.button !== 0) {
+                event.preventDefault();
                 event.stopPropagation();
-                startEditingSubtitle();
-              }}
-              type="button"
-              aria-label={`Edit subtitle: ${activeSubtitle.text}`}
-            >
-              {activeSubtitle.text}
-            </button>
-          ) : null)}
+              }
+            }}
+            onAuxClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onDragStart={(event) => event.preventDefault()}
+            type="button"
+            aria-label={`Move subtitle: ${activeSubtitle.text}`}
+            title="Drag to move subtitle"
+          >
+            {activeSubtitle.text}
+          </button>
+        ) : null}
       </div>
 
-      {styleMenu && activeSubtitle && (
-        <SubtitleStyleContextMenu
-          x={styleMenu.x}
-          y={styleMenu.y}
-          fontSize={activeSubtitle.fontSize ?? 24}
-          fontFamily={activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY}
-          color={activeSubtitle.color ?? "#ffffff"}
-          backgroundColor={activeSubtitle.backgroundColor ?? "transparent"}
-          isBold={activeSubtitle.isBold ?? false}
-          isUnderlined={activeSubtitle.isUnderlined ?? false}
-          textAlign={activeSubtitle.textAlign ?? "center"}
-          scope={styleScope}
-          onScopeChange={handleStyleScopeChange}
-          onStyleChange={handleStyleChange}
-          onClose={() => setStyleMenu(null)}
-        />
-      )}
     </>
   );
 }

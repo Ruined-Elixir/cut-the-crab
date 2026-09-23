@@ -98,11 +98,21 @@ fn get_bundled_ffmpeg_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .resource_dir()
         .map_err(|error| format!("Failed to locate application resources: {}", error))?;
 
+    // Tauri preserves the configured resource path. Because tauri.conf.json
+    // bundles "resources/ffmpeg/ffmpeg", release builds place the binary at
+    // $RESOURCE/resources/ffmpeg/ffmpeg. Keep this lookup aligned with the
+    // Whisper and SenseVoice resource layout.
     #[cfg(target_os = "windows")]
-    let ffmpeg_path = resource_dir.join("ffmpeg").join("ffmpeg.exe");
+    let ffmpeg_path = resource_dir
+        .join("resources")
+        .join("ffmpeg")
+        .join("ffmpeg.exe");
 
     #[cfg(not(target_os = "windows"))]
-    let ffmpeg_path = resource_dir.join("ffmpeg").join("ffmpeg");
+    let ffmpeg_path = resource_dir
+        .join("resources")
+        .join("ffmpeg")
+        .join("ffmpeg");
 
     if !ffmpeg_path.exists() {
         return Err(format!(

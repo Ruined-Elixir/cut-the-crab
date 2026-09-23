@@ -26,6 +26,11 @@ type SubtitlePanelProps = {
   ) => void;
   onTextChange: (id: string, text: string) => void;
   onStyleChange: (id: string, style: SubtitleStyle) => void;
+  onApplyAppearance: (
+    id: string,
+    scope: "track" | "all",
+    style: SubtitleStyle,
+  ) => void;
 
   onAdd: () => void;
   onDelete: (id: string) => void;
@@ -45,6 +50,7 @@ function SubtitlePanel({
   onSelect,
   onTextChange,
   onStyleChange,
+  onApplyAppearance,
   onAdd,
   onDelete,
   onReveal,
@@ -149,8 +155,8 @@ function SubtitlePanel({
           <SubtitleInspector
             subtitle={selectedSubtitle}
             selectedCount={selectedSubtitleCount}
-            onTextChange={onTextChange}
             onStyleChange={onStyleChange}
+            onApplyAppearance={onApplyAppearance}
           />
         )}
       </section>

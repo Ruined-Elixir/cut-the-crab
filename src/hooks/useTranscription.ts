@@ -16,6 +16,7 @@ type UseTranscriptionOptions = {
       endTime: number;
       text: string;
     }[],
+    videoPath: string,
   ) => void;
 };
 
@@ -75,7 +76,7 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
       const result = await transcribeVideo(videoPath, engine, model);
 
       if (commitResult) {
-        onGenerated(result.segments);
+        onGenerated(result.segments, videoPath);
       }
 
       setGenerationStatus("Finished");

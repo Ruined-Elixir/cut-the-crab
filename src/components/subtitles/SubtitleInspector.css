@@ -1,7 +1,6 @@
 .subtitle-inspector {
   display: flex;
   flex-direction: column;
-
   min-height: 0;
   overflow: hidden;
 
@@ -20,19 +19,17 @@
   justify-content: space-between;
   gap: 8px;
 
-  min-height: 52px;
-
-  padding: 10px 12px 9px;
+  min-height: 44px;
+  padding: 8px 10px 7px;
 }
 
 .subtitle-inspector-eyebrow {
   display: block;
-
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 
   color: var(--tertiary-label);
 
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -43,12 +40,12 @@
 
   color: var(--label);
 
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
 }
 
 .subtitle-inspector-selection-count {
-  max-width: 130px;
+  max-width: 126px;
 
   overflow: hidden;
   text-overflow: ellipsis;
@@ -56,7 +53,7 @@
 
   color: var(--tertiary-label);
 
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .subtitle-inspector-scroll {
@@ -66,11 +63,11 @@
   overflow-x: hidden;
   overflow-y: auto;
 
-  padding-bottom: 12px;
+  padding-bottom: 8px;
 }
 
 .inspector-section {
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
 }
 
 .inspector-section + .inspector-section {
@@ -83,101 +80,60 @@
   justify-content: space-between;
   gap: 8px;
 
-  margin-bottom: 9px;
+  margin-bottom: 7px;
 
   color: var(--secondary-label);
 
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 650;
 }
 
 .inspector-section-note {
   color: var(--tertiary-label);
 
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 500;
 }
 
-.inspector-textarea {
-  width: 100%;
-  min-height: 62px;
-
-  resize: vertical;
-
-  padding: 8px 9px;
-
-  border: none;
-  border-radius: 8px;
-
-  background: rgba(255, 255, 255, 0.055);
-  color: var(--label);
-
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-
-  font-size: 12px;
-  line-height: 1.42;
-
-  outline: none;
-
-  transition:
-    background 0.14s ease,
-    box-shadow 0.14s ease;
-}
-
-.inspector-textarea:hover {
-  background: rgba(255, 255, 255, 0.075);
-}
-
-.inspector-textarea:focus {
-  background: rgba(255, 255, 255, 0.085);
-
-  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.38);
-}
-
-.inspector-property-grid {
+.inspector-compact-fields {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  /* Give Size enough room for a comfortable numeric field while keeping the
+     font picker compact. */
+  grid-template-columns: minmax(0, 3fr) minmax(104px, 2fr);
+  gap: 7px;
+}
+
+.inspector-compact-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 7px 9px;
-}
+  gap: 6px;
 
-.inspector-property-label {
-  color: var(--secondary-label);
-
-  font-size: 10px;
-  font-weight: 500;
-}
-
-.inspector-time-value,
-.inspector-readonly-value {
   min-width: 0;
+}
 
-  color: var(--label);
+.inspector-compact-field > span,
+.inspector-tool-label {
+  color: var(--tertiary-label);
 
-  font-family:
-    "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
-
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-
-  text-align: right;
+  font-size: 8px;
+  font-weight: 550;
+  white-space: nowrap;
 }
 
 .inspector-control {
-  width: 100%;
-  height: 28px;
+  height: 25px;
 
   min-width: 0;
-
-  padding: 0 8px;
+  padding: 0 6px;
 
   border: none;
-  border-radius: 7px;
+  border-radius: 6px;
 
   background: rgba(255, 255, 255, 0.06);
   color: var(--label);
 
-  font-size: 10px;
+  font-size: 9px;
 
   outline: none;
 
@@ -192,186 +148,66 @@
 
 .inspector-control:focus {
   background: rgba(255, 255, 255, 0.095);
-
   box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.34);
+}
+
+.inspector-font-control {
+  width: 100%;
 }
 
 .inspector-number-wrap {
   position: relative;
+  min-width: 0;
 }
 
 .inspector-number-wrap .inspector-control {
-  padding-right: 28px;
+  width: 100%;
+  padding-right: 20px;
 }
 
 .inspector-number-wrap > span {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 5px;
 
   transform: translateY(-50%);
 
   color: var(--tertiary-label);
 
-  font-size: 9px;
+  font-size: 7px;
 
   pointer-events: none;
 }
 
-.inspector-color-control {
-  min-width: 0;
+.inspector-tool-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
 
+  margin-top: 8px;
+}
+
+.inspector-tool-group {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
 
-  height: 28px;
-
-  padding: 0 8px;
-
-  border-radius: 7px;
-
-  background: rgba(255, 255, 255, 0.06);
-
-  cursor: pointer;
-}
-
-.inspector-color-control:hover {
-  background: rgba(255, 255, 255, 0.085);
-}
-
-.inspector-color-control input[type="color"] {
-  width: 16px;
-  height: 16px;
-
-  flex-shrink: 0;
-
-  padding: 0;
-
-  border: none;
-  border-radius: 4px;
-
-  overflow: hidden;
-
-  background: transparent;
-
-  cursor: pointer;
-}
-
-.inspector-color-control span {
   min-width: 0;
-
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-
-  color: var(--secondary-label);
-
-  font-family:
-    "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
-
-  font-size: 9px;
 }
 
-.inspector-background-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px;
+.inspector-tool-group .inspector-tool-label {
+  margin-right: 1px;
 }
 
-.inspector-inline-button {
-  min-width: 42px;
+.inspector-color-tool,
+.inspector-mini-button {
+  width: 28px;
   height: 28px;
 
-  padding: 0 7px;
+  flex: 0 0 28px;
 
-  border: none;
-  border-radius: 7px;
-
-  background: var(--control-fill);
-  color: var(--secondary-label);
-
-  font-size: 9px;
-}
-
-.inspector-inline-button:hover {
-  background: var(--control-fill-hover);
-  color: var(--label);
-}
-
-.inspector-formatting-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-
-  margin-top: 10px;
-}
-
-.inspector-format-button {
-  min-height: 29px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-
-  border: none;
-  border-radius: 7px;
-
-  background: var(--control-fill);
-  color: var(--secondary-label);
-
-  font-size: 10px;
-
-  transition:
-    background 0.14s ease,
-    color 0.14s ease;
-}
-
-.inspector-format-button:hover {
-  background: var(--control-fill-hover);
-  color: var(--label);
-}
-
-.inspector-format-button.active {
-  background: rgba(10, 132, 255, 0.2);
-  color: #8fc5ff;
-
-  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.34);
-}
-
-.inspector-format-button strong {
-  font-size: 12px;
-}
-
-.inspector-underline-icon {
-  font-size: 11px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.inspector-alignment-row {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-
-  margin-top: 9px;
-}
-
-.inspector-segmented-control {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-
-  padding: 2px;
-
-  border-radius: 8px;
-
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.inspector-segmented-control button {
-  height: 26px;
+  position: relative;
 
   display: grid;
   place-items: center;
@@ -381,24 +217,196 @@
   border: none;
   border-radius: 6px;
 
-  background: transparent;
-  color: var(--tertiary-label);
+  background: var(--control-fill);
+  color: var(--secondary-label);
+
+  overflow: hidden;
 }
 
-.inspector-segmented-control button:hover {
+.inspector-color-tool {
+  cursor: pointer;
+}
+
+.inspector-color-tool:hover,
+.inspector-mini-button:hover:not(:disabled) {
+  background: var(--control-fill-hover);
   color: var(--label);
 }
 
-.inspector-segmented-control button.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #8fc5ff;
+.inspector-color-tool input[type="color"] {
+  position: absolute;
+  inset: 0;
 
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  width: 100%;
+  height: 100%;
+
+  padding: 0;
+  border: 0;
+
+  opacity: 0;
+  cursor: pointer;
 }
 
-.inspector-segmented-control svg {
-  width: 15px;
-  height: 15px;
+.inspector-color-tool-letter {
+  display: grid;
+  place-items: center;
+
+  width: 100%;
+  height: 23px;
+
+  color: var(--label);
+
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+
+  pointer-events: none;
+}
+
+.inspector-color-tool.background .background-letter {
+  width: 18px;
+  height: 18px;
+
+  border-radius: 3px;
+
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.inspector-color-tool.background.transparent .background-letter {
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.09) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.09) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.09) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.09) 75%);
+  background-position:
+    0 0,
+    0 4px,
+    4px -4px,
+    -4px 0;
+  background-size: 8px 8px;
+}
+
+.inspector-color-tool-bar {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+
+  height: 3px;
+
+  border-radius: 999px;
+
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.13);
+
+  pointer-events: none;
+}
+
+.inspector-color-tool.transparent .inspector-color-tool-bar {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 42%,
+      rgba(255, 255, 255, 0.62) 43%,
+      rgba(255, 255, 255, 0.62) 57%,
+      transparent 58%
+    ) !important;
+}
+
+.inspector-mini-button {
+  cursor: pointer;
+
+  font-size: 13px;
+
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.inspector-mini-button strong,
+.inspector-mini-button em {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.inspector-mini-button em {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+}
+
+.inspector-mini-button.active {
+  background: rgba(10, 132, 255, 0.2);
+  color: #8fc5ff;
+
+  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.72);
+}
+
+.inspector-mini-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.inspector-clear-background {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.inspector-underline-icon {
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.inspector-alignment-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  margin-top: 8px;
+}
+
+.inspector-segmented-control.compact {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+
+  padding: 0;
+
+  background: transparent;
+}
+
+.inspector-segmented-control.compact button {
+  width: 30px;
+  height: 25px;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+
+  border: none;
+  border-radius: 6px;
+
+  background: var(--control-fill);
+  color: var(--tertiary-label);
+}
+
+.inspector-segmented-control.compact button:hover {
+  background: var(--control-fill-hover);
+  color: var(--label);
+}
+
+.inspector-segmented-control.compact button.active {
+  background: rgba(10, 132, 255, 0.2);
+  color: #8fc5ff;
+
+  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.72);
+}
+
+.inspector-segmented-control.compact svg {
+  width: 14px;
+  height: 14px;
 
   fill: none;
   stroke: currentColor;
@@ -406,13 +414,44 @@
   stroke-linecap: round;
 }
 
-.inspector-help {
-  margin: 9px 0 0;
+.inspector-apply-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
 
-  color: var(--tertiary-label);
+  margin-top: 9px;
+  padding-top: 8px;
 
-  font-size: 9px;
-  line-height: 1.4;
+  border-top: 1px solid var(--separator-soft);
+}
+
+.inspector-apply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.inspector-apply-button {
+  min-width: 0;
+  height: 25px;
+
+  padding: 0 8px;
+
+  border: none;
+  border-radius: 6px;
+
+  background: var(--control-fill);
+  color: var(--secondary-label);
+
+  font-size: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inspector-apply-button:hover {
+  background: var(--control-fill-hover);
+  color: var(--label);
 }
 
 .subtitle-inspector.empty {
@@ -427,9 +466,9 @@
   align-items: center;
   justify-content: center;
 
-  min-height: 150px;
+  min-height: 100px;
 
-  padding: 24px;
+  padding: 18px;
 
   color: var(--tertiary-label);
 
@@ -437,10 +476,10 @@
 }
 
 .subtitle-inspector-empty-state svg {
-  width: 28px;
-  height: 28px;
+  width: 25px;
+  height: 25px;
 
-  margin-bottom: 9px;
+  margin-bottom: 7px;
 
   fill: none;
   stroke: currentColor;
@@ -452,10 +491,10 @@
 }
 
 .subtitle-inspector-empty-state p {
-  max-width: 180px;
+  max-width: 175px;
 
   margin: 0;
 
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: 9px;
+  line-height: 1.4;
 }

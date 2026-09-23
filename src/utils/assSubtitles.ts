@@ -84,9 +84,10 @@ function getAlignment(textAlign: Subtitle["textAlign"]): number {
 }
 
 /*
- * BorderStyle=4 is a libass extension that creates a square background box.
- * Because both preview and export use libass, this is intentionally our
- * canonical background implementation.
+ * Use ASS BorderStyle=3 for subtitle backgrounds. This is the standard opaque
+ * box mode and is supported consistently by both the browser libass renderer
+ * and FFmpeg/libass. OutlineColour becomes the box colour and Outline controls
+ * its padding.
  */
 export type AssSourceViewport = {
   left: number;
@@ -126,19 +127,19 @@ function createStyle(
     : "&HFF000000";
 
   const bold = subtitle.isBold ? -1 : 0;
+  const italic = subtitle.isItalic ? -1 : 0;
   const underline = subtitle.isUnderlined ? -1 : 0;
 
-  const borderStyle = hasBackground ? 4 : 1;
+  const borderStyle = hasBackground ? 3 : 1;
 
   /*
-   * With BorderStyle=4:
-   * - Outline remains the text outline.
-   * - Shadow acts as square-box padding in libass.
-   *
-   * These are design-space units at PlayResY=1080.
+   * BorderStyle=3 uses OutlineColour as the opaque box colour and Outline as
+   * the box padding. Keeping the same 8-design-pixel padding also means the
+   * Program Monitor's dashed move rectangle can mirror the rendered box.
    */
-  const outline = 2 * designScale;
-  const boxPadding = hasBackground ? 8 * designScale : 0;
+  const outline = (hasBackground ? 8 : 2) * designScale;
+  const shadow = 0;
+  const outlineColor = hasBackground ? backgroundColor : "&H00000000";
 
   return [
     `Style: Subtitle${index}`,
@@ -146,10 +147,10 @@ function createStyle(
     fontSize.toFixed(2),
     textColor,
     "&H00000000",
-    "&H00000000",
+    outlineColor,
     backgroundColor,
     bold,
-    0,
+    italic,
     underline,
     0,
     100,
@@ -158,7 +159,7 @@ function createStyle(
     0,
     borderStyle,
     outline,
-    boxPadding,
+    shadow,
     5,
     0,
     0,

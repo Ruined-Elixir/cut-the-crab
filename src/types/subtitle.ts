@@ -8,6 +8,7 @@ export type SubtitleStyle = {
   backgroundColor?: string;
 
   isBold?: boolean;
+  isItalic?: boolean;
   isUnderlined?: boolean;
 
   textAlign?: SubtitleTextAlign;
@@ -34,6 +35,20 @@ export type Subtitle = SubtitleStyle & {
 
   /** Optional compound-clip membership. */
   compoundId?: string;
+
+  /**
+   * Video clip that owns this subtitle when it was generated from footage.
+   * Linked subtitles shift with that clip's timeline movement, like linked
+   * audio, while remaining independently editable on subtitle tracks.
+   */
+  linkedVideoClipId?: string;
+
+  /**
+   * Source path used while waiting for a newly-created project's first V1 clip
+   * to finish initializing. Once that clip exists, linkedVideoClipId becomes
+   * authoritative.
+   */
+  linkedVideoSourcePath?: string;
 };
 
 export function getSubtitleTrackId(subtitle: Pick<Subtitle, "trackId">) {

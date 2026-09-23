@@ -21,7 +21,6 @@ import {
 import {
   getSubtitleTrackId,
   type Subtitle,
-  type SubtitleStyle,
 } from "../../types/subtitle";
 import type {
   AdjustmentLayerClip,
@@ -55,6 +54,7 @@ import ProgramMaskEditor from "../masks/ProgramMaskEditor";
 import {
   isFreezeFrameClip,
   isReverseVideoClip,
+  sourceTimeToTimelineTime,
   timelineTimeToSourceTime,
   videoPlaybackRate,
 } from "../../utils/videoRetime";
@@ -174,9 +174,6 @@ type VideoPlayerProps = {
     positionY: number,
   ) => void;
 
-  onSubtitleTextChange?: (id: string, text: string) => void;
-  onSubtitleStyleChange?: (id: string, style: SubtitleStyle) => void;
-  onAllSubtitleStylesChange?: (style: SubtitleStyle) => void;
 };
 
 type VideoTrackId = string;
@@ -756,14 +753,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       interactiveSubtitleIds,
       onSubtitleSelect,
       onSubtitlePositionChange,
-      onSubtitleTextChange,
-      onSubtitleStyleChange,
-      onAllSubtitleStylesChange,
     },
     ref,
   ) {
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [presentedFrameTimelineTime, setPresentedFrameTimelineTime] =
+      useState<number | null>(null);
     const [skimPreviewTime, setSkimPreviewTime] = useState<number | null>(null);
     const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
     const [videoDimensions, setVideoDimensions] = useState<
@@ -828,6 +824,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const audioTrackIdsRef = useRef<AudioTrackId[]>([]);
     const displayTimeRef = useRef(currentTime);
 
+    /*
+     * Timeline skimming is an imperative preview operation. Keep a ref to the
+     * media-sync function so hover can seek the actual <video> elements
+     * immediately instead of waiting for a later React effect.
+     */
+    const syncAllMediaToTimelineRef = useRef<
+      (timelineTime: number, shouldPlay: boolean, forceSeek?: boolean) => void
+    >(() => undefined);
+
     const interactiveVideoClipIdSet = useMemo(
       () => (interactiveVideoClipIds ? new Set(interactiveVideoClipIds) : null),
       [interactiveVideoClipIds],
@@ -851,13 +856,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       ref,
       () => ({
         setSkimPreviewTime: (time: number | null) => {
-          if (isPlayingRef.current || time === null || !Number.isFinite(time)) {
+          if (isPlayingRef.current) {
             setSkimPreviewTime(null);
             return;
           }
 
+          if (time === null || !Number.isFinite(time)) {
+            setSkimPreviewTime(null);
+
+            // Leaving the timeline should immediately restore the actual
+            // paused playhead frame, not leave the last skimmed frame visible.
+            syncAllMediaToTimelineRef.current(
+              currentTimeRef.current,
+              false,
+              true,
+            );
+            return;
+          }
+
           const maxDuration = Math.max(0, timelineDurationRef.current || 0);
-          setSkimPreviewTime(Math.max(0, Math.min(maxDuration, time)));
+          const nextTime = Math.max(0, Math.min(maxDuration, time));
+
+          setSkimPreviewTime(nextTime);
+
+          // Seek the media immediately. Subtitles already reacted directly to
+          // skimPreviewTime, but without this explicit seek WebKit could keep
+          // displaying the old paused video frame until another editor action.
+          syncAllMediaToTimelineRef.current(nextTime, false, true);
         },
         getProgramPreviewSize: () => {
           const rect = shellRef.current?.getBoundingClientRect();
@@ -1582,6 +1607,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     };
 
+    // Keep the imperative skim path pointed at the current render's media
+    // graph and track state.
+    syncAllMediaToTimelineRef.current = syncAllMediaToTimeline;
+
     const seekTo = (time: number) => {
       if (!Number.isFinite(time)) {
         return;
@@ -1913,10 +1942,190 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }));
     const topVisualClip =
       visibleActiveClips[visibleActiveClips.length - 1] ?? null;
-    const subtitleVideoTimeOffset = topVisualClip
-      ? topVisualClip.timelineStart - topVisualClip.sourceIn
-      : 0;
+    const topVisualTrackHasDissolve = topVisualClip
+      ? dissolvesByTrack[topVisualClip.trackId] !== null
+      : false;
     const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? videoPath ?? "";
+
+    let subtitleClockClip: VideoTimelineClip | null = topVisualClip;
+    let subtitleClockVideo: HTMLVideoElement | null = null;
+
+    if (topVisualClip) {
+      const dissolve = dissolvesByTrack[topVisualClip.trackId];
+
+      if (dissolve) {
+        const incoming = dissolveIncomingRefs.current[topVisualClip.trackId];
+        const outgoing = dissolveOutgoingRefs.current[topVisualClip.trackId];
+
+        if (incoming) {
+          subtitleClockVideo = incoming;
+          subtitleClockClip = dissolve.incoming;
+        } else if (outgoing) {
+          subtitleClockVideo = outgoing;
+          subtitleClockClip = dissolve.outgoing;
+        }
+      } else {
+        subtitleClockVideo =
+          videoRefsByClipId.current[topVisualClip.id] ?? null;
+      }
+    }
+
+    /*
+     * Subtitle preview clock
+     * ----------------------
+     * App.currentTime is driven from performance.now() so the editor remains
+     * responsive, but WebKit can present a decoded video frame a little later
+     * than that clock. Driving libass from App.currentTime therefore makes the
+     * subtitle appear a few frames early even though export timing is correct.
+     *
+     * While normal video is playing, sample the timestamp of the frame WebKit
+     * actually presents and map that source-media time back into timeline time.
+     * The subtitle renderer then uses this value as its single clock.
+     *
+     * Paused/seeking/scrubbing and freeze clips deliberately continue to use
+     * displayTime directly because there is no continuously advancing decoded
+     * video frame to follow in those cases.
+     */
+    useEffect(() => {
+      if (!isPlaying || !topVisualClip || isFreezeFrameClip(topVisualClip)) {
+        setPresentedFrameTimelineTime(null);
+        return;
+      }
+
+      let clockClip = topVisualClip;
+      let video: HTMLVideoElement | null = null;
+
+      if (topVisualTrackHasDissolve) {
+        const dissolve = findSameTrackDissolve(
+          videoClipsRef.current,
+          currentTimeRef.current,
+          topVisualClip.trackId,
+        );
+
+        if (dissolve) {
+          // Either side of the dissolve represents the same timeline instant.
+          // Prefer the incoming frame when available, otherwise use outgoing.
+          const incoming = dissolveIncomingRefs.current[topVisualClip.trackId];
+          const outgoing = dissolveOutgoingRefs.current[topVisualClip.trackId];
+
+          if (incoming) {
+            video = incoming;
+            clockClip = dissolve.incoming;
+          } else if (outgoing) {
+            video = outgoing;
+            clockClip = dissolve.outgoing;
+          }
+        }
+      } else {
+        video = videoRefsByClipId.current[topVisualClip.id] ?? null;
+      }
+
+      if (!video) {
+        setPresentedFrameTimelineTime(null);
+        return;
+      }
+
+      let cancelled = false;
+      let videoFrameCallbackId: number | null = null;
+      let animationFrameId: number | null = null;
+
+      const publishMediaTime = (mediaTime: number) => {
+        if (cancelled || !Number.isFinite(mediaTime)) {
+          return;
+        }
+
+        const mappedTime = sourceTimeToTimelineTime(clockClip, mediaTime);
+        const clampedTime = Math.max(
+          clockClip.timelineStart,
+          Math.min(clockClip.timelineEnd, mappedTime),
+        );
+
+        setPresentedFrameTimelineTime((previous) =>
+          previous !== null && Math.abs(previous - clampedTime) < 0.0005
+            ? previous
+            : clampedTime,
+        );
+      };
+
+      type VideoFrameMetadataLike = { mediaTime: number };
+      type VideoWithFrameCallbacks = HTMLVideoElement & {
+        requestVideoFrameCallback?: (
+          callback: (now: number, metadata: VideoFrameMetadataLike) => void,
+        ) => number;
+        cancelVideoFrameCallback?: (id: number) => void;
+      };
+
+      const frameVideo = video as VideoWithFrameCallbacks;
+
+      if (typeof frameVideo.requestVideoFrameCallback === "function") {
+        const scheduleNextPresentedFrame = () => {
+          if (cancelled) {
+            return;
+          }
+
+          videoFrameCallbackId = frameVideo.requestVideoFrameCallback!(
+            (_now, metadata) => {
+              publishMediaTime(metadata.mediaTime);
+              scheduleNextPresentedFrame();
+            },
+          );
+        };
+
+        scheduleNextPresentedFrame();
+      } else {
+        // Older WebKit fallback: its native media clock is still preferable to
+        // the editor's performance clock for subtitle/video synchronization.
+        const sampleNativeMediaClock = () => {
+          if (cancelled) {
+            return;
+          }
+
+          publishMediaTime(video.currentTime);
+          animationFrameId = window.requestAnimationFrame(
+            sampleNativeMediaClock,
+          );
+        };
+
+        animationFrameId = window.requestAnimationFrame(sampleNativeMediaClock);
+      }
+
+      return () => {
+        cancelled = true;
+
+        if (
+          videoFrameCallbackId !== null &&
+          typeof frameVideo.cancelVideoFrameCallback === "function"
+        ) {
+          frameVideo.cancelVideoFrameCallback(videoFrameCallbackId);
+        }
+
+        if (animationFrameId !== null) {
+          window.cancelAnimationFrame(animationFrameId);
+        }
+      };
+    }, [
+      isPlaying,
+      topVisualClip?.id,
+      topVisualClip?.trackId,
+      topVisualClip?.timelineStart,
+      topVisualClip?.timelineEnd,
+      topVisualClip?.sourceIn,
+      topVisualClip?.sourceOut,
+      topVisualClip?.playbackRate,
+      topVisualClip?.playbackDirection,
+      topVisualClip?.freezeFrameSourceTime,
+      topVisualTrackHasDissolve,
+    ]);
+
+    const subtitlePreviewTime =
+      isPlaying && presentedFrameTimelineTime !== null
+        ? presentedFrameTimelineTime
+        : displayTime;
+    const subtitleExpectedSourceTime = subtitleClockClip
+      ? timelineTimeToSourceTime(subtitleClockClip, subtitlePreviewTime)
+      : subtitlePreviewTime;
+    const subtitleVideoTimeOffset =
+      subtitlePreviewTime - subtitleExpectedSourceTime;
     const visibleSubtitles = subtitles.filter(
       (subtitle) => !isTrackHidden(trackSettings, getSubtitleTrackId(subtitle)),
     );
@@ -3717,17 +3926,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
               <VideoSubtitleOverlay
                 subtitles={visibleSubtitles}
-                currentTime={displayTime}
-                videoTimeOffset={subtitleVideoTimeOffset}
+                currentTime={subtitlePreviewTime}
                 videoSourceKey={subtitleVideoSourceKey}
+                clockVideo={subtitleClockVideo}
+                videoTimeOffset={subtitleVideoTimeOffset}
                 selectedSubtitleId={selectedSubtitleId}
                 interactiveSubtitleIds={interactiveSubtitleIds}
                 shellRef={shellRef}
                 onSubtitleSelect={onSubtitleSelect}
                 onSubtitlePositionChange={onSubtitlePositionChange}
-                onSubtitleTextChange={onSubtitleTextChange}
-                onSubtitleStyleChange={onSubtitleStyleChange}
-                onAllSubtitleStylesChange={onAllSubtitleStylesChange}
               />
             </div>
 

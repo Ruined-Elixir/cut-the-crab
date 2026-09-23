@@ -672,6 +672,8 @@ function App() {
     deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
+    shiftLinkedSubtitlesByVideoClipDeltas,
+    bindPendingGeneratedSubtitlesToVideoClips,
   } = useSubtitleEditor(currentTime, videoDuration);
 
   useEffect(() => {
@@ -726,6 +728,11 @@ function App() {
     sourceDuration: videoDuration,
     rippleMode,
   });
+
+  const videoMoveSubtitleSyncActiveRef = useRef(false);
+  const previousVideoClipMoveStateRef = useRef(
+    new Map<string, { timelineStart: number; sourceIn: number }>(),
+  );
 
   const videoProxySourcePaths = useMemo(
     () => [
@@ -1426,6 +1433,52 @@ function App() {
     state: CompoundTimelineState;
   } | null>(null);
 
+  useEffect(() => {
+    const previous = previousVideoClipMoveStateRef.current;
+
+    if (videoMoveSubtitleSyncActiveRef.current) {
+      const deltas = new Map<string, number>();
+
+      for (const clip of videoClips) {
+        const before = previous.get(clip.id);
+        if (!before) continue;
+
+        const delta = clip.timelineStart - before.timelineStart;
+        const sourceBoundaryUnchanged =
+          Math.abs(clip.sourceIn - before.sourceIn) <= 0.000001;
+
+        if (sourceBoundaryUnchanged && Math.abs(delta) > 0.000001) {
+          deltas.set(clip.id, delta);
+        }
+      }
+
+      const compoundId = compoundMoveOriginRef.current?.compoundId;
+      const alreadyMovedByCompound = compoundId
+        ? new Set(
+            subtitles
+              .filter((subtitle) => subtitle.compoundId === compoundId)
+              .map((subtitle) => subtitle.id),
+          )
+        : undefined;
+
+      shiftLinkedSubtitlesByVideoClipDeltas(
+        deltas,
+        alreadyMovedByCompound,
+      );
+    }
+
+    previousVideoClipMoveStateRef.current = new Map(
+      videoClips.map((clip) => [
+        clip.id,
+        { timelineStart: clip.timelineStart, sourceIn: clip.sourceIn },
+      ]),
+    );
+
+    bindPendingGeneratedSubtitlesToVideoClips(
+      videoClips.filter((clip) => clip.freezeFrameSourceTime === undefined),
+    );
+  }, [videoClips]);
+
   const applyCompoundTimelineState = (next: CompoundTimelineState) => {
     replaceVideoClips(next.videoClips);
     replaceAudioClips(next.audioClips);
@@ -1553,6 +1606,7 @@ function App() {
     const group = candidateGroup?.anchorVideoId === id ? candidateGroup : null;
     if (group) {
       if (!compoundGroupIsEditable(group)) return false;
+      videoMoveSubtitleSyncActiveRef.current = true;
       beginHistoryTransaction();
       compoundMoveOriginRef.current = {
         compoundId: group.id,
@@ -1587,7 +1641,10 @@ function App() {
   const handleCompoundAwareVideoMoveEnd = () => {
     if (compoundMoveOriginRef.current) {
       compoundMoveOriginRef.current = null;
-      window.requestAnimationFrame(() => endHistoryTransaction());
+      window.requestAnimationFrame(() => {
+        videoMoveSubtitleSyncActiveRef.current = false;
+        endHistoryTransaction();
+      });
       return;
     }
     handleVideoClipMoveEnd();
@@ -2115,6 +2172,7 @@ function App() {
       return false;
     }
 
+    videoMoveSubtitleSyncActiveRef.current = true;
     beginHistoryTransaction();
 
     // Ripple mode needs an immutable drag-origin snapshot even for a single
@@ -2131,6 +2189,7 @@ function App() {
   const handleVideoClipMoveEnd = () => {
     endVideoClipMove();
     window.requestAnimationFrame(() => {
+      videoMoveSubtitleSyncActiveRef.current = false;
       endHistoryTransaction();
     });
   };
@@ -2990,19 +3049,36 @@ function App() {
     updateSubtitleStyle(id, style);
   };
 
-  const updateAllSubtitleStylesForActiveTrack = (
+  const applySubtitleAppearance = (
+    sourceSubtitleId: string,
+    scope: "track" | "all",
     style: Parameters<typeof updateSubtitleStyle>[1],
   ) => {
-    if (trackSettings[activeSubtitleTrackId]?.locked) {
+    const sourceSubtitle = subtitles.find(
+      (subtitle) => subtitle.id === sourceSubtitleId,
+    );
+    if (!sourceSubtitle) {
       return;
     }
 
+    const sourceTrackId = getSubtitleTrackId(sourceSubtitle);
     const ids = subtitles
-      .filter(
-        (subtitle) => getSubtitleTrackId(subtitle) === activeSubtitleTrackId,
-      )
+      .filter((subtitle) => {
+        const trackId = getSubtitleTrackId(subtitle);
+
+        if (trackSettings[trackId]?.locked) {
+          return false;
+        }
+
+        return scope === "all" || trackId === sourceTrackId;
+      })
       .map((subtitle) => subtitle.id);
 
+    if (ids.length === 0) {
+      return;
+    }
+
+    markNextChangeImmediate();
     updateSubtitleStyles(ids, style);
   };
 
@@ -3043,13 +3119,52 @@ function App() {
       endTime: number;
       text: string;
     }[],
+    generatedFromPath: string,
   ) => {
     if (trackSettings[activeSubtitleTrackId]?.locked) {
       return;
     }
 
+    const sourceClip = videoClips
+      .filter(
+        (clip) =>
+          clip.sourcePath === generatedFromPath &&
+          clip.freezeFrameSourceTime === undefined,
+      )
+      .sort(
+        (a, b) =>
+          a.timelineStart - b.timelineStart ||
+          a.sourceIn - b.sourceIn ||
+          a.sourceOut - b.sourceOut,
+      )[0];
+
+    const linkedSegments = sourceClip
+      ? segments.flatMap((segment) => {
+          const sourceStart = Math.max(segment.startTime, sourceClip.sourceIn);
+          const sourceEnd = Math.min(segment.endTime, sourceClip.sourceOut);
+
+          if (sourceEnd <= sourceStart) return [];
+
+          const mappedStart = sourceTimeToTimelineTime(sourceClip, sourceStart);
+          const mappedEnd = sourceTimeToTimelineTime(sourceClip, sourceEnd);
+
+          return [
+            {
+              ...segment,
+              startTime: Math.min(mappedStart, mappedEnd),
+              endTime: Math.max(mappedStart, mappedEnd),
+              linkedVideoClipId: sourceClip.id,
+              linkedVideoSourcePath: generatedFromPath,
+            },
+          ];
+        })
+      : segments.map((segment) => ({
+          ...segment,
+          linkedVideoSourcePath: generatedFromPath,
+        }));
+
     markNextChangeImmediate();
-    replaceWithGeneratedSubtitles(segments, activeSubtitleTrackId);
+    replaceWithGeneratedSubtitles(linkedSegments, activeSubtitleTrackId);
   };
 
   // ==========================================================================
@@ -3313,9 +3428,17 @@ function App() {
         {
           id: crypto.randomUUID(),
           trackId: activeSubtitleTrackId,
-          startTime: sourceTimeToTimelineTime(clip, sourceStart),
-          endTime: sourceTimeToTimelineTime(clip, sourceEnd),
+          startTime: Math.min(
+            sourceTimeToTimelineTime(clip, sourceStart),
+            sourceTimeToTimelineTime(clip, sourceEnd),
+          ),
+          endTime: Math.max(
+            sourceTimeToTimelineTime(clip, sourceStart),
+            sourceTimeToTimelineTime(clip, sourceEnd),
+          ),
           text: segment.text,
+          linkedVideoClipId: clip.id,
+          linkedVideoSourcePath: clip.sourcePath,
         },
       ];
     });
@@ -3332,8 +3455,16 @@ function App() {
   // ==========================================================================
 
   const requestSeek = (time: number) => {
+    const nextTime = Math.max(0, Number.isFinite(time) ? time : 0);
+
+    // App.currentTime is the canonical timeline clock. Update it immediately
+    // so list/timeline selection and the Program Monitor subtitle reflect the
+    // requested subtitle in the same render, before the media elements finish
+    // processing the seek.
+    setCurrentTime(nextTime);
+
     setSeekRequest({
-      time,
+      time: nextTime,
       id: Date.now(),
     });
   };
@@ -4227,7 +4358,9 @@ function App() {
     }
 
     if (duration > 0 && videoClips.length === 0) {
-      initializeDefaultVideoClip();
+      // loadedmetadata fires before React has committed videoDuration to the
+      // hook closure, so pass the known metadata duration directly.
+      initializeDefaultVideoClip(duration);
     }
 
     if (!activeProjectId || !videoPath || !projectMetadata || duration <= 0) {
@@ -4305,9 +4438,10 @@ function App() {
     }
     selectSubtitle(id, mode, timelineSelectableSubtitleIdSet);
 
-    if (mode === "single") {
-      requestSeek(startTime);
-    }
+    // The subtitle browser is also a visual navigator: whichever subtitle the
+    // user chooses as the new primary selection should appear in the Program
+    // Monitor immediately, including range/toggle selection.
+    requestSeek(startTime);
   };
 
   // ==========================================================================
@@ -5126,13 +5260,23 @@ function App() {
       ? selectedSubtitle.id
       : null;
 
+  const activeSubtitlesForTrack = subtitles.filter(
+    (subtitle) =>
+      getSubtitleTrackId(subtitle) === activeSubtitleTrackId &&
+      currentTime >= subtitle.startTime &&
+      currentTime < subtitle.endTime,
+  );
+
+  // Keep the browser's active/timestamp row in sync with the Program Monitor.
+  // When subtitles overlap (or one starts exactly where another ends), the
+  // currently selected subtitle wins instead of the first array match.
   const activeSubtitleIdForTrack =
-    subtitles.find(
-      (subtitle) =>
-        getSubtitleTrackId(subtitle) === activeSubtitleTrackId &&
-        currentTime >= subtitle.startTime &&
-        currentTime <= subtitle.endTime,
-    )?.id ?? null;
+    (selectedSubtitleForActiveTrack &&
+    activeSubtitlesForTrack.some(
+      (subtitle) => subtitle.id === selectedSubtitleForActiveTrack.id,
+    )
+      ? selectedSubtitleForActiveTrack.id
+      : activeSubtitlesForTrack[0]?.id) ?? null;
 
   // ==========================================================================
   // Home UI
@@ -5285,9 +5429,6 @@ function App() {
             interactiveSubtitleIds={programInteractiveSubtitleIds}
             onSubtitleSelect={handleProgramSubtitleSelect}
             onSubtitlePositionChange={updateSubtitlePositionIfEditable}
-            onSubtitleTextChange={updateSubtitleTextIfEditable}
-            onSubtitleStyleChange={updateSubtitleStyleWithSelection}
-            onAllSubtitleStylesChange={updateAllSubtitleStylesForActiveTrack}
           />
         </section>
 
@@ -5304,6 +5445,7 @@ function App() {
           onSelect={handleSubtitleSelect}
           onTextChange={updateSubtitleTextIfEditable}
           onStyleChange={updateSubtitleStyleWithSelection}
+          onApplyAppearance={applySubtitleAppearance}
           onAdd={() => addSubtitleWithHistory(currentTime)}
           onDelete={deleteSubtitleWithHistory}
           onReveal={(id) => {

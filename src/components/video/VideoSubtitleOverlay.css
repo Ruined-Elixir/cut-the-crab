@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Noto Sans CJK TC";
+  src: url("/fonts/NotoSansCJKtc-Regular.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 /* ==========================================================================
    Canonical libass subtitle preview
    ========================================================================== */
@@ -20,13 +28,15 @@
  * SubtitlesOctopus can resize/reposition the supplied canvas to match the
  * entire HTMLVideoElement. The Program Monitor, however, may have black
  * letterbox space around the actual export frame. Constraining the canvases
- * here keeps browser libass, the transparent interaction proxy, and FFmpeg
- * export on the same coordinate rectangle.
+ * here keeps browser libass, the move handle, and FFmpeg export on the same
+ * coordinate rectangle.
  */
 .ass-subtitle-frame {
   position: absolute;
   z-index: 100;
+
   overflow: hidden;
+
   pointer-events: none;
 }
 
@@ -54,11 +64,10 @@
 }
 
 /*
- * Transparent DOM proxy used only for dragging, right-click styling,
- * double-click editing, and selection.
+ * Transparent move-only proxy.
  *
- * It never becomes visible text. That is important because CSS and libass
- * font metrics are not identical.
+ * libass remains the only visible subtitle renderer. The DOM element exists
+ * solely to provide a hit target and a selection/move outline.
  */
 .video-subtitle-interaction {
   position: absolute;
@@ -66,16 +75,18 @@
 
   transform: translate(-50%, -50%);
 
+  box-sizing: content-box;
   width: max-content;
+  min-width: 0;
 
   margin: 0;
-  padding: 0;
 
   border: none;
   appearance: none;
 
   background: transparent;
   color: transparent;
+  -webkit-text-fill-color: transparent;
 
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -84,7 +95,10 @@
 
   pointer-events: auto;
   touch-action: none;
+
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .video-subtitle-interaction:active {
@@ -92,41 +106,8 @@
 }
 
 .video-subtitle-interaction.selected {
-  outline: 1px dashed rgba(255, 255, 255, 0.9);
-  outline-offset: 6px;
-}
-
-/*
- * Editing remains a DOM textarea because the user must type into it.
- * When editing ends, the exact libass back-buffer is rebuilt and swapped in.
- */
-.video-subtitle-editing {
-  position: absolute;
-  z-index: 102;
-
-  transform: translate(-50%, -50%);
-
-  width: max-content;
-  max-width: 80%;
-
-  min-width: 120px;
-  min-height: 42px;
-
-  border: none;
-
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-
-  overflow: hidden;
-  resize: none;
-
-  outline: 1px dashed rgba(255, 255, 255, 0.95);
-  outline-offset: 6px;
-
-  cursor: text;
-  user-select: text;
-
-  pointer-events: auto;
+  outline: 1px dashed rgba(255, 255, 255, 0.92);
+  outline-offset: 0;
 }
 
 /* Subtitle magnetic snapping guides, constrained to the rendered video rect. */
@@ -134,24 +115,31 @@
   position: absolute;
   inset: 0;
   z-index: 103;
+
   pointer-events: none;
 }
 
 .subtitle-snap-guide {
   position: absolute;
+
   pointer-events: none;
+
   opacity: 0.95;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.65));
 }
 
 .subtitle-snap-guide.x {
   width: 0;
+
   border-left: 1px dashed rgba(255, 255, 255, 0.92);
+
   transform: translateX(-0.5px);
 }
 
 .subtitle-snap-guide.y {
   height: 0;
+
   border-top: 1px dashed rgba(255, 255, 255, 0.92);
+
   transform: translateY(-0.5px);
 }

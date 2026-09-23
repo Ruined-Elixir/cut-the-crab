@@ -34,7 +34,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 25;
+export const CURRENT_PROJECT_VERSION = 27;
 
 export type SubtitleProject = {
   version: number;
@@ -311,11 +311,14 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
     positionX: asOptionalNumber(value.positionX),
     positionY: asOptionalNumber(value.positionY),
     compoundId: asOptionalString(value.compoundId),
+    linkedVideoClipId: asOptionalString(value.linkedVideoClipId),
+    linkedVideoSourcePath: asOptionalString(value.linkedVideoSourcePath),
     fontSize: asOptionalNumber(value.fontSize),
     fontFamily: asOptionalString(value.fontFamily),
     color: asOptionalString(value.color),
     backgroundColor: asOptionalString(value.backgroundColor),
     isBold: asOptionalBoolean(value.isBold),
+    isItalic: asOptionalBoolean(value.isItalic),
     isUnderlined: asOptionalBoolean(value.isUnderlined),
     textAlign: parseTextAlign(value.textAlign),
   };

@@ -13,9 +13,9 @@
 
 .subtitle-panel.inspector-expanded {
   grid-template-rows:
-    minmax(180px, 0.9fr)
+    minmax(210px, 1fr)
     1px
-    minmax(280px, 1.1fr);
+    minmax(190px, 0.72fr);
 }
 
 .subtitle-panel.inspector-collapsed {

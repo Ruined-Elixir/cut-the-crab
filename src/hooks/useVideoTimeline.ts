@@ -346,7 +346,11 @@ export function useVideoTimeline({
     options?: { markSourceInitializedFor?: string },
   ) => {
     if (options?.markSourceInitializedFor) {
-      initializedSourceRef.current = options.markSourceInitializedFor;
+      initializedSourceRef.current = clips.some(
+        (clip) => clip.sourcePath === options.markSourceInitializedFor,
+      )
+        ? options.markSourceInitializedFor
+        : null;
     }
 
     const normalized = clips.map((clip) => ({
@@ -383,11 +387,13 @@ export function useVideoTimeline({
     });
   };
 
-  const initializeDefaultVideoClip = () => {
+  const initializeDefaultVideoClip = (knownDuration?: number) => {
+    const duration = knownDuration ?? sourceDuration;
+
     if (
       !sourcePath ||
       !sourceName ||
-      sourceDuration <= 0 ||
+      duration <= 0 ||
       initializedSourceRef.current === sourcePath
     ) {
       return;
@@ -395,9 +401,7 @@ export function useVideoTimeline({
 
     initializedSourceRef.current = sourcePath;
 
-    setVideoClips([
-      createFullSourceClip(sourcePath, sourceName, sourceDuration),
-    ]);
+    setVideoClips([createFullSourceClip(sourcePath, sourceName, duration)]);
 
     setSelectedVideoClipId(null);
     setSelectedVideoClipIds([]);

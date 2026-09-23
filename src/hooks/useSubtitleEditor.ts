@@ -7,6 +7,15 @@ import {
   type SubtitleStyle,
 } from "../types/subtitle";
 
+
+type GeneratedSubtitleSegment = {
+  startTime: number;
+  endTime: number;
+  text: string;
+  linkedVideoClipId?: string;
+  linkedVideoSourcePath?: string;
+};
+
 const INITIAL_SUBTITLES: Subtitle[] = [
   {
     id: "1",
@@ -107,7 +116,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   const activeSubtitleId =
     subtitles.find(
       (subtitle) =>
-        currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
+        currentTime >= subtitle.startTime && currentTime < subtitle.endTime,
     )?.id ?? null;
 
   type SelectionMode = "single" | "toggle" | "range";
@@ -540,7 +549,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
   };
 
   const replaceWithGeneratedSubtitles = (
-    segments: { startTime: number; endTime: number; text: string }[],
+    segments: GeneratedSubtitleSegment[],
     trackId = DEFAULT_SUBTITLE_TRACK_ID,
   ) => {
     const generated: Subtitle[] = segments.map((segment) => ({
@@ -549,6 +558,8 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
       startTime: segment.startTime,
       endTime: segment.endTime,
       text: segment.text,
+      linkedVideoClipId: segment.linkedVideoClipId,
+      linkedVideoSourcePath: segment.linkedVideoSourcePath,
     }));
 
     setSubtitles((current) =>
@@ -564,6 +575,60 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     setSelectedSubtitleIds(firstId ? [firstId] : []);
     setSelectedSubtitleId(firstId);
     selectionAnchorIdRef.current = firstId;
+  };
+
+  const shiftLinkedSubtitlesByVideoClipDeltas = (
+    deltas: ReadonlyMap<string, number>,
+    skipSubtitleIds?: ReadonlySet<string>,
+  ) => {
+    if (deltas.size === 0) return;
+
+    setSubtitles((current) => {
+      let changed = false;
+      const next = current.map((subtitle) => {
+        if (skipSubtitleIds?.has(subtitle.id)) return subtitle;
+
+        const linkedVideoClipId = subtitle.linkedVideoClipId;
+        if (!linkedVideoClipId) return subtitle;
+
+        const delta = deltas.get(linkedVideoClipId);
+        if (!delta || !Number.isFinite(delta)) return subtitle;
+
+        changed = true;
+        return {
+          ...subtitle,
+          startTime: subtitle.startTime + delta,
+          endTime: subtitle.endTime + delta,
+        };
+      });
+
+      return changed ? sortSubtitles(next) : current;
+    });
+  };
+
+  const bindPendingGeneratedSubtitlesToVideoClips = (
+    clips: { id: string; sourcePath: string }[],
+  ) => {
+    if (clips.length === 0) return;
+
+    setSubtitles((current) => {
+      let changed = false;
+      const next = current.map((subtitle) => {
+        if (subtitle.linkedVideoClipId || !subtitle.linkedVideoSourcePath) {
+          return subtitle;
+        }
+
+        const clip = clips.find(
+          (candidate) => candidate.sourcePath === subtitle.linkedVideoSourcePath,
+        );
+        if (!clip) return subtitle;
+
+        changed = true;
+        return { ...subtitle, linkedVideoClipId: clip.id };
+      });
+
+      return changed ? next : current;
+    });
   };
 
   const updateSubtitleStyle = (id: string, style: SubtitleStyle) => {
@@ -621,5 +686,7 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
+    shiftLinkedSubtitlesByVideoClipDeltas,
+    bindPendingGeneratedSubtitlesToVideoClips,
   };
 }

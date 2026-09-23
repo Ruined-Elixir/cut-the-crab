@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   Subtitle,
@@ -7,31 +7,47 @@ import type {
 } from "../../types/subtitle";
 
 import { DEFAULT_ASS_FONT_FAMILY } from "../../utils/assSubtitles";
-import { formatSubtitleTime } from "../../utils/time";
 
 import "./SubtitleInspector.css";
+
+type SubtitleAppearanceScope = "track" | "all";
 
 type SubtitleInspectorProps = {
   subtitle: Subtitle | null;
   selectedCount: number;
 
-  onTextChange: (id: string, text: string) => void;
   onStyleChange: (id: string, style: SubtitleStyle) => void;
+  onApplyAppearance: (
+    id: string,
+    scope: SubtitleAppearanceScope,
+    style: SubtitleStyle,
+  ) => void;
 };
 
 const FONT_OPTIONS = [DEFAULT_ASS_FONT_FAMILY];
 
+function AlignmentIcon({ alignment }: { alignment: SubtitleTextAlign }) {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      {alignment === "left" && <path d="M3 5h12M3 9h8M3 13h10" />}
+      {alignment === "center" && <path d="M3 5h12M5 9h8M4 13h10" />}
+      {alignment === "right" && <path d="M3 5h12M7 9h8M5 13h10" />}
+    </svg>
+  );
+}
+
 function SubtitleInspector({
   subtitle,
   selectedCount,
-  onTextChange,
   onStyleChange,
+  onApplyAppearance,
 }: SubtitleInspectorProps) {
   const fontSize = subtitle?.fontSize ?? 24;
   const fontFamily = subtitle?.fontFamily ?? DEFAULT_ASS_FONT_FAMILY;
   const color = subtitle?.color ?? "#ffffff";
   const backgroundColor = subtitle?.backgroundColor ?? "transparent";
   const isBold = subtitle?.isBold ?? false;
+  const isItalic = subtitle?.isItalic ?? false;
   const isUnderlined = subtitle?.isUnderlined ?? false;
   const textAlign = subtitle?.textAlign ?? "center";
 
@@ -40,6 +56,29 @@ function SubtitleInspector({
   useEffect(() => {
     setFontSizeInput(String(fontSize));
   }, [fontSize, subtitle?.id]);
+
+  const appearanceStyle = useMemo<SubtitleStyle>(
+    () => ({
+      fontSize,
+      fontFamily,
+      color,
+      backgroundColor,
+      isBold,
+      isItalic,
+      isUnderlined,
+      textAlign,
+    }),
+    [
+      backgroundColor,
+      color,
+      fontFamily,
+      fontSize,
+      isBold,
+      isItalic,
+      isUnderlined,
+      textAlign,
+    ],
+  );
 
   const commitFontSize = () => {
     if (!subtitle) {
@@ -73,7 +112,6 @@ function SubtitleInspector({
         <div className="subtitle-inspector-heading">
           <div>
             <span className="subtitle-inspector-eyebrow">Inspector</span>
-
             <h3>No Selection</h3>
           </div>
         </div>
@@ -84,13 +122,11 @@ function SubtitleInspector({
             <path d="M8 10h8M8 14h5" />
           </svg>
 
-          <p>Select a subtitle to edit its properties.</p>
+          <p>Select a subtitle to edit its appearance.</p>
         </div>
       </section>
     );
   }
-
-  const duration = Math.max(0, subtitle.endTime - subtitle.startTime);
 
   const selectionLabel =
     selectedCount > 1
@@ -102,8 +138,7 @@ function SubtitleInspector({
       <div className="subtitle-inspector-heading">
         <div>
           <span className="subtitle-inspector-eyebrow">Inspector</span>
-
-          <h3>Subtitle</h3>
+          <h3>Appearance</h3>
         </div>
 
         <span className="subtitle-inspector-selection-count">
@@ -112,47 +147,7 @@ function SubtitleInspector({
       </div>
 
       <div className="subtitle-inspector-scroll">
-        <section className="inspector-section">
-          <div className="inspector-section-header">
-            <span>Text</span>
-
-            {selectedCount > 1 && (
-              <span className="inspector-section-note">Primary only</span>
-            )}
-          </div>
-
-          <textarea
-            className="inspector-textarea"
-            value={subtitle.text}
-            rows={3}
-            onChange={(event) => onTextChange(subtitle.id, event.target.value)}
-          />
-        </section>
-
-        <section className="inspector-section">
-          <div className="inspector-section-header">
-            <span>Timing</span>
-          </div>
-
-          <div className="inspector-property-grid">
-            <span className="inspector-property-label">Start</span>
-            <span className="inspector-time-value">
-              {formatSubtitleTime(subtitle.startTime)}
-            </span>
-
-            <span className="inspector-property-label">End</span>
-            <span className="inspector-time-value">
-              {formatSubtitleTime(subtitle.endTime)}
-            </span>
-
-            <span className="inspector-property-label">Duration</span>
-            <span className="inspector-time-value">
-              {duration.toFixed(3)} s
-            </span>
-          </div>
-        </section>
-
-        <section className="inspector-section">
+        <section className="inspector-section inspector-appearance-section">
           <div className="inspector-section-header">
             <span>Appearance</span>
 
@@ -163,79 +158,97 @@ function SubtitleInspector({
             )}
           </div>
 
-          <div className="inspector-property-grid">
-            <label className="inspector-property-label">Font</label>
-
-            <select
-              className="inspector-control"
-              value={
-                FONT_OPTIONS.includes(fontFamily)
-                  ? fontFamily
-                  : DEFAULT_ASS_FONT_FAMILY
-              }
-              onChange={(event) =>
-                onStyleChange(subtitle.id, {
-                  fontFamily: event.target.value,
-                })
-              }
-            >
-              {FONT_OPTIONS.map((font) => (
-                <option key={font} value={font}>
-                  {font}
-                </option>
-              ))}
-            </select>
-
-            <label className="inspector-property-label">Size</label>
-
-            <div className="inspector-number-wrap">
-              <input
-                className="inspector-control"
-                type="number"
-                min={10}
-                max={96}
-                step={1}
-                value={fontSizeInput}
-                onChange={(event) => setFontSizeInput(event.target.value)}
-                onBlur={commitFontSize}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    commitFontSize();
-                    event.currentTarget.blur();
-                  }
-
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setFontSizeInput(String(fontSize));
-                    event.currentTarget.blur();
-                  }
-                }}
-              />
-
-              <span>pt</span>
-            </div>
-
-            <span className="inspector-property-label">Text</span>
-
-            <label className="inspector-color-control">
-              <input
-                type="color"
-                value={color}
+          <div className="inspector-compact-fields">
+            <label className="inspector-compact-field inspector-font-field">
+              <span>Font</span>
+              <select
+                className="inspector-control inspector-font-control"
+                value={
+                  FONT_OPTIONS.includes(fontFamily)
+                    ? fontFamily
+                    : DEFAULT_ASS_FONT_FAMILY
+                }
                 onChange={(event) =>
                   onStyleChange(subtitle.id, {
-                    color: event.target.value,
+                    fontFamily: event.target.value,
                   })
                 }
-              />
-
-              <span>{color.toUpperCase()}</span>
+              >
+                {FONT_OPTIONS.map((font) => (
+                  <option key={font} value={font}>
+                    {font}
+                  </option>
+                ))}
+              </select>
             </label>
 
-            <span className="inspector-property-label">Background</span>
+            <label className="inspector-compact-field inspector-size-field">
+              <span>Size</span>
+              <div className="inspector-number-wrap">
+                <input
+                  className="inspector-control inspector-size-control"
+                  type="number"
+                  min={10}
+                  max={96}
+                  step={1}
+                  value={fontSizeInput}
+                  onChange={(event) => setFontSizeInput(event.target.value)}
+                  onBlur={commitFontSize}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitFontSize();
+                      event.currentTarget.blur();
+                    }
 
-            <div className="inspector-background-control">
-              <label className="inspector-color-control">
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setFontSizeInput(String(fontSize));
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+                <span>pt</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="inspector-tool-row">
+            <div className="inspector-tool-group">
+              <span className="inspector-tool-label">Colour</span>
+
+              <label
+                className="inspector-color-tool"
+                title="Text colour"
+                aria-label="Text colour"
+              >
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(event) =>
+                    onStyleChange(subtitle.id, {
+                      color: event.target.value,
+                    })
+                  }
+                />
+                <span className="inspector-color-tool-letter">A</span>
+                <span
+                  className="inspector-color-tool-bar"
+                  style={{ backgroundColor: color }}
+                />
+              </label>
+
+              <label
+                className={[
+                  "inspector-color-tool",
+                  "background",
+                  backgroundColor === "transparent" ? "transparent" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                title="Background colour"
+                aria-label="Background colour"
+              >
                 <input
                   type="color"
                   value={
@@ -249,71 +262,112 @@ function SubtitleInspector({
                     })
                   }
                 />
-
-                <span>
-                  {backgroundColor === "transparent"
-                    ? "None"
-                    : backgroundColor.toUpperCase()}
-                </span>
-              </label>
-
-              {backgroundColor !== "transparent" && (
-                <button
-                  type="button"
-                  className="inspector-inline-button"
-                  onClick={() =>
-                    onStyleChange(subtitle.id, {
-                      backgroundColor: "transparent",
-                    })
+                <span
+                  className="inspector-color-tool-letter background-letter"
+                  style={
+                    backgroundColor === "transparent"
+                      ? undefined
+                      : { backgroundColor }
                   }
                 >
-                  Clear
-                </button>
-              )}
+                  A
+                </span>
+                <span
+                  className="inspector-color-tool-bar"
+                  style={{
+                    backgroundColor:
+                      backgroundColor === "transparent"
+                        ? "transparent"
+                        : backgroundColor,
+                  }}
+                />
+              </label>
+
+              <button
+                type="button"
+                className="inspector-mini-button inspector-clear-background"
+                title="Remove background colour"
+                aria-label="Remove background colour"
+                disabled={backgroundColor === "transparent"}
+                onClick={() =>
+                  onStyleChange(subtitle.id, {
+                    backgroundColor: "transparent",
+                  })
+                }
+              >
+                ∅
+              </button>
+            </div>
+
+            <div className="inspector-tool-group">
+              <span className="inspector-tool-label">Style</span>
+
+              <button
+                type="button"
+                className={[
+                  "inspector-mini-button",
+                  isBold ? "active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label="Bold"
+                title="Bold"
+                aria-pressed={isBold}
+                onClick={() =>
+                  onStyleChange(subtitle.id, {
+                    isBold: !isBold,
+                  })
+                }
+              >
+                <strong>B</strong>
+              </button>
+
+              <button
+                type="button"
+                className={[
+                  "inspector-mini-button",
+                  isItalic ? "active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label="Italic"
+                title="Italic"
+                aria-pressed={isItalic}
+                onClick={() =>
+                  onStyleChange(subtitle.id, {
+                    isItalic: !isItalic,
+                  })
+                }
+              >
+                <em>I</em>
+              </button>
+
+              <button
+                type="button"
+                className={[
+                  "inspector-mini-button",
+                  isUnderlined ? "active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label="Underline"
+                title="Underline"
+                aria-pressed={isUnderlined}
+                onClick={() =>
+                  onStyleChange(subtitle.id, {
+                    isUnderlined: !isUnderlined,
+                  })
+                }
+              >
+                <span className="inspector-underline-icon">U</span>
+              </button>
             </div>
           </div>
 
-          <div className="inspector-formatting-row">
-            <button
-              type="button"
-              className={["inspector-format-button", isBold ? "active" : ""]
-                .filter(Boolean)
-                .join(" ")}
-              aria-pressed={isBold}
-              onClick={() =>
-                onStyleChange(subtitle.id, {
-                  isBold: !isBold,
-                })
-              }
-            >
-              <strong>B</strong>
-              <span>Bold</span>
-            </button>
+          <div className="inspector-alignment-compact-row">
+            <span className="inspector-tool-label">Alignment</span>
 
-            <button
-              type="button"
-              className={[
-                "inspector-format-button",
-                isUnderlined ? "active" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-pressed={isUnderlined}
-              onClick={() =>
-                onStyleChange(subtitle.id, {
-                  isUnderlined: !isUnderlined,
-                })
-              }
-            >
-              <span className="inspector-underline-icon">U</span>
-              <span>Underline</span>
-            </button>
-          </div>
-
-          <div className="inspector-alignment-row">
-            <span className="inspector-property-label">Alignment</span>
-
-            <div className="inspector-segmented-control">
+            <div className="inspector-segmented-control compact">
               {(["left", "center", "right"] as SubtitleTextAlign[]).map(
                 (alignment) => (
                   <button
@@ -321,6 +375,7 @@ function SubtitleInspector({
                     type="button"
                     className={textAlign === alignment ? "active" : ""}
                     aria-label={`${alignment} align`}
+                    title={`${alignment[0].toUpperCase()}${alignment.slice(1)} align`}
                     aria-pressed={textAlign === alignment}
                     onClick={() =>
                       onStyleChange(subtitle.id, {
@@ -328,52 +383,40 @@ function SubtitleInspector({
                       })
                     }
                   >
-                    <svg viewBox="0 0 18 18" aria-hidden="true">
-                      {alignment === "left" && (
-                        <>
-                          <path d="M3 5h12M3 9h8M3 13h10" />
-                        </>
-                      )}
-
-                      {alignment === "center" && (
-                        <>
-                          <path d="M3 5h12M5 9h8M4 13h10" />
-                        </>
-                      )}
-
-                      {alignment === "right" && (
-                        <>
-                          <path d="M3 5h12M7 9h8M5 13h10" />
-                        </>
-                      )}
-                    </svg>
+                    <AlignmentIcon alignment={alignment} />
                   </button>
                 ),
               )}
             </div>
           </div>
-        </section>
 
-        <section className="inspector-section">
-          <div className="inspector-section-header">
-            <span>Position</span>
+          <div className="inspector-apply-row">
+            <span className="inspector-tool-label">Apply appearance</span>
+
+            <div className="inspector-apply-actions">
+              <button
+                type="button"
+                className="inspector-apply-button"
+                onClick={() =>
+                  onApplyAppearance(subtitle.id, "track", appearanceStyle)
+                }
+                title="Copy this subtitle appearance to every subtitle on the same track"
+              >
+                Same Track
+              </button>
+
+              <button
+                type="button"
+                className="inspector-apply-button"
+                onClick={() =>
+                  onApplyAppearance(subtitle.id, "all", appearanceStyle)
+                }
+                title="Copy this subtitle appearance to every subtitle"
+              >
+                All Subtitles
+              </button>
+            </div>
           </div>
-
-          <div className="inspector-property-grid">
-            <span className="inspector-property-label">X</span>
-            <span className="inspector-readonly-value">
-              {(subtitle.positionX ?? 50).toFixed(1)}%
-            </span>
-
-            <span className="inspector-property-label">Y</span>
-            <span className="inspector-readonly-value">
-              {(subtitle.positionY ?? 80).toFixed(1)}%
-            </span>
-          </div>
-
-          <p className="inspector-help">
-            Drag the subtitle directly in the Program Monitor to reposition it.
-          </p>
         </section>
       </div>
     </section>

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import { getSubtitleTrackId, type Subtitle } from "../../types/subtitle";
@@ -1295,17 +1296,43 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     onSkimPreviewChange?.(null);
   };
 
-  const handleSkimmerMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (workspaceDuration <= 0 || event.buttons !== 0) {
+  const handleSkimmerPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (workspaceDuration <= 0) {
       hideSkimmer();
       return;
     }
 
-    const content = event.currentTarget;
-    const rect = content.getBoundingClientRect();
+    // Do not fight timeline edits while the primary pointer button is down.
+    // Using a bit-mask rather than `buttons !== 0` is more reliable in
+    // WKWebView/trackpad input and avoids disabling hover preview because of
+    // auxiliary-button state.
+    if ((event.buttons & 1) !== 0) {
+      hideSkimmer();
+      return;
+    }
+
+    const scroll = scrollRef.current;
+    if (!scroll) {
+      hideSkimmer();
+      return;
+    }
+
+    const rect = scroll.getBoundingClientRect();
+
+    // The fixed track-label column is outside the editable timeline surface.
+    // Only skim when the pointer is horizontally inside the scroll viewport.
+    if (event.clientX < rect.left || event.clientX > rect.right) {
+      hideSkimmer();
+      return;
+    }
+
+    const localContentX =
+      event.clientX - rect.left + Math.max(0, scroll.scrollLeft);
     const ratio = Math.max(
       0,
-      Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)),
+      Math.min(1, localContentX / Math.max(1, timelineTrackWidthPx)),
     );
     const time = ratio * workspaceDuration;
 
@@ -1328,9 +1355,11 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
       label.textContent = formatSkimmerTime(time);
 
       // Keep the time badge inside the visible timeline at the extreme edges.
-      if (ratio < 0.045) {
+      const visibleRatio =
+        (event.clientX - rect.left) / Math.max(1, rect.width);
+      if (visibleRatio < 0.045) {
         label.style.transform = "translateX(6px)";
-      } else if (ratio > 0.955) {
+      } else if (visibleRatio > 0.955) {
         label.style.transform = "translateX(calc(-100% - 6px))";
       } else {
         label.style.transform = "translateX(-50%)";
@@ -1510,16 +1539,26 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   };
 
   useEffect(() => {
-    const handleFrameShortcut = (event: KeyboardEvent) => {
+    const handleFitShortcut = (event: KeyboardEvent) => {
       const target = event.target;
-      const element = target instanceof HTMLElement ? target : null;
-      const editingText =
-        !!element?.closest(
-          "input, textarea, select, [contenteditable='true']",
-        ) || element?.isContentEditable === true;
+      const targetElement = target instanceof HTMLElement ? target : null;
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      const isTextEditingElement = (element: HTMLElement | null) =>
+        !!element &&
+        (element.isContentEditable ||
+          !!element.closest(
+            "input, textarea, select, [contenteditable='true']",
+          ));
 
+      // F is a timeline command only when the user is not typing/editing text.
+      // Checking both the event target and activeElement keeps subtitle-list
+      // editing safe even if WKWebView dispatches the key event from window.
       if (
-        editingText ||
+        isTextEditingElement(targetElement) ||
+        isTextEditingElement(activeElement) ||
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
@@ -1529,13 +1568,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
         return;
       }
 
-      if (frameSelection()) {
-        event.preventDefault();
-      }
+      event.preventDefault();
+      fitTimelineContent();
     };
 
-    window.addEventListener("keydown", handleFrameShortcut);
-    return () => window.removeEventListener("keydown", handleFrameShortcut);
+    window.addEventListener("keydown", handleFitShortcut);
+    return () => window.removeEventListener("keydown", handleFitShortcut);
   });
 
   useEffect(() => {
@@ -2006,7 +2044,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             className="timeline-fit-button"
             onClick={frameSelection}
             disabled={!selectionRevealTarget}
-            title="Frame selected clip(s) in the timeline (F)"
+            title="Frame selected clip(s) in the timeline"
             aria-label="Frame timeline selection"
           >
             Frame
@@ -2045,7 +2083,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
         </div>
       </div>
 
-      <div ref={bodyRef} className="timeline-body">
+      <div
+        ref={bodyRef}
+        className="timeline-body"
+        onPointerMoveCapture={handleSkimmerPointerMove}
+        onPointerLeave={hideSkimmer}
+      >
         <div className="timeline-sticky-ruler" aria-label="Timeline time ruler">
           <div className="timeline-sticky-ruler-surface">
             <div
@@ -2085,8 +2128,6 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             style={{
               width: `${timelineTrackWidthPx}px`,
             }}
-            onMouseMove={handleSkimmerMouseMove}
-            onMouseLeave={hideSkimmer}
             onMouseDownCapture={handleRangeMouseDownCapture}
             onClickCapture={handleRangeClickCapture}
           >
