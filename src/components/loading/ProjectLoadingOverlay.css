@@ -1,0 +1,37 @@
+.project-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(18, 18, 20, 0.24);
+  -webkit-backdrop-filter: blur(18px) saturate(72%) brightness(0.62);
+  backdrop-filter: blur(18px) saturate(72%) brightness(0.62);
+  cursor: wait;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.project-loading-animation {
+  display: block;
+  width: min(70vw, 760px);
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  border-radius: 16px;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+}
+
+@media (max-width: 760px) {
+  .project-loading-animation {
+    width: min(86vw, 640px);
+    max-width: calc(100vw - 28px);
+    max-height: calc(100vh - 28px);
+    border-radius: 12px;
+  }
+}

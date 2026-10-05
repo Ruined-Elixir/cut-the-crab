@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -6,6 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import CtcLogo from "./components/brand/CtcLogo";
 
 import HomeScreen from "./components/home/HomeScreen";
+import ProjectLoadingOverlay from "./components/loading/ProjectLoadingOverlay";
 import MediaBrowser from "./components/media/MediaBrowser";
 import MissingMediaModal from "./components/media/MissingMediaModal";
 import VideoPlayer, {
@@ -168,6 +169,13 @@ type CompoundClipboardPayload = {
 
 type AppScreen = "home" | "editor";
 
+type ProjectLoadBarrierState = {
+  generation: number;
+  dataHydrated: boolean;
+  filmstripReady: boolean;
+  startedAt: number;
+};
+
 type EffectsPanelTarget = {
   kind: "video" | "adjustment";
   id: string;
@@ -176,6 +184,7 @@ type EffectsPanelTarget = {
 type MasksPanelTarget = EffectsPanelTarget;
 
 const AUTOSAVE_DEBOUNCE_MS = 200;
+const PROJECT_LOADING_MIN_VISIBLE_MS = 650;
 
 function getVideoTitle(path: string) {
   const fileName = path.split(/[\\/]/).pop() ?? "Untitled Project";
@@ -527,6 +536,9 @@ function App() {
   const [projectMetadata, setProjectMetadata] =
     useState<ProjectMetadata | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectLoadBarrier, setProjectLoadBarrier] =
+    useState<ProjectLoadBarrierState | null>(null);
+  const projectLoadBarrierActive = projectLoadBarrier !== null;
 
   // ==========================================================================
   // Video
@@ -618,6 +630,7 @@ function App() {
 
   const isLoadingVideoRef = useRef(false);
   const projectLoadGenerationRef = useRef(0);
+  const projectLoadWaitersRef = useRef(new Map<number, () => void>());
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
   const timelineRef = useRef<TimelineHandle | null>(null);
   const handleSkimPreviewChange = useCallback((time: number | null) => {
@@ -634,6 +647,12 @@ function App() {
     time: number;
   } | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const resolveProjectLoadWaiter = useCallback((generation: number) => {
+    const resolve = projectLoadWaitersRef.current.get(generation);
+    if (!resolve) return;
+    projectLoadWaitersRef.current.delete(generation);
+    resolve();
+  }, []);
 
   const lastSavedSnapshotRef = useRef<string>(
     JSON.stringify({
@@ -651,7 +670,11 @@ function App() {
   // Waveform
   // ==========================================================================
 
-  const { waveformsBySource, generateWaveform } = useWaveform();
+  const {
+    waveformsBySource,
+    waveformStatesBySource,
+    generateWaveform,
+  } = useWaveform();
 
   // ==========================================================================
   // Subtitles
@@ -802,6 +825,68 @@ function App() {
       void generateWaveform(sourcePath);
     }
   }, [generateWaveform, waveformSourcePaths]);
+
+  const handleInitialFilmstripReadyChange = useCallback((ready: boolean) => {
+    setProjectLoadBarrier((current) => {
+      if (!current || current.filmstripReady === ready) return current;
+      return { ...current, filmstripReady: ready };
+    });
+  }, []);
+
+  const projectProxyMediaReady = useMemo(
+    () =>
+      [...new Set(videoProxySourcePaths)].every((sourcePath) => {
+        const status = proxyStatesBySource[sourcePath]?.status;
+        return status === "ready" || status === "error";
+      }),
+    [proxyStatesBySource, videoProxySourcePaths],
+  );
+
+  const projectWaveformsReady = useMemo(
+    () =>
+      waveformSourcePaths.every((sourcePath) => {
+        const status = waveformStatesBySource[sourcePath];
+        return status === "ready" || status === "error";
+      }),
+    [waveformSourcePaths, waveformStatesBySource],
+  );
+
+  useEffect(() => {
+    const barrier = projectLoadBarrier;
+    if (!barrier || !barrier.dataHydrated || screen !== "editor") return;
+
+    const mediaMetadataReady = videoDuration > 0 && videoClips.length > 0;
+    if (
+      !mediaMetadataReady ||
+      !projectProxyMediaReady ||
+      !projectWaveformsReady ||
+      !barrier.filmstripReady
+    ) {
+      return;
+    }
+
+    const elapsed = performance.now() - barrier.startedAt;
+    const remaining = Math.max(0, PROJECT_LOADING_MIN_VISIBLE_MS - elapsed);
+    const timer = window.setTimeout(() => {
+      if (projectLoadGenerationRef.current !== barrier.generation) return;
+
+      isLoadingVideoRef.current = false;
+      setProjectLoadBarrier((current) =>
+        current?.generation === barrier.generation ? null : current,
+      );
+      resolveProjectLoadWaiter(barrier.generation);
+    }, remaining);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    projectLoadBarrier,
+    projectProxyMediaReady,
+    projectWaveformsReady,
+    resolveProjectLoadWaiter,
+    screen,
+    videoClips.length,
+    videoDuration,
+  ]);
 
   const latestSaveStateRef = useRef({
     activeProjectId,
@@ -1470,7 +1555,7 @@ function App() {
     state: CompoundTimelineState;
   } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = previousVideoClipMoveStateRef.current;
 
     if (videoMoveSubtitleSyncActiveRef.current) {
@@ -1510,11 +1595,20 @@ function App() {
         { timelineStart: clip.timelineStart, sourceIn: clip.sourceIn },
       ]),
     );
+  }, [videoClips]);
+
+  useEffect(() => {
+    const hasPendingGeneratedLinks = subtitles.some(
+      (subtitle) =>
+        !subtitle.linkedVideoClipId && !!subtitle.linkedVideoSourcePath,
+    );
+
+    if (!hasPendingGeneratedLinks) return;
 
     bindPendingGeneratedSubtitlesToVideoClips(
       videoClips.filter((clip) => clip.freezeFrameSourceTime === undefined),
     );
-  }, [videoClips]);
+  }, [subtitles, videoClips]);
 
   const applyCompoundTimelineState = (next: CompoundTimelineState) => {
     replaceVideoClips(next.videoClips);
@@ -3504,6 +3598,23 @@ function App() {
     projectLoadGenerationRef.current = loadGeneration;
     isLoadingVideoRef.current = true;
 
+    for (const [generation, resolve] of projectLoadWaitersRef.current) {
+      if (generation === loadGeneration) continue;
+      projectLoadWaitersRef.current.delete(generation);
+      resolve();
+    }
+
+    const projectReadyPromise = new Promise<void>((resolve) => {
+      projectLoadWaitersRef.current.set(loadGeneration, resolve);
+    });
+
+    setProjectLoadBarrier({
+      generation: loadGeneration,
+      dataHydrated: false,
+      filmstripReady: false,
+      startedAt: performance.now(),
+    });
+
     const projectId = requestedProjectId ?? crypto.randomUUID();
 
     setActiveProjectId(projectId);
@@ -3558,6 +3669,9 @@ function App() {
       if (projectLoadGenerationRef.current !== loadGeneration) return;
 
       if (loadResult.status === "error") {
+        isLoadingVideoRef.current = false;
+        setProjectLoadBarrier(null);
+        resolveProjectLoadWaiter(loadGeneration);
         setActiveProjectId(null);
         setVideoPath(null);
         setVideoName(null);
@@ -3686,6 +3800,8 @@ function App() {
       console.error("Failed to load project data:", error);
       if (projectLoadGenerationRef.current !== loadGeneration) return;
       isLoadingVideoRef.current = false;
+      setProjectLoadBarrier(null);
+      resolveProjectLoadWaiter(loadGeneration);
       setActiveProjectId(null);
       setVideoPath(null);
       setVideoName(null);
@@ -3696,16 +3812,17 @@ function App() {
           : "The project could not be loaded safely. The original project file was not overwritten.",
       );
       return;
-    } finally {
-      if (projectLoadGenerationRef.current === loadGeneration) {
-        isLoadingVideoRef.current = false;
-      }
     }
 
     if (projectLoadGenerationRef.current !== loadGeneration) return;
     resetHistory(loadedHistorySnapshot);
 
     setScreen("editor");
+    setProjectLoadBarrier((current) =>
+      current?.generation === loadGeneration
+        ? { ...current, dataHydrated: true, filmstripReady: false }
+        : current,
+    );
     setHomeError("");
 
     try {
@@ -3714,6 +3831,8 @@ function App() {
     } catch (error) {
       console.error("Failed to update recent projects:", error);
     }
+
+    await projectReadyPromise;
   };
 
   const chooseVideoPath = async () => {
@@ -4738,6 +4857,8 @@ function App() {
   // ==========================================================================
 
   const handleAppMenuCommand = async (command: AppMenuCommand) => {
+    if (projectLoadBarrierActive) return;
+
     const clipTranscription = parseClipTranscriptionCommand(command);
 
     if (clipTranscription) {
@@ -4993,8 +5114,31 @@ function App() {
   };
 
   useEffect(() => {
+    if (!projectLoadBarrierActive) return;
+
+    const blockKeyboardInput = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    window.addEventListener("keydown", blockKeyboardInput, true);
+    window.addEventListener("keyup", blockKeyboardInput, true);
+
+    return () => {
+      window.removeEventListener("keydown", blockKeyboardInput, true);
+      window.removeEventListener("keyup", blockKeyboardInput, true);
+    };
+  }, [projectLoadBarrierActive]);
+
+  useEffect(() => {
     const handleEditorShortcutKeyDown = (event: KeyboardEvent) => {
-      if (screen !== "editor" || isGenerating || isExporting) {
+      if (
+        screen !== "editor" ||
+        isGenerating ||
+        isExporting ||
+        projectLoadBarrierActive
+      ) {
         return;
       }
 
@@ -5268,6 +5412,7 @@ function App() {
     screen,
     isGenerating,
     isExporting,
+    projectLoadBarrierActive,
     undo,
     redo,
     selectAllSubtitles,
@@ -5332,18 +5477,21 @@ function App() {
 
   if (screen === "home") {
     return (
-      <HomeScreen
-        projects={recentProjects}
-        pendingVideoPath={pendingNewProjectPath}
-        errorMessage={homeError}
-        onChooseNewVideo={handleChooseNewProjectVideo}
-        onCancelNewProject={() => setPendingNewProjectPath(null)}
-        onCreateProject={handleCreateProject}
-        onOpenProject={handleOpenRecentProject}
-        onRenameProject={handleRenameRecentProject}
-        onRelinkProject={handleRelinkRecentProject}
-        onRemoveProject={handleRemoveRecentProject}
-      />
+      <>
+        <HomeScreen
+          projects={recentProjects}
+          pendingVideoPath={pendingNewProjectPath}
+          errorMessage={homeError}
+          onChooseNewVideo={handleChooseNewProjectVideo}
+          onCancelNewProject={() => setPendingNewProjectPath(null)}
+          onCreateProject={handleCreateProject}
+          onOpenProject={handleOpenRecentProject}
+          onRenameProject={handleRenameRecentProject}
+          onRelinkProject={handleRelinkRecentProject}
+          onRemoveProject={handleRemoveRecentProject}
+        />
+        <ProjectLoadingOverlay open={projectLoadBarrierActive} />
+      </>
     );
   }
 
@@ -5620,6 +5768,7 @@ function App() {
         onOpenCompound={openCompound}
         onCloseCompound={closeCompound}
         onSkimPreviewChange={handleSkimPreviewChange}
+        onInitialFilmstripReadyChange={handleInitialFilmstripReadyChange}
         onSeek={requestSeek}
       />
 
@@ -5766,6 +5915,8 @@ function App() {
           onDismissError={() => setExportError(null)}
         />
       )}
+
+      <ProjectLoadingOverlay open={projectLoadBarrierActive} />
     </main>
   );
 }

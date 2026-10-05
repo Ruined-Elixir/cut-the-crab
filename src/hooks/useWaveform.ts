@@ -7,10 +7,15 @@ const WAVEFORM_START_DELAY_MS = 350;
 
 type WaveformMap = Record<string, number[]>;
 
+export type WaveformLoadStatus = "queued" | "generating" | "ready" | "error";
+export type WaveformLoadStates = Record<string, WaveformLoadStatus>;
+
 export function useWaveform() {
   const [waveformsBySource, setWaveformsBySource] = useState<WaveformMap>({});
   const [isGeneratingWaveform, setIsGeneratingWaveform] = useState(false);
   const [waveformError, setWaveformError] = useState<string | null>(null);
+  const [waveformStatesBySource, setWaveformStatesBySource] =
+    useState<WaveformLoadStates>({});
 
   const inFlightRef = useRef<Set<string>>(new Set());
   const queuedRef = useRef<Set<string>>(new Set());
@@ -30,6 +35,10 @@ export function useWaveform() {
 
     queuedRef.current.add(videoPath);
     queueRef.current.push(videoPath);
+    setWaveformStatesBySource((current) => ({
+      ...current,
+      [videoPath]: "queued",
+    }));
 
     if (processingRef.current) return;
     processingRef.current = true;
@@ -49,6 +58,10 @@ export function useWaveform() {
         if (cacheRef.current[nextPath]) continue;
 
         inFlightRef.current.add(nextPath);
+        setWaveformStatesBySource((current) => ({
+          ...current,
+          [nextPath]: "generating",
+        }));
         try {
           traceCut("waveform-task-start", { sourcePath: nextPath });
           const data = await invoke<number[]>("extract_waveform", {
@@ -61,10 +74,18 @@ export function useWaveform() {
             [nextPath]: data,
           };
           setWaveformsBySource(cacheRef.current);
+          setWaveformStatesBySource((current) => ({
+            ...current,
+            [nextPath]: "ready",
+          }));
         } catch (error) {
           const message =
             typeof error === "string" ? error : "Failed to extract waveform.";
           setWaveformError(message);
+          setWaveformStatesBySource((current) => ({
+            ...current,
+            [nextPath]: "error",
+          }));
           console.error("Waveform extraction failed:", error);
         } finally {
           inFlightRef.current.delete(nextPath);
@@ -78,6 +99,7 @@ export function useWaveform() {
 
   return {
     waveformsBySource,
+    waveformStatesBySource,
     isGeneratingWaveform,
     waveformError,
     generateWaveform,

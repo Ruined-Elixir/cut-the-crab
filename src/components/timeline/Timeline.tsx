@@ -88,6 +88,7 @@ type TimelineProps = {
 
   onSeek?: (time: number) => void;
   onSkimPreviewChange?: (time: number | null) => void;
+  onInitialFilmstripReadyChange?: (ready: boolean) => void;
   onAddTrack?: (kind: TimelineTrackKind | "video-audio") => void;
   onCreateAdjustmentLayer?: () => void;
   onAdjustmentLayerSelect?: (id: string) => void;
@@ -258,6 +259,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     activeSubtitleTrackId,
     onSeek,
     onSkimPreviewChange,
+    onInitialFilmstripReadyChange,
     onAddTrack,
     onCreateAdjustmentLayer,
     onAdjustmentLayerSelect,
@@ -478,7 +480,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     [displayVideoClips],
   );
 
-  const framesByClipId = useVideoClipFrames(
+  const { framesByClipId, initialFramesReady } = useVideoClipFrames(
     filmstripVideoClips,
     pixelsPerSecond,
     visibleTimelineStart,
@@ -486,6 +488,15 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     proxyPathsBySource,
     playbackActive,
   );
+
+  useEffect(() => {
+    onInitialFilmstripReadyChange?.(initialFramesReady);
+  }, [
+    filmstripVideoClips,
+    initialFramesReady,
+    onInitialFilmstripReadyChange,
+    proxyPathsBySource,
+  ]);
 
   const markerTimes = useMemo(
     () => markers.map((marker) => marker.time).sort((a, b) => a - b),

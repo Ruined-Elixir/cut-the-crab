@@ -727,6 +727,7 @@ async function runBucketed(
 const retryTimersBySource = new Map<string, number>();
 const retryAttemptsBySource = new Map<string, number>();
 const retryDecodePathBySource = new Map<string, string>();
+const exhaustedRetrySources = new Set<string>();
 
 function scheduleRetry(
   plan: SourcePlan,
@@ -750,6 +751,30 @@ function scheduleRetry(
   retryTimersBySource.set(plan.sourcePath, timer);
 }
 
+function sourcePlanInitialFramesReady(plan: SourcePlan) {
+  const cache = SOURCE_CACHE.get(plan.sourcePath);
+  if (!cache) {
+    return plan.priorityTimes.length === 0;
+  }
+
+  // The project-loading barrier only waits for the filmstrip frames that are
+  // immediately useful: every clip's source-in frame plus the visible/nearby
+  // timeline region. Source-wide background thumbnails keep filling while the
+  // editor is idle and are aborted instantly when playback starts, so they do
+  // not need to delay first entry into the project.
+  const requiredTimes = mergeTimes(plan.priorityTimes).map((time) =>
+    clamp(time, 0, Math.max(0, cache.duration - 0.01)),
+  );
+  const missing = missingTimes(cache, requiredTimes);
+
+  if (missing.length === 0) return true;
+
+  // Do not trap the editor behind the loading barrier forever when a damaged
+  // source has exhausted every thumbnail retry. Missing cosmetic frames can
+  // fail open after the retry budget is spent.
+  return exhaustedRetrySources.has(plan.sourcePath);
+}
+
 async function generateSourceFrames(
   plan: SourcePlan,
   signal: AbortSignal,
@@ -765,6 +790,7 @@ async function generateSourceFrames(
     if (timer !== undefined) window.clearTimeout(timer);
     retryTimersBySource.delete(plan.sourcePath);
     retryAttemptsBySource.delete(plan.sourcePath);
+    exhaustedRetrySources.delete(plan.sourcePath);
     retryDecodePathBySource.set(plan.sourcePath, plan.decodePath);
   }
 
@@ -810,9 +836,17 @@ async function generateSourceFrames(
   if (signal.aborted) return;
 
   if (failedPriority.length > 0 || failedBackground.length > 0) {
-    scheduleRetry(plan, onProgress, getSignal);
+    const attempt = retryAttemptsBySource.get(plan.sourcePath) ?? 0;
+    if (attempt >= RETRY_BACKOFF_MS.length) {
+      exhaustedRetrySources.add(plan.sourcePath);
+      onProgress();
+    } else {
+      exhaustedRetrySources.delete(plan.sourcePath);
+      scheduleRetry(plan, onProgress, getSignal);
+    }
   } else {
     retryAttemptsBySource.delete(plan.sourcePath);
+    exhaustedRetrySources.delete(plan.sourcePath);
   }
 }
 
@@ -854,6 +888,11 @@ export function useVideoClipFrames(
   const framesByClipId = useMemo(
     () => buildClipFrameMap(videoClips, pixelsPerSecond),
     [videoClips, pixelsPerSecond, revision],
+  );
+
+  const initialFramesReady = useMemo(
+    () => sourcePlans.every(sourcePlanInitialFramesReady),
+    [sourcePlans, revision],
   );
 
   useEffect(() => {
@@ -916,5 +955,8 @@ export function useVideoClipFrames(
     };
   }, [planSignature, playbackActive]);
 
-  return framesByClipId;
+  return {
+    framesByClipId,
+    initialFramesReady,
+  };
 }
