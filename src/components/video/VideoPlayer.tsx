@@ -12,7 +12,10 @@ import {
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-import { usePlaybackClockTime } from "../../utils/playbackClock";
+import {
+  setPlaybackClockPlaying,
+  usePlaybackClockTime,
+} from "../../utils/playbackClock";
 import { useMediaSupervisor } from "../../hooks/useMediaSupervisor";
 
 import {
@@ -209,8 +212,11 @@ type OpacityEditorState = {
 const MAX_NATIVE_VIDEO_PREVIEW_RATE = 2;
 const MAX_PROXY_VIDEO_PREVIEW_RATE = 4;
 const HIGH_SPEED_PREVIEW_MIN_SEEK_INTERVAL_MS = 90;
-const PREWARM_FRAME_FALLBACK_MS = 42;
+const PREWARM_FRAME_FALLBACK_MS = 360;
+const PREWARM_NO_RVFC_DELAY_MS = 90;
 const PREWARM_MAX_SOURCE_DRIFT_SECONDS = 0.05;
+const PREWARM_NEAR_CUT_REFRESH_SECONDS = 0.75;
+const PREWARM_REWIND_TOLERANCE_SECONDS = 0.008;
 const PREBUFFER_LOOKAHEAD_SECONDS = 3;
 const PROXY_PROMOTION_GUARD_SECONDS = 1.5;
 
@@ -827,6 +833,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const currentTime = usePlaybackClockTime();
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
+
+    // Publish transport state so background decode work (filmstrips, etc.) can
+    // yield immediately while Program Monitor playback is active.
+    useEffect(() => {
+      setPlaybackClockPlaying(isPlaying);
+    }, [isPlaying]);
+
+    useEffect(() => {
+      return () => setPlaybackClockPlaying(false);
+    }, []);
     const [presentedFrameTimelineTime, setPresentedFrameTimelineTime] =
       useState<number | null>(null);
     const lastSubtitleClockRenderAtRef = useRef(0);
@@ -898,6 +914,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     // frame. A painted warm deck can be revealed immediately at a hard cut
     // without waiting for another frame callback.
     const videoWarmPaintedByClipIdRef = useRef<Record<string, boolean>>({});
+    // A one-shot refresh shortly before an adjacent cut keeps WebKit's hidden
+    // incoming decoder/compositor hot. Without it, a deck warmed several
+    // seconds earlier can take ~200-300 ms to produce its next frame on resume.
+    const videoNearCutRefreshedByClipIdRef = useRef<Record<string, boolean>>({});
     const audioOwnerByTrackRef = useRef<Record<string, string | null>>({});
     const handoffPendingByTrackRef = useRef<Record<string, string | undefined>>({});
     const handoffTimeoutByTrackRef = useRef<Record<string, number | undefined>>({});
@@ -1202,6 +1222,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       delete videoReadyByClipIdRef.current[clip.id];
       delete videoWarmStateByClipIdRef.current[clip.id];
       delete videoWarmPaintedByClipIdRef.current[clip.id];
+      delete videoNearCutRefreshedByClipIdRef.current[clip.id];
       traceCut("preview-proxy-promote", {
         clipId: clip.id,
         sourcePath: clip.sourcePath,
@@ -1725,8 +1746,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         isFreezeFrameClip(clip) ||
         isReverseVideoClip(clip) ||
         video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-        video.seeking ||
-        videoWarmStateByClipIdRef.current[clipId]
+        video.seeking
       ) {
         return;
       }
@@ -1739,7 +1759,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         timelineTime,
         trackId,
       );
-      if (activeClip?.id === clipId) return;
+      if (activeClip?.id === clipId) {
+        delete videoNearCutRefreshedByClipIdRef.current[clipId];
+        return;
+      }
+
+      const warmState = videoWarmStateByClipIdRef.current[clipId];
+      const secondsUntilStart = clip.timelineStart - timelineTime;
+      const shouldRefreshNearCut =
+        isPlayingRef.current &&
+        warmState === "warmed" &&
+        secondsUntilStart > 0 &&
+        secondsUntilStart <= PREWARM_NEAR_CUT_REFRESH_SECONDS &&
+        videoNearCutRefreshedByClipIdRef.current[clipId] !== true;
+
+      if (warmState && !shouldRefreshNearCut) return;
 
       const targetTime = timelineTimeToSourceTime(
         clip,
@@ -1752,6 +1786,38 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         0,
         Math.min(maxSourceTime || targetTime, targetTime),
       );
+
+      if (shouldRefreshNearCut) {
+        videoNearCutRefreshedByClipIdRef.current[clipId] = true;
+        delete videoWarmStateByClipIdRef.current[clipId];
+        delete videoWarmPaintedByClipIdRef.current[clipId];
+        video.pause();
+        video.muted = true;
+        video.volume = 0;
+
+        const sourceDrift = Math.abs(video.currentTime - safeTargetTime);
+        traceCut("near-cut-rewarm", {
+          trackId,
+          clipId,
+          secondsUntilStart,
+          sourceDrift,
+          readyState: video.readyState,
+          seeking: video.seeking,
+        });
+
+        // The earlier warm normally leaves the deck on its first decoded frame.
+        // Rewind that tiny drift before the final near-cut pulse so the pulse
+        // can wake the decoder/compositor without moving the logical source-in.
+        if (sourceDrift > PREWARM_REWIND_TOLERANCE_SECONDS) {
+          videoReadyByClipIdRef.current[clipId] = false;
+          try {
+            video.currentTime = safeTargetTime;
+            return;
+          } catch (error) {
+            console.error(`${trackId} near-cut prewarm rewind failed:`, error);
+          }
+        }
+      }
 
       // Warm exactly one decoded/composited frame. The old timer-based warm-up
       // played for 60 ms and then sought back to source-in, which could put the
@@ -1767,6 +1833,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
       let finished = false;
       let fallbackTimer: number | null = null;
+      const warmStartedAt = performance.now();
 
       const finishWarm = (painted: boolean) => {
         if (finished) return;
@@ -1802,6 +1869,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         currentVideo.pause();
         const sourceDrift = Math.abs(currentVideo.currentTime - safeTargetTime);
+        traceCut("prewarm-ready", {
+          trackId,
+          clipId,
+          ms: performance.now() - warmStartedAt,
+          painted,
+          nearCutRefresh: shouldRefreshNearCut,
+          mediaTime: currentVideo.currentTime,
+          sourceDrift,
+          readyState: currentVideo.readyState,
+        });
         if (
           currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
           !currentVideo.seeking &&
@@ -1833,14 +1910,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
       if (typeof frameVideo.requestVideoFrameCallback === "function") {
         frameVideo.requestVideoFrameCallback(() => finishWarm(true));
-        fallbackTimer = window.setTimeout(() => {
-          const currentVideo = videoRefsByClipId.current[clipId] ?? null;
-          finishWarm(
-            !!currentVideo &&
-              currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-              !currentVideo.seeking,
-          );
-        }, PREWARM_FRAME_FALLBACK_MS);
+        // Do not call a readyState-only timeout a "painted" warm frame. The
+        // old 42 ms fallback could fire long before WebKit produced a frame,
+        // making the cut logic reveal a deck that was technically buffered but
+        // whose compositor still needed ~200-300 ms to wake up. Let rVFC prove
+        // the first frame instead and only give up after a generous timeout.
+        fallbackTimer = window.setTimeout(
+          () => finishWarm(false),
+          PREWARM_FRAME_FALLBACK_MS,
+        );
       } else {
         fallbackTimer = window.setTimeout(() => {
           const currentVideo = videoRefsByClipId.current[clipId] ?? null;
@@ -1849,7 +1927,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
               !currentVideo.seeking,
           );
-        }, PREWARM_FRAME_FALLBACK_MS);
+        }, PREWARM_NO_RVFC_DELAY_MS);
       }
 
       void video.play().catch((error) => {
@@ -1916,6 +1994,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       delete videoReadyByClipIdRef.current[clipId];
       delete videoWarmStateByClipIdRef.current[clipId];
       delete videoWarmPaintedByClipIdRef.current[clipId];
+      delete videoNearCutRefreshedByClipIdRef.current[clipId];
 
       console.warn(`Rebuilding Program media ${clipId} after ${reason}.`);
     };
@@ -2111,6 +2190,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         );
         return;
       }
+
+      // Once the clip has actually crossed its edit point, allow a fresh
+      // near-cut warm-up the next time transport comes around to this cut.
+      delete videoNearCutRefreshedByClipIdRef.current[activeClip.id];
 
       if (!video) {
         // On an explicit jump React may not have mounted the destination clip's
@@ -2660,6 +2743,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       videoReadyByClipIdRef.current = {};
       videoWarmStateByClipIdRef.current = {};
       videoWarmPaintedByClipIdRef.current = {};
+      videoNearCutRefreshedByClipIdRef.current = {};
       latchedPreviewSourceByClipRef.current = {};
       cutHoldClipIdRef.current = null;
       failedMediaIdsRef.current = {};
@@ -4385,6 +4469,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                               reportMedia(clip.id, "loadstart");
                               delete videoWarmStateByClipIdRef.current[clip.id];
                               delete videoWarmPaintedByClipIdRef.current[clip.id];
+                              delete videoNearCutRefreshedByClipIdRef.current[clip.id];
                             }}
                             onLoadedMetadata={() =>
                               handleVideoLoadedMetadata(trackId, clip.id)

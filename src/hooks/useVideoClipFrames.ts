@@ -38,6 +38,9 @@ const THUMB_WIDTH = 160;
 const THUMB_HEIGHT = 90;
 const JPEG_QUALITY = 0.72;
 const FRAME_PAINT_DELAY_MS = 10;
+const FRAME_CALLBACK_TIMEOUT_MS = 260;
+const FRAME_CALLBACK_TIME_TOLERANCE_SECONDS = 0.12;
+const CAPTURE_RETRY_OFFSETS_SECONDS = [0, 0.04, 0.09];
 const MIN_SAMPLE_INTERVAL_SECONDS = 0.18;
 const SOURCE_WORKERS = 1;
 // Filmstrip decoding uses throwaway <video> elements that read the SAME
@@ -48,7 +51,7 @@ const SOURCE_WORKERS = 1;
 // an upcoming clip most needs to buffer ahead of a hard cut. This semaphore
 // bounds how many filmstrip workers may run at the same time, app-wide,
 // regardless of how many sources are being thumbnailed.
-const MAX_CONCURRENT_SOURCE_WORKERS = 2;
+const MAX_CONCURRENT_SOURCE_WORKERS = 1;
 const RETRY_BACKOFF_MS = [600, 1500, 4000];
 
 function clamp(value: number, min: number, max: number) {
@@ -220,10 +223,17 @@ function waitForEvent(
   });
 }
 
-function waitForFramePaint(video: HTMLVideoElement, signal: AbortSignal) {
+function waitForFramePaint(
+  video: HTMLVideoElement,
+  targetTime: number,
+  signal: AbortSignal,
+) {
   return new Promise<void>((resolve, reject) => {
+    type FrameMetadata = { mediaTime?: number };
     type FrameVideo = HTMLVideoElement & {
-      requestVideoFrameCallback?: (callback: () => void) => number;
+      requestVideoFrameCallback?: (
+        callback: (now: number, metadata: FrameMetadata) => void,
+      ) => number;
       cancelVideoFrameCallback?: (id: number) => void;
     };
 
@@ -256,18 +266,42 @@ function waitForFramePaint(video: HTMLVideoElement, signal: AbortSignal) {
       cleanup();
       reject(new DOMException("Aborted", "AbortError"));
     };
+    const requestDecodedFrame = () => {
+      if (
+        settled ||
+        signal.aborted ||
+        typeof frameVideo.requestVideoFrameCallback !== "function"
+      ) {
+        return;
+      }
+
+      videoFrameId = frameVideo.requestVideoFrameCallback((_now, metadata) => {
+        videoFrameId = null;
+        const mediaTime = metadata?.mediaTime;
+        if (
+          Number.isFinite(mediaTime) &&
+          Math.abs((mediaTime as number) - targetTime) >
+            FRAME_CALLBACK_TIME_TOLERANCE_SECONDS
+        ) {
+          requestDecodedFrame();
+          return;
+        }
+        finish();
+      });
+    };
 
     signal.addEventListener("abort", handleAbort, { once: true });
 
     if (typeof frameVideo.requestVideoFrameCallback === "function") {
-      videoFrameId = frameVideo.requestVideoFrameCallback(finish);
-      // WebKit occasionally delays rVFC for a paused seek. Fall back to a
-      // paint turn instead of hanging a filmstrip worker indefinitely.
+      requestDecodedFrame();
+      // A seeked event can arrive before WebKit has actually presented the
+      // requested decoded frame. Give rVFC a real chance to confirm the frame
+      // first; only then fall back to a normal paint turn.
       timeoutId = window.setTimeout(() => {
         animationFrameId = window.requestAnimationFrame(() => {
           timeoutId = window.setTimeout(finish, FRAME_PAINT_DELAY_MS);
         });
-      }, 120);
+      }, FRAME_CALLBACK_TIMEOUT_MS);
       return;
     }
 
@@ -277,16 +311,62 @@ function waitForFramePaint(video: HTMLVideoElement, signal: AbortSignal) {
   });
 }
 
+function waitForCurrentData(video: HTMLVideoElement, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    let animationFrameId = 0;
+    let timeoutId = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      signal.removeEventListener("abort", handleAbort);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const handleAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const check = () => {
+      if (
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        !video.seeking
+      ) {
+        finish();
+        return;
+      }
+      animationFrameId = window.requestAnimationFrame(check);
+    };
+
+    signal.addEventListener("abort", handleAbort, { once: true });
+    timeoutId = window.setTimeout(finish, 900);
+    check();
+  });
+}
+
 async function seekAndWaitForFrame(
   video: HTMLVideoElement,
   targetTime: number,
   signal: AbortSignal,
 ) {
   if (Math.abs(video.currentTime - targetTime) > 0.004) {
+    // Attach the seeked listener BEFORE assigning currentTime. Small local
+    // seeks can complete quickly enough in WebKit that listening afterwards
+    // occasionally misses the event and leaves a thumbnail worker hanging.
+    const seeked = waitForEvent(video, "seeked", signal);
     video.currentTime = targetTime;
-    await waitForEvent(video, "seeked", signal);
+    await seeked;
   }
-  await waitForFramePaint(video, signal);
+
+  await waitForCurrentData(video, signal);
+  await waitForFramePaint(video, targetTime, signal);
 }
 
 function drawContainedFrame(
@@ -309,6 +389,68 @@ function drawContainedFrame(
     drawWidth,
     drawHeight,
   );
+}
+
+function canvasLooksUnpainted(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+) {
+  // A failed/stale WebKit seek commonly leaves the canvas as the exact dark
+  // backing fill (or nearly uniform black). Only use this as a RETRY signal;
+  // after the final attempt the frame is still accepted so legitimate black
+  // footage is never permanently hidden from the filmstrip.
+  const sampleWidth = Math.min(32, canvas.width);
+  const sampleHeight = Math.min(18, canvas.height);
+  const left = Math.max(0, Math.floor((canvas.width - sampleWidth) / 2));
+  const top = Math.max(0, Math.floor((canvas.height - sampleHeight) / 2));
+  const data = context.getImageData(left, top, sampleWidth, sampleHeight).data;
+
+  let minLuma = 255;
+  let maxLuma = 0;
+  let meanLuma = 0;
+  let samples = 0;
+
+  for (let index = 0; index < data.length; index += 16) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const luma = (r + g + b) / 3;
+    minLuma = Math.min(minLuma, luma);
+    maxLuma = Math.max(maxLuma, luma);
+    meanLuma += luma;
+    samples += 1;
+  }
+
+  meanLuma /= Math.max(1, samples);
+  return maxLuma - minLuma < 5 && meanLuma < 28;
+}
+
+async function captureFrameWithRetry(
+  video: HTMLVideoElement,
+  targetTime: number,
+  duration: number,
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  signal: AbortSignal,
+) {
+  const maxTime = Math.max(0, duration - 0.01);
+
+  for (let attempt = 0; attempt < CAPTURE_RETRY_OFFSETS_SECONDS.length; attempt += 1) {
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const captureTime = clamp(
+      targetTime + CAPTURE_RETRY_OFFSETS_SECONDS[attempt],
+      0,
+      maxTime,
+    );
+    await seekAndWaitForFrame(video, captureTime, signal);
+    drawContainedFrame(context, video, canvas);
+
+    const looksUnpainted = canvasLooksUnpainted(context, canvas);
+    if (!looksUnpainted || attempt === CAPTURE_RETRY_OFFSETS_SECONDS.length - 1) {
+      return;
+    }
+  }
 }
 
 function desiredSourceSampleCount(duration: number, pixelsPerSecond: number) {
@@ -528,8 +670,14 @@ async function runWorker(
       // entire source file until the timeline view changed enough to alter
       // the sample plan. Record it and move on; it is retried below.
       try {
-        await seekAndWaitForFrame(video, targetTime, signal);
-        drawContainedFrame(context, video, canvas);
+        await captureFrameWithRetry(
+          video,
+          targetTime,
+          cache.duration,
+          context,
+          canvas,
+          signal,
+        );
         addFrameToCache(cache, {
           time: targetTime,
           url: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
@@ -674,6 +822,7 @@ export function useVideoClipFrames(
   visibleStart: number,
   visibleEnd: number,
   previewPathsBySource: Record<string, string> = {},
+  playbackActive = false,
 ) {
   const [revision, setRevision] = useState(0);
 
@@ -709,6 +858,15 @@ export function useVideoClipFrames(
 
   useEffect(() => {
     const controller = new AbortController();
+
+    // Playback has absolute priority over cosmetic timeline thumbnails. When
+    // transport starts, React cleans up the previous effect and aborts any
+    // active filmstrip seek immediately. Missing frames resume from the cache
+    // when playback stops instead of competing with the incoming clip decoder.
+    if (playbackActive) {
+      return () => controller.abort();
+    }
+
     // A retry scheduled from a previous effect run must resolve against THIS
     // run's signal (or a later one), never a stale, already-aborted one.
     const getSignal = () =>
@@ -756,7 +914,7 @@ export function useVideoClipFrames(
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [planSignature]);
+  }, [planSignature, playbackActive]);
 
   return framesByClipId;
 }

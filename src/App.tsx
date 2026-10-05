@@ -12,11 +12,11 @@ import VideoPlayer, {
   type VideoPlayerHandle,
 } from "./components/video/VideoPlayer";
 import SubtitlePanel from "./components/subtitles/SubtitlePanel";
-import Timeline, {
+import Timeline, { type TimelineHandle } from "./components/timeline/Timeline";
+import {
   clampTimelineZoom,
   TIMELINE_ZOOM_STEP,
-  type TimelineHandle,
-} from "./components/timeline/Timeline";
+} from "./components/timeline/timelineZoom";
 import ExportProgressModal from "./components/export/ExportProgressModal";
 import ExportSettingsModal from "./components/export/ExportSettingsModal";
 import SubtitleGenerationModal from "./components/subtitles/SubtitleGenerationModal";

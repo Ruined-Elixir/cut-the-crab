@@ -8,6 +8,7 @@ let preciseTime = 0;
 let renderedTime = 0;
 let lastRenderedAt = 0;
 let pendingTimer: number | null = null;
+let playing = false;
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -52,6 +53,16 @@ export function getPlaybackClockTime() {
   return preciseTime;
 }
 
+export function setPlaybackClockPlaying(nextPlaying: boolean) {
+  if (playing === nextPlaying) return;
+  playing = nextPlaying;
+  notify();
+}
+
+export function getPlaybackClockPlaying() {
+  return playing;
+}
+
 function getRenderedPlaybackClockTime() {
   return renderedTime;
 }
@@ -66,5 +77,13 @@ export function usePlaybackClockTime() {
     subscribePlaybackClock,
     getRenderedPlaybackClockTime,
     getRenderedPlaybackClockTime,
+  );
+}
+
+export function usePlaybackClockPlaying() {
+  return useSyncExternalStore(
+    subscribePlaybackClock,
+    getPlaybackClockPlaying,
+    getPlaybackClockPlaying,
   );
 }

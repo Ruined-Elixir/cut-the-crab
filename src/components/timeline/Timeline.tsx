@@ -23,7 +23,10 @@ import type {
 } from "../../types/timelineModel";
 
 import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
-import { usePlaybackClockTime } from "../../utils/playbackClock";
+import {
+  usePlaybackClockPlaying,
+  usePlaybackClockTime,
+} from "../../utils/playbackClock";
 import { buildTimelineModel } from "../../utils/timelineModel";
 import type { TimelineRange } from "../../utils/timelineRangeEdits";
 import { videoPlaybackRate } from "../../utils/videoRetime";
@@ -37,6 +40,11 @@ import TimelineRuler from "./TimelineRuler";
 import TimelineTrackLabel from "./TimelineTrackLabel";
 import VideoTrack, { type VideoMoveSnapTarget } from "./VideoTrack";
 import WaveformTrack from "./WaveformTrack";
+import {
+  MAX_TIMELINE_ZOOM,
+  MIN_TIMELINE_ZOOM,
+  TIMELINE_ZOOM_STEP,
+} from "./timelineZoom";
 
 import "./Timeline.css";
 
@@ -205,10 +213,6 @@ type TimelineProps = {
   onCloseCompound?: () => void;
 };
 
-export const MIN_TIMELINE_ZOOM = 0.05;
-export const MAX_TIMELINE_ZOOM = 12;
-export const TIMELINE_ZOOM_STEP = 0.25;
-
 const HALF_SECOND_RULER_THRESHOLD_SECONDS = 10;
 
 const MIN_TRAILING_WORKSPACE_SECONDS = 10;
@@ -227,10 +231,6 @@ function trailingWorkspaceDuration(contentDuration: number) {
       contentDuration * TRAILING_WORKSPACE_RATIO,
     ),
   );
-}
-
-export function clampTimelineZoom(value: number) {
-  return Math.max(MIN_TIMELINE_ZOOM, Math.min(MAX_TIMELINE_ZOOM, value));
 }
 
 const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
@@ -324,6 +324,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   ref,
 ) {
   const currentTime = usePlaybackClockTime();
+  const playbackActive = usePlaybackClockPlaying();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const skimmerRef = useRef<HTMLDivElement | null>(null);
@@ -483,6 +484,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     visibleTimelineStart,
     visibleTimelineEnd,
     proxyPathsBySource,
+    playbackActive,
   );
 
   const markerTimes = useMemo(
