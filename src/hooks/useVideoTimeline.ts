@@ -760,7 +760,11 @@ export function useVideoTimeline({
     });
   };
 
-  const splitVideoClip = (id: string, splitTime: number) => {
+  const splitVideoClip = (
+    id: string,
+    splitTime: number,
+    rightClipId: string = crypto.randomUUID(),
+  ) => {
     splitTime = snapTimelineTimeToFrame(splitTime);
     setVideoClips((current) => {
       const target = current.find((clip) => clip.id === id);
@@ -807,7 +811,7 @@ export function useVideoTimeline({
 
       const right: VideoTimelineClip = {
         ...target,
-        id: crypto.randomUUID(),
+        id: rightClipId,
         timelineStart: splitTime,
         sourceIn: freeze
           ? target.sourceIn

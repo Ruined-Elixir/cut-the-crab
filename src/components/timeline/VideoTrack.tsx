@@ -22,6 +22,11 @@ import {
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
+import {
+  captureTimelineDragScroll,
+  timelineDragDeltaSeconds,
+} from "./timelineDrag";
+
 export type VideoMoveSnapTarget = {
   time: number;
   kind: "clip" | "playhead" | "marker" | "timeline";
@@ -80,6 +85,7 @@ type VideoTrackProps = {
   snapTargets?: VideoMoveSnapTarget[];
   onSnapGuideChange?: (time: number | null) => void;
   onRevealClip?: (clip: VideoTimelineClip) => void;
+  onRegenerateMissingSubtitles?: (clip: VideoTimelineClip) => void | Promise<void>;
   onOpenCompound?: (compoundId: string) => void;
   expandedCompoundId?: string | null;
 };
@@ -149,6 +155,7 @@ function VideoTrack({
   snapTargets = [],
   onSnapGuideChange,
   onRevealClip,
+  onRegenerateMissingSubtitles,
   onOpenCompound,
   expandedCompoundId = null,
   showLabel = true,
@@ -240,6 +247,7 @@ function VideoTrack({
     setDraggingClipId(clip.id);
 
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = clip.timelineStart;
     const clipDuration = clip.timelineEnd - clip.timelineStart;
     const width = trackElement.getBoundingClientRect().width;
@@ -287,7 +295,13 @@ function VideoTrack({
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / width) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
 
       const rawStart = Math.max(0, originalStart + deltaTime);
       const snapped = resolveSnappedStart(rawStart);
@@ -382,19 +396,29 @@ function VideoTrack({
       return;
     }
 
-    onSelect?.(clip.id, "single");
+    // Start the edit guard before selection. Selecting a clip can trigger the
+    // timeline's reveal-selection effect, so doing this in the opposite order
+    // could horizontally shift the viewport at the instant a trim begins.
     if (onResizeStart?.(clip.id) === false) {
       return;
     }
+    onSelect?.(clip.id, "single");
     setDraggingClipId(clip.id);
 
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = clip.timelineStart;
     const originalEnd = clip.timelineEnd;
     const width = trackElement.getBoundingClientRect().width;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / width) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
 
       if (edge === "left") {
         const nextStart = Math.max(
@@ -473,10 +497,16 @@ function VideoTrack({
       ),
     );
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(clipElement);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaSeconds =
-        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const deltaSeconds = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        rect.width,
+        clipDuration,
+        dragScroll,
+      );
       const nextDuration = Math.max(
         0,
         Math.min(
@@ -538,10 +568,16 @@ function VideoTrack({
       ),
     );
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(clipElement);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaSeconds =
-        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const deltaSeconds = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        rect.width,
+        clipDuration,
+        dragScroll,
+      );
       const nextDuration = Math.max(
         0.1,
         Math.min(
@@ -584,6 +620,7 @@ function VideoTrack({
     setDraggingAdjustmentId(layer.id);
     setAdjustmentGestureMode("move");
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = layer.timelineStart;
     const layerDuration = Math.max(
       MIN_VIDEO_CLIP_DURATION,
@@ -601,7 +638,13 @@ function VideoTrack({
         return;
       }
 
-      const delta = ((moveEvent.clientX - startX) / width) * duration;
+      const delta = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
       const rawStart = Math.max(0, originalStart + delta);
       const rawEnd = rawStart + layerDuration;
       let bestStart = rawStart;
@@ -668,6 +711,7 @@ function VideoTrack({
 
     const width = trackElement.getBoundingClientRect().width;
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = layer.timelineStart;
     const originalEnd = layer.timelineEnd;
     const snapThresholdSeconds =
@@ -703,7 +747,13 @@ function VideoTrack({
         return;
       }
 
-      const delta = ((moveEvent.clientX - startX) / width) * duration;
+      const delta = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
 
       if (edge === "left") {
         const rawStart = Math.max(
@@ -1018,12 +1068,26 @@ function VideoTrack({
                 if (!onRevealClip || !canShowNativeContextMenu()) return;
                 event.preventDefault();
                 event.stopPropagation();
-                onSelect?.(clip.id, "focus");
+                // Context-menu actions target `clip` directly. Do not change
+                // selection here: selection reveal can horizontally scroll the
+                // timeline just from opening the menu, which feels like the clip
+                // moved underneath the pointer.
                 void showNativeContextMenu([
                   {
                     id: `video-clip.${clip.id}.reveal`,
                     text: "Reveal in Timeline",
                     action: () => onRevealClip(clip),
+                  },
+                  {
+                    id: `video-clip.${clip.id}.restore-subtitles`,
+                    text: "Restore Missing Subtitles",
+                    enabled:
+                      !clip.compoundDisplay &&
+                      clip.freezeFrameSourceTime === undefined &&
+                      !!onRegenerateMissingSubtitles,
+                    action: () => {
+                      void onRegenerateMissingSubtitles?.(clip);
+                    },
                   },
                 ]).catch((error) => {
                   console.error(

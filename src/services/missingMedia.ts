@@ -239,6 +239,11 @@ export function removeProjectMediaPath({
   removedPath,
 }: RemoveProjectMediaState) {
   const affectedCompoundIds = new Set<string>();
+  const removedVideoClipIds = new Set(
+    videoClips
+      .filter((clip) => clip.sourcePath === removedPath)
+      .map((clip) => clip.id),
+  );
 
   for (const clip of videoClips) {
     if (clip.sourcePath === removedPath && clip.compoundId) {
@@ -268,11 +273,17 @@ export function removeProjectMediaPath({
           ? { ...clip, compoundId: undefined }
           : clip,
       ),
-    subtitles: subtitles.map((subtitle) =>
-      subtitle.compoundId && affectedCompoundIds.has(subtitle.compoundId)
-        ? { ...subtitle, compoundId: undefined }
-        : subtitle,
-    ),
+    subtitles: subtitles
+      .filter(
+        (subtitle) =>
+          !subtitle.linkedVideoClipId ||
+          !removedVideoClipIds.has(subtitle.linkedVideoClipId),
+      )
+      .map((subtitle) =>
+        subtitle.compoundId && affectedCompoundIds.has(subtitle.compoundId)
+          ? { ...subtitle, compoundId: undefined }
+          : subtitle,
+      ),
     mediaAssets: mediaAssets.filter((asset) => asset.path !== removedPath),
     affectedCompoundIds: [...affectedCompoundIds],
   };

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_SUBTITLE_TRACK_ID,
@@ -6,6 +6,11 @@ import {
   type Subtitle,
   type SubtitleStyle,
 } from "../types/subtitle";
+import {
+  removeLinkedSubtitlesForVideoClips as removeLinkedSubtitlesForVideoClipsPure,
+  splitLinkedSubtitlesAtVideoCut,
+  trimLinkedSubtitlesToVideoWindow,
+} from "../utils/linkedSubtitles";
 
 
 type GeneratedSubtitleSegment = {
@@ -45,6 +50,36 @@ function sortSubtitles(subtitles: Subtitle[]) {
       subtitleTrackIndex(getSubtitleTrackId(a)) -
         subtitleTrackIndex(getSubtitleTrackId(b)) ||
       a.endTime - b.endTime,
+  );
+}
+
+function sameSubtitleValue(a: Subtitle, b: Subtitle) {
+  return (
+    a.id === b.id &&
+    a.trackId === b.trackId &&
+    a.startTime === b.startTime &&
+    a.endTime === b.endTime &&
+    a.text === b.text &&
+    a.positionX === b.positionX &&
+    a.positionY === b.positionY &&
+    a.compoundId === b.compoundId &&
+    a.linkedVideoClipId === b.linkedVideoClipId &&
+    a.linkedVideoSourcePath === b.linkedVideoSourcePath &&
+    a.fontSize === b.fontSize &&
+    a.fontFamily === b.fontFamily &&
+    a.color === b.color &&
+    a.backgroundColor === b.backgroundColor &&
+    a.isBold === b.isBold &&
+    a.isItalic === b.isItalic &&
+    a.isUnderlined === b.isUnderlined &&
+    a.textAlign === b.textAlign
+  );
+}
+
+function sameSubtitleList(a: Subtitle[], b: Subtitle[]) {
+  return (
+    a.length === b.length &&
+    a.every((subtitle, index) => sameSubtitleValue(subtitle, b[index]))
   );
 }
 
@@ -626,6 +661,73 @@ export function useSubtitleEditor(videoDuration: number) {
     });
   };
 
+
+  const splitLinkedSubtitlesForVideoClip = useCallback((
+    clipId: string,
+    rightClipId: string,
+    splitTime: number,
+  ) => {
+    setSubtitles((current) =>
+      sortSubtitles(
+        splitLinkedSubtitlesAtVideoCut(
+          current,
+          clipId,
+          rightClipId,
+          splitTime,
+        ),
+      ),
+    );
+  }, []);
+
+  const syncLinkedSubtitlesToVideoWindows = useCallback((
+    baseSubtitles: Subtitle[],
+    windows: { clipId: string; timelineStart: number; timelineEnd: number }[],
+  ) => {
+    if (windows.length === 0) return;
+
+    const affectedIds = new Set(windows.map((window) => window.clipId));
+    let replacements = baseSubtitles.filter(
+      (subtitle) =>
+        !!subtitle.linkedVideoClipId &&
+        affectedIds.has(subtitle.linkedVideoClipId),
+    );
+
+    for (const window of windows) {
+      replacements = trimLinkedSubtitlesToVideoWindow(
+        replacements,
+        window.clipId,
+        window.timelineStart,
+        window.timelineEnd,
+      );
+    }
+
+    setSubtitles((current) => {
+      const next = sortSubtitles([
+        ...current.filter(
+          (subtitle) =>
+            !subtitle.linkedVideoClipId ||
+            !affectedIds.has(subtitle.linkedVideoClipId),
+        ),
+        ...replacements,
+      ]);
+
+      return sameSubtitleList(current, next) ? current : next;
+    });
+  }, []);
+
+  const deleteLinkedSubtitlesForVideoClips = useCallback((
+    clipIds: Iterable<string>,
+  ) => {
+    const removedIds = new Set(clipIds);
+    if (removedIds.size === 0) return;
+
+    setSubtitles((current) =>
+      sortSubtitles(
+        removeLinkedSubtitlesForVideoClipsPure(current, removedIds),
+      ),
+    );
+  }, []);
+
   const updateSubtitleStyle = (id: string, style: SubtitleStyle) => {
     setSubtitles((current) =>
       current.map((subtitle) =>
@@ -682,5 +784,8 @@ export function useSubtitleEditor(videoDuration: number) {
     replaceWithGeneratedSubtitles,
     shiftLinkedSubtitlesByVideoClipDeltas,
     bindPendingGeneratedSubtitlesToVideoClips,
+    splitLinkedSubtitlesForVideoClip,
+    syncLinkedSubtitlesToVideoWindows,
+    deleteLinkedSubtitlesForVideoClips,
   };
 }

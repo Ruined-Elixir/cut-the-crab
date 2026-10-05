@@ -9,6 +9,11 @@ import {
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
+import {
+  captureTimelineDragScroll,
+  timelineDragDeltaSeconds,
+} from "./timelineDrag";
+
 export type SubtitleSelectionMode = "single" | "toggle" | "range";
 
 type SubtitleTrackProps = {
@@ -315,6 +320,7 @@ function SubtitleTrack({
     );
 
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = subtitle.startTime;
     const subtitleDuration = subtitle.endTime - subtitle.startTime;
     const trackWidth = trackElement.getBoundingClientRect().width;
@@ -322,7 +328,13 @@ function SubtitleTrack({
     let latestStart = originalStart;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / trackWidth) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        trackWidth,
+        duration,
+        dragScroll,
+      );
 
       let newStart = originalStart + deltaTime;
 
@@ -441,6 +453,7 @@ function SubtitleTrack({
     );
 
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = subtitle.startTime;
     const originalEnd = subtitle.endTime;
     const trackWidth = trackElement.getBoundingClientRect().width;
@@ -457,7 +470,13 @@ function SubtitleTrack({
       .sort((a, b) => a.startTime - b.startTime)[0];
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime = ((moveEvent.clientX - startX) / trackWidth) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        trackWidth,
+        duration,
+        dragScroll,
+      );
 
       if (edge === "left") {
         let newStart = originalStart + deltaTime;

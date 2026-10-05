@@ -20,6 +20,11 @@ import type { CompoundTrackRegion } from "../../utils/compoundClips";
 
 import TimelineTrackLabel from "./TimelineTrackLabel";
 
+import {
+  captureTimelineDragScroll,
+  timelineDragDeltaSeconds,
+} from "./timelineDrag";
+
 type WaveformTrackProps = {
   duration: number;
   track: TimelineTrack;
@@ -371,14 +376,20 @@ function WaveformTrack({
     if (!trackElement || onMoveStart?.(clip.id) === false) return;
     setDraggingClipId(clip.id);
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = clip.timelineStart;
     const clipDuration = clip.timelineEnd - clip.timelineStart;
     const width = trackElement.getBoundingClientRect().width;
     let latestStart = originalStart;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
       latestStart = Math.max(0, originalStart + deltaTime);
       onMove?.(clip.id, latestStart);
 
@@ -469,12 +480,18 @@ function WaveformTrack({
 
     setDraggingCompoundId(region.compoundId);
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = region.start;
     const width = trackElement.getBoundingClientRect().width;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
       onCompoundMove?.(
         region.compoundId,
         Math.max(0, originalStart + deltaTime),
@@ -505,13 +522,19 @@ function WaveformTrack({
     if (!trackElement || duration <= 0) return;
     onSelect?.(clip.id, "single");
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(trackElement);
     const originalStart = clip.timelineStart;
     const originalEnd = clip.timelineEnd;
     const width = trackElement.getBoundingClientRect().width;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaTime =
-        ((moveEvent.clientX - startX) / Math.max(1, width)) * duration;
+      const deltaTime = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        width,
+        duration,
+        dragScroll,
+      );
       if (edge === "left") {
         onResize(
           clip.id,
@@ -572,10 +595,16 @@ function WaveformTrack({
       ),
     );
     const startX = event.clientX;
+    const dragScroll = captureTimelineDragScroll(clipElement);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaSeconds =
-        ((moveEvent.clientX - startX) / Math.max(1, rect.width)) * clipDuration;
+      const deltaSeconds = timelineDragDeltaSeconds(
+        moveEvent.clientX,
+        startX,
+        rect.width,
+        clipDuration,
+        dragScroll,
+      );
       const nextDuration = Math.max(
         0,
         Math.min(

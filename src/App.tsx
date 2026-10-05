@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -138,6 +138,10 @@ import {
   effectiveVideoLayer,
   normalizedProgramLayersForVideoOrder,
 } from "./utils/videoLayers";
+import {
+  mergeRegeneratedLinkedSubtitles,
+  preferredLinkedSubtitleTrack,
+} from "./utils/subtitleRegeneration";
 
 import "./App.css";
 
@@ -711,6 +715,9 @@ function App() {
     replaceWithGeneratedSubtitles,
     shiftLinkedSubtitlesByVideoClipDeltas,
     bindPendingGeneratedSubtitlesToVideoClips,
+    splitLinkedSubtitlesForVideoClip,
+    syncLinkedSubtitlesToVideoWindows,
+    deleteLinkedSubtitlesForVideoClips,
   } = useSubtitleEditor(videoDuration);
 
   useEffect(() => {
@@ -1554,8 +1561,54 @@ function App() {
     compoundId: string;
     state: CompoundTimelineState;
   } | null>(null);
+  const videoResizeSubtitleOriginRef = useRef<{
+    subtitles: Subtitle[];
+    clipIds: Set<string>;
+  } | null>(null);
+  const lastVideoResizeSubtitleSyncKeyRef = useRef<string | null>(null);
+  const latestVideoClipsRef = useRef(videoClips);
+  latestVideoClipsRef.current = videoClips;
 
-  useLayoutEffect(() => {
+  const syncActiveVideoResizeSubtitles = useCallback(
+    (clips: VideoTimelineClip[]) => {
+      const resizeOrigin = videoResizeSubtitleOriginRef.current;
+      if (!resizeOrigin) return;
+
+      const windows = clips
+        .filter((clip) => resizeOrigin.clipIds.has(clip.id))
+        .map((clip) => ({
+          clipId: clip.id,
+          timelineStart: clip.timelineStart,
+          timelineEnd: clip.timelineEnd,
+        }))
+        .sort((a, b) => a.clipId.localeCompare(b.clipId));
+
+      if (windows.length === 0) return;
+
+      const syncKey = windows
+        .map(
+          (window) =>
+            `${window.clipId}:${window.timelineStart.toFixed(6)}:${window.timelineEnd.toFixed(6)}`,
+        )
+        .join("|");
+
+      if (lastVideoResizeSubtitleSyncKeyRef.current === syncKey) return;
+      lastVideoResizeSubtitleSyncKeyRef.current = syncKey;
+
+      syncLinkedSubtitlesToVideoWindows(resizeOrigin.subtitles, windows);
+    },
+    [syncLinkedSubtitlesToVideoWindows],
+  );
+
+  // Subtitle trimming/restoration does not need to block React's layout phase.
+  // Keeping this as a passive, idempotent sync prevents rapid edge-drag updates
+  // (including timeline edge auto-scroll) from nesting state updates until React
+  // hits the maximum-update-depth guard.
+  useEffect(() => {
+    syncActiveVideoResizeSubtitles(videoClips);
+  }, [syncActiveVideoResizeSubtitles, videoClips]);
+
+  useEffect(() => {
     const previous = previousVideoClipMoveStateRef.current;
 
     if (videoMoveSubtitleSyncActiveRef.current) {
@@ -1595,20 +1648,11 @@ function App() {
         { timelineStart: clip.timelineStart, sourceIn: clip.sourceIn },
       ]),
     );
-  }, [videoClips]);
-
-  useEffect(() => {
-    const hasPendingGeneratedLinks = subtitles.some(
-      (subtitle) =>
-        !subtitle.linkedVideoClipId && !!subtitle.linkedVideoSourcePath,
-    );
-
-    if (!hasPendingGeneratedLinks) return;
 
     bindPendingGeneratedSubtitlesToVideoClips(
       videoClips.filter((clip) => clip.freezeFrameSourceTime === undefined),
     );
-  }, [subtitles, videoClips]);
+  }, [videoClips]);
 
   const applyCompoundTimelineState = (next: CompoundTimelineState) => {
     replaceVideoClips(next.videoClips);
@@ -1789,7 +1833,16 @@ function App() {
         : null;
     const group = candidateGroup?.anchorVideoId === id ? candidateGroup : null;
     if (group && !compoundGroupIsEditable(group)) return false;
+    if (!clip) return false;
+
     beginHistoryTransaction();
+
+    videoResizeSubtitleOriginRef.current = {
+      subtitles: subtitles.map((subtitle) => ({ ...subtitle })),
+      clipIds: new Set(group ? group.videoIds : [id]),
+    };
+    lastVideoResizeSubtitleSyncKeyRef.current = null;
+
     if (group) {
       compoundResizeOriginRef.current = {
         compoundId: group.id,
@@ -1822,7 +1875,13 @@ function App() {
   };
 
   const handleCompoundAwareResizeEnd = () => {
+    // Apply the final clip window once more from a live ref before closing the
+    // history transaction. The mouseup handler was installed at gesture start,
+    // so its render closure can otherwise be older than the final resize frame.
+    syncActiveVideoResizeSubtitles(latestVideoClipsRef.current);
     compoundResizeOriginRef.current = null;
+    videoResizeSubtitleOriginRef.current = null;
+    lastVideoResizeSubtitleSyncKeyRef.current = null;
     window.requestAnimationFrame(() => endHistoryTransaction());
   };
 
@@ -1874,8 +1933,15 @@ function App() {
       return false;
     }
 
-    markNextChangeImmediate();
-    splitVideoClip(selectedVideoClipId, currentTimeRef.current);
+    const rightClipId = crypto.randomUUID();
+    beginHistoryTransaction();
+    splitLinkedSubtitlesForVideoClip(
+      selectedVideoClipId,
+      rightClipId,
+      currentTimeRef.current,
+    );
+    splitVideoClip(selectedVideoClipId, currentTimeRef.current, rightClipId);
+    window.requestAnimationFrame(() => endHistoryTransaction());
 
     return true;
   };
@@ -1883,16 +1949,25 @@ function App() {
   const deleteSelectedVideoClipWithHistory = () => {
     if (selectedCollapsedCompound) {
       if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
-      markNextChangeImmediate();
-      applyCompoundTimelineState(
-        deleteCompoundMembers(
-          currentCompoundTimelineState(),
-          selectedCollapsedCompound.id,
-        ),
+
+      const videoIds = selectedCollapsedCompound.videoIds;
+      beginHistoryTransaction();
+      const next = deleteCompoundMembers(
+        currentCompoundTimelineState(),
+        selectedCollapsedCompound.id,
       );
+      applyCompoundTimelineState({
+        ...next,
+        subtitles: next.subtitles.filter(
+          (subtitle) =>
+            !subtitle.linkedVideoClipId ||
+            !videoIds.includes(subtitle.linkedVideoClipId),
+        ),
+      });
       clearVideoClipSelection();
       clearAudioClipSelection();
       clearSubtitleSelection();
+      window.requestAnimationFrame(() => endHistoryTransaction());
       return true;
     }
 
@@ -1900,9 +1975,11 @@ function App() {
       return false;
     }
 
-    markNextChangeImmediate();
+    beginHistoryTransaction();
     clearSubtitleSelection();
+    deleteLinkedSubtitlesForVideoClips(selectedVideoClipIds);
     deleteVideoClips(selectedVideoClipIds);
+    window.requestAnimationFrame(() => endHistoryTransaction());
 
     return true;
   };
@@ -1964,34 +2041,11 @@ function App() {
   };
 
   const cutSelectedVideoClipWithHistory = () => {
-    if (selectedCollapsedCompound) {
-      if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
-      if (!copySelectedVideoClip()) return false;
-      markNextChangeImmediate();
-      applyCompoundTimelineState(
-        deleteCompoundMembers(
-          currentCompoundTimelineState(),
-          selectedCollapsedCompound.id,
-        ),
-      );
-      clearVideoClipSelection();
-      clearAudioClipSelection();
-      clearSubtitleSelection();
-      return true;
-    }
-
-    if (!selectedVideoClipsAreEditable) {
-      return false;
-    }
-
     if (!copySelectedVideoClip()) {
       return false;
     }
 
-    markNextChangeImmediate();
-    clearSubtitleSelection();
-    deleteVideoClips(selectedVideoClipIds);
-    return true;
+    return deleteSelectedVideoClipWithHistory();
   };
 
   const handleTimelinePasteTargetChange = (
@@ -2500,7 +2554,12 @@ function App() {
 
       if (!window.confirm(message)) return;
 
-      markNextChangeImmediate();
+      const removedVideoIds = videoClips
+        .filter((clip) => clip.trackId === trackId)
+        .map((clip) => clip.id);
+
+      beginHistoryTransaction();
+      deleteLinkedSubtitlesForVideoClips(removedVideoIds);
       deleteVideoTrack(trackId);
       setAdjustmentLayers((current) =>
         current.filter((layer) => layer.trackId !== trackId),
@@ -2535,6 +2594,7 @@ function App() {
       ) {
         timelinePasteTargetRef.current = null;
       }
+      window.requestAnimationFrame(() => endHistoryTransaction());
       return;
     }
 
@@ -3566,6 +3626,65 @@ function App() {
     replaceSubtitles([...subtitles, ...mappedSubtitles]);
   };
 
+  const restoreMissingSubtitlesForVideoClip = async (
+    clip: VideoTimelineClip,
+  ) => {
+    if (isGenerating || clip.freezeFrameSourceTime !== undefined) return;
+
+    const language =
+      projectMetadata?.languages.length === 1
+        ? projectMetadata.languages[0]
+        : "mixed";
+    const generatedSegments = await generateSubtitles(clip.sourcePath, {
+      ...transcriptionOptionsForLanguage(language),
+      commitResult: false,
+    });
+
+    if (!generatedSegments) return;
+
+    const latest = latestSaveStateRef.current;
+    const currentClip = latest.videoClips.find((item) => item.id === clip.id);
+    if (!currentClip || currentClip.freezeFrameSourceTime !== undefined) return;
+
+    const mappedSegments = generatedSegments.flatMap((segment) => {
+      const sourceStart = Math.max(segment.startTime, currentClip.sourceIn);
+      const sourceEnd = Math.min(segment.endTime, currentClip.sourceOut);
+      if (sourceEnd <= sourceStart) return [];
+
+      const mappedStart = sourceTimeToTimelineTime(currentClip, sourceStart);
+      const mappedEnd = sourceTimeToTimelineTime(currentClip, sourceEnd);
+      return [
+        {
+          startTime: Math.min(mappedStart, mappedEnd),
+          endTime: Math.max(mappedStart, mappedEnd),
+          text: segment.text,
+          linkedVideoClipId: currentClip.id,
+          linkedVideoSourcePath: currentClip.sourcePath,
+        },
+      ];
+    });
+
+    if (mappedSegments.length === 0) return;
+
+    const currentSubtitles = latest.subtitles;
+    const targetTrackId = preferredLinkedSubtitleTrack(
+      currentSubtitles,
+      currentClip.id,
+    ) as TimelineTrackId;
+    const merged = mergeRegeneratedLinkedSubtitles(
+      currentSubtitles,
+      currentClip,
+      mappedSegments,
+      targetTrackId,
+    );
+
+    if (JSON.stringify(merged) === JSON.stringify(currentSubtitles)) return;
+
+    markNextChangeImmediate();
+    replaceSubtitles(merged);
+    setActiveSubtitleTrackId(targetTrackId);
+  };
+
   // ==========================================================================
   // Seek
   // ==========================================================================
@@ -4015,9 +4134,7 @@ function App() {
         : undefined,
     );
     replaceAudioClips(next.audioClips);
-    if (next.affectedCompoundIds.length > 0) {
-      replaceSubtitles(next.subtitles);
-    }
+    replaceSubtitles(next.subtitles);
     setMediaAssets(next.mediaAssets);
 
     const remainingIssues = missingMediaIssues.filter(
@@ -5741,6 +5858,7 @@ function App() {
         onAudioVolumeChange={handleAudioVolumeChange}
         onAudioMuteChange={handleAudioMuteChange}
         onCopyVideoClip={copySelectedVideoClip}
+        onRegenerateMissingSubtitles={restoreMissingSubtitlesForVideoClip}
         onAudioClipSelect={handleAudioClipSelect}
         onAudioClipMoveStart={handleAudioClipMoveStart}
         onAudioClipMoveEnd={handleAudioClipMoveEnd}

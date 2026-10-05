@@ -139,6 +139,7 @@ type TimelineProps = {
     newTimelineStart: number,
   ) => void;
   onCopyVideoClip?: () => void;
+  onRegenerateMissingSubtitles?: (clip: VideoTimelineClip) => void | Promise<void>;
 
   onAudioClipSelect?: (
     id: string,
@@ -291,6 +292,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     onInsertFreezeFrame,
     onVideoClipMoveToTrack,
     onCopyVideoClip,
+    onRegenerateMissingSubtitles,
     onAudioClipSelect,
     onAudioClipMoveStart,
     onAudioClipMoveEnd,
@@ -348,6 +350,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   } | null>(null);
   const suppressRangeClickRef = useRef(false);
   const suppressSelectionRevealWhileDraggingRef = useRef(false);
+  const timelinePointerEditCleanupRef = useRef<(() => void) | null>(null);
   const previousZoomRef = useRef(zoom);
   const pendingFrameTargetRef = useRef<TimelineRevealTarget | null>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
@@ -771,7 +774,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
 
     const maxLeft = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
     nextLeft = Math.max(0, Math.min(maxLeft, nextLeft));
-    if (Math.abs(nextLeft - scroll.scrollLeft) > 1) {
+    if (
+      !suppressSelectionRevealWhileDraggingRef.current &&
+      Math.abs(nextLeft - scroll.scrollLeft) > 1
+    ) {
       scroll.scrollTo({ left: nextLeft, behavior });
     }
 
@@ -854,6 +860,22 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   const endVideoDragWithoutReveal = () => {
     suppressSelectionRevealWhileDraggingRef.current = false;
     onVideoClipMoveEnd?.();
+  };
+
+  const startVideoResizeWithoutReveal = (id: string) => {
+    suppressSelectionRevealWhileDraggingRef.current = true;
+    const result = onVideoClipResizeStart?.(id);
+
+    if (result === false) {
+      suppressSelectionRevealWhileDraggingRef.current = false;
+    }
+
+    return result;
+  };
+
+  const endVideoResizeWithoutReveal = () => {
+    suppressSelectionRevealWhileDraggingRef.current = false;
+    onVideoClipResizeEnd?.();
   };
 
   const startAudioDragWithoutReveal = (id: string) => {
@@ -1125,6 +1147,116 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const beginTimelinePointerEdit = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) return;
+
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+
+    timelinePointerEditCleanupRef.current?.();
+    suppressSelectionRevealWhileDraggingRef.current = true;
+
+    const target = event.target as HTMLElement;
+    const autoScrollEnabled = !target.closest(
+      ".audio-volume-handle, .timeline-user-marker, input, select, textarea",
+    );
+    const startClientX = event.clientX;
+    let lastClientX = event.clientX;
+    let lastClientY = event.clientY;
+    let moved = false;
+    let frameId: number | null = null;
+    let disposed = false;
+
+    const scheduleAutoScroll = () => {
+      if (disposed || frameId !== null || !moved || !autoScrollEnabled) return;
+      frameId = window.requestAnimationFrame(runAutoScroll);
+    };
+
+    const runAutoScroll = () => {
+      frameId = null;
+      if (disposed || !moved) return;
+
+      const rect = scroll.getBoundingClientRect();
+      const edgeSize = Math.min(48, Math.max(32, rect.width * 0.055));
+      const maxStep = 18;
+      let step = 0;
+
+      if (lastClientX <= rect.left + edgeSize) {
+        const strength = Math.max(
+          0,
+          Math.min(1, (rect.left + edgeSize - lastClientX) / edgeSize),
+        );
+        step = -Math.max(2, maxStep * strength);
+      } else if (lastClientX >= rect.right - edgeSize) {
+        const strength = Math.max(
+          0,
+          Math.min(1, (lastClientX - (rect.right - edgeSize)) / edgeSize),
+        );
+        step = Math.max(2, maxStep * strength);
+      }
+
+      if (step !== 0) {
+        const maxLeft = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+        const nextLeft = Math.max(0, Math.min(maxLeft, scroll.scrollLeft + step));
+        if (Math.abs(nextLeft - scroll.scrollLeft) > 0.25) {
+          scroll.scrollLeft = nextLeft;
+          // Keep the active drag/trim advancing even when the pointer is held
+          // still against the viewport edge. Track drag handlers include the
+          // scroll delta in their time calculation, so this synthetic move
+          // turns the newly revealed space into real object movement.
+          window.dispatchEvent(
+            new MouseEvent("mousemove", {
+              clientX: lastClientX,
+              clientY: lastClientY,
+              buttons: 1,
+            }),
+          );
+        }
+        scheduleAutoScroll();
+      }
+    };
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if ((moveEvent.buttons & 1) === 0) {
+        cleanup();
+        return;
+      }
+
+      lastClientX = moveEvent.clientX;
+      lastClientY = moveEvent.clientY;
+      if (!moved && Math.abs(lastClientX - startClientX) >= 4) moved = true;
+      scheduleAutoScroll();
+    };
+
+    const cleanup = () => {
+      if (disposed) return;
+      disposed = true;
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      frameId = null;
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", cleanup);
+      window.removeEventListener("blur", cleanup);
+      suppressSelectionRevealWhileDraggingRef.current = false;
+      if (timelinePointerEditCleanupRef.current === cleanup) {
+        timelinePointerEditCleanupRef.current = null;
+      }
+    };
+
+    timelinePointerEditCleanupRef.current = cleanup;
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", cleanup);
+    window.addEventListener("blur", cleanup);
+  };
+
+  const handleTimelineMouseDownCapture = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    beginTimelinePointerEdit(event);
+    handleRangeMouseDownCapture(event);
   };
 
   const handleRangeMouseDownCapture = (
@@ -1428,6 +1560,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   };
 
   useEffect(() => {
+    return () => timelinePointerEditCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (skimmerFrameRef.current !== null) {
         window.cancelAnimationFrame(skimmerFrameRef.current);
@@ -1489,9 +1625,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             onMoveEnd={endVideoDragWithoutReveal}
             onMove={onVideoClipMove}
             onMoveToTrack={onVideoClipMoveToTrack}
-            onResizeStart={onVideoClipResizeStart}
+            onResizeStart={startVideoResizeWithoutReveal}
             onResize={onVideoClipResize}
-            onResizeEnd={onVideoClipResizeEnd}
+            onResizeEnd={endVideoResizeWithoutReveal}
             onToggleLock={onToggleTrackLock}
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
@@ -1508,6 +1644,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
                 trackId: clip.trackId,
               })
             }
+            onRegenerateMissingSubtitles={onRegenerateMissingSubtitles}
             onOpenCompound={onOpenCompound}
             expandedCompoundId={expandedCompoundId}
           />
@@ -2188,7 +2325,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             style={{
               width: `${timelineTrackWidthPx}px`,
             }}
-            onMouseDownCapture={handleRangeMouseDownCapture}
+            onMouseDownCapture={handleTimelineMouseDownCapture}
             onClickCapture={handleRangeClickCapture}
           >
             <TimelineRuler
