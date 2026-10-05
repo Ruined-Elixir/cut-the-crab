@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { listen } from "@tauri-apps/api/event";
 
@@ -27,6 +27,9 @@ export type GenerateSubtitlesOptions = {
 };
 
 export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
+  const onGeneratedRef = useRef(onGenerated);
+  onGeneratedRef.current = onGenerated;
+
   const [isGenerating, setIsGenerating] = useState(false);
 
   const [generationStatus, setGenerationStatus] = useState("");
@@ -76,7 +79,7 @@ export function useTranscription({ onGenerated }: UseTranscriptionOptions) {
       const result = await transcribeVideo(videoPath, engine, model);
 
       if (commitResult) {
-        onGenerated(result.segments, videoPath);
+        onGeneratedRef.current(result.segments, videoPath);
       }
 
       setGenerationStatus("Finished");
