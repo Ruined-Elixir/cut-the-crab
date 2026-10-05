@@ -37,11 +37,21 @@ import {
   sliceVideoTransformKeyframes,
   toggleVideoTransformKeyframeAtTime,
 } from "../utils/videoTransformKeyframes";
+import { TIMELINE_FRAME_DURATION, snapTimelineTimeToFrame } from "../utils/timelineFrames";
 
 const MIN_VIDEO_CLIP_DURATION = 0.1;
 const DEFAULT_VIDEO_TRACK_ID: TimelineTrackId = "video-1";
 
 const VIDEO_TRACK_ID_PATTERN = /^video-(\d+)$/;
+
+function quantizeVideoClipTimeline(clip: VideoTimelineClip): VideoTimelineClip {
+  const timelineStart = Math.max(0, snapTimelineTimeToFrame(clip.timelineStart));
+  const timelineEnd = Math.max(
+    timelineStart + TIMELINE_FRAME_DURATION,
+    snapTimelineTimeToFrame(clip.timelineEnd),
+  );
+  return { ...clip, timelineStart, timelineEnd };
+}
 
 type UseVideoTimelineOptions = {
   sourcePath: string | null;
@@ -211,7 +221,17 @@ export function useVideoTimeline({
   sourceDuration,
   rippleMode = false,
 }: UseVideoTimelineOptions) {
-  const [videoClips, setVideoClips] = useState<VideoTimelineClip[]>([]);
+  const [videoClips, setVideoClipsState] = useState<VideoTimelineClip[]>([]);
+  const setVideoClips = (
+    update:
+      | VideoTimelineClip[]
+      | ((current: VideoTimelineClip[]) => VideoTimelineClip[]),
+  ) => {
+    setVideoClipsState((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      return next.map(quantizeVideoClipTimeline);
+    });
+  };
 
   const [selectedVideoClipId, setSelectedVideoClipId] = useState<string | null>(
     null,
@@ -433,6 +453,7 @@ export function useVideoTimeline({
   };
 
   const moveVideoClip = (id: string, requestedTimelineStart: number) => {
+    requestedTimelineStart = snapTimelineTimeToFrame(requestedTimelineStart);
     setVideoClips((current) => {
       const groupOrigin = groupMoveOriginRef.current;
 
@@ -531,6 +552,9 @@ export function useVideoTimeline({
     requestedTimelineStart?: number,
   ) => {
     const normalizedTrackId = normalizeVideoTrackId(targetTrackId);
+    if (requestedTimelineStart !== undefined) {
+      requestedTimelineStart = snapTimelineTimeToFrame(requestedTimelineStart);
+    }
 
     setVideoClips((current) => {
       const groupOrigin = groupMoveOriginRef.current;
@@ -592,6 +616,8 @@ export function useVideoTimeline({
     newTimelineStart: number,
     newTimelineEnd: number,
   ) => {
+    newTimelineStart = snapTimelineTimeToFrame(newTimelineStart);
+    newTimelineEnd = snapTimelineTimeToFrame(newTimelineEnd);
     setVideoClips((current) => {
       const target = current.find((clip) => clip.id === id);
 
@@ -735,6 +761,7 @@ export function useVideoTimeline({
   };
 
   const splitVideoClip = (id: string, splitTime: number) => {
+    splitTime = snapTimelineTimeToFrame(splitTime);
     setVideoClips((current) => {
       const target = current.find((clip) => clip.id === id);
 

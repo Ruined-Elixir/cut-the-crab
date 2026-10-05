@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { usePlaybackClockTime } from "../../utils/playbackClock";
+
 import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 
 import SubtitleInspector from "./SubtitleInspector";
@@ -14,7 +16,6 @@ type SubtitlePanelProps = {
   selectedSubtitleId: string | null;
   selectedSubtitleIds: string[];
   selectedSubtitleCount: number;
-  activeSubtitleId: string | null;
 
   search: string;
   onSearchChange: (value: string) => void;
@@ -44,7 +45,6 @@ function SubtitlePanel({
   selectedSubtitleId,
   selectedSubtitleIds,
   selectedSubtitleCount,
-  activeSubtitleId,
   search,
   onSearchChange,
   onSelect,
@@ -56,6 +56,15 @@ function SubtitlePanel({
   onReveal,
 }: SubtitlePanelProps) {
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
+  const currentTime = usePlaybackClockTime();
+  const activeSubtitles = subtitles.filter(
+    (subtitle) => currentTime >= subtitle.startTime && currentTime < subtitle.endTime,
+  );
+  const activeSubtitleId =
+    (selectedSubtitle && activeSubtitles.some((subtitle) => subtitle.id === selectedSubtitle.id)
+      ? selectedSubtitle.id
+      : activeSubtitles[0]?.id) ?? null;
+
 
   return (
     <aside

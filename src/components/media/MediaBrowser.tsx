@@ -73,16 +73,48 @@ function MediaBrowser({
     clientX: number,
     clientY: number,
   ) => {
+    const trackSelector =
+      asset.kind === "audio"
+        ? ".waveform-track[data-audio-track-id]"
+        : ".video-track[data-video-track-id], .waveform-track[data-audio-track-id]";
     const elements = document.elementsFromPoint(clientX, clientY);
-    const target = elements.find((element) => {
+    let target = elements.find((element) => {
       if (!(element instanceof HTMLElement)) return false;
-      if (asset.kind === "audio") {
-        return element.matches(".waveform-track[data-audio-track-id]");
-      }
-      return element.matches(
-        ".video-track[data-video-track-id], .waveform-track[data-audio-track-id]",
-      );
+      return element.matches(trackSelector);
     });
+
+    let forceTimelineStart = false;
+
+    // The fixed track-label column sits immediately to the left of 00:00 and
+    // is outside the horizontally scrolling track elements. Treat that area
+    // as the clamped start of the corresponding row while the timeline is at
+    // its beginning, so media released slightly before 00:00 still lands at
+    // exactly 00:00 instead of being rejected.
+    if (!(target instanceof HTMLElement)) {
+      const timelineBody = document.querySelector<HTMLElement>(".timeline-body");
+      const timelineScroll =
+        timelineBody?.querySelector<HTMLElement>(".timeline-scroll") ?? null;
+
+      if (timelineBody && timelineScroll && timelineScroll.scrollLeft <= 1) {
+        const bodyRect = timelineBody.getBoundingClientRect();
+        const scrollRect = timelineScroll.getBoundingClientRect();
+        const isBeforeZeroColumn =
+          clientX >= bodyRect.left &&
+          clientX < scrollRect.left &&
+          clientY >= bodyRect.top &&
+          clientY <= bodyRect.bottom;
+
+        if (isBeforeZeroColumn) {
+          target = Array.from(
+            document.querySelectorAll<HTMLElement>(trackSelector),
+          ).find((element) => {
+            const rect = element.getBoundingClientRect();
+            return clientY >= rect.top && clientY <= rect.bottom;
+          });
+          forceTimelineStart = target instanceof HTMLElement;
+        }
+      }
+    }
 
     if (!(target instanceof HTMLElement)) return null;
     if (
@@ -95,6 +127,10 @@ function MediaBrowser({
     if (!trackId || timelineDuration <= 0) return null;
 
     const rect = target.getBoundingClientRect();
+    if (forceTimelineStart) {
+      return { element: target, trackId, timelineTime: 0 };
+    }
+
     const ratio = Math.max(
       0,
       Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),

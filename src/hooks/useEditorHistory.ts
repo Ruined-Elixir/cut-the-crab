@@ -86,14 +86,20 @@ export function useEditorHistory({
   onApply,
 }: UseEditorHistoryOptions) {
   const serializedSnapshot = useMemo(() => snapshotKey(snapshot), [snapshot]);
+  // Clone only when editorial state actually changes. Playback/UI renders can
+  // call this hook frequently, but a stable memoized snapshot must be cheap.
+  const clonedSnapshot = useMemo(
+    () => cloneSnapshot(snapshot),
+    [serializedSnapshot],
+  );
 
-  const latestSnapshotRef = useRef(cloneSnapshot(snapshot));
+  const latestSnapshotRef = useRef(clonedSnapshot);
   const latestKeyRef = useRef(serializedSnapshot);
 
-  latestSnapshotRef.current = cloneSnapshot(snapshot);
+  latestSnapshotRef.current = clonedSnapshot;
   latestKeyRef.current = serializedSnapshot;
 
-  const baselineRef = useRef(cloneSnapshot(snapshot));
+  const baselineRef = useRef(clonedSnapshot);
   const baselineKeyRef = useRef(serializedSnapshot);
 
   const pendingStartRef = useRef<EditorHistorySnapshot | null>(null);
@@ -288,7 +294,7 @@ export function useEditorHistory({
 
     if (suppressedKey && serializedSnapshot === suppressedKey) {
       suppressAppliedKeyRef.current = null;
-      baselineRef.current = cloneSnapshot(snapshot);
+      baselineRef.current = cloneSnapshot(clonedSnapshot);
       baselineKeyRef.current = serializedSnapshot;
       syncAvailability();
       return;
@@ -330,7 +336,7 @@ export function useEditorHistory({
     commitPending,
     enabled,
     serializedSnapshot,
-    snapshot,
+    clonedSnapshot,
     syncAvailability,
   ]);
 

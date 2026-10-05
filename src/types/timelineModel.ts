@@ -100,6 +100,8 @@ export type AdjustmentLayerKeyframes = Partial<
 
 export type AdjustmentLayerClip = {
   id: string;
+  /** Optional Program-compositor z-order. When absent, derives from trackId. */
+  layer?: number;
   kind: "adjustment";
   trackId: TimelineTrackId;
   name: string;
@@ -149,6 +151,8 @@ export type VideoTransformKeyframes = Partial<
 
 export type VideoTimelineClip = TimelineClipBase & {
   kind: "video";
+  /** Optional Program-compositor z-order. When absent, derives from trackId. */
+  layer?: number;
   sourceId: string;
   sourcePath: string;
   sourceName: string;

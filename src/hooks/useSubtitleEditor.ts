@@ -92,7 +92,7 @@ function clampStartAgainstTrackCollisions(
   return start;
 }
 
-export function useSubtitleEditor(currentTime: number, videoDuration: number) {
+export function useSubtitleEditor(videoDuration: number) {
   const [subtitles, setSubtitles] = useState<Subtitle[]>(INITIAL_SUBTITLES);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(
     null,
@@ -113,11 +113,6 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     );
   }, [subtitles, subtitleSearch]);
 
-  const activeSubtitleId =
-    subtitles.find(
-      (subtitle) =>
-        currentTime >= subtitle.startTime && currentTime < subtitle.endTime,
-    )?.id ?? null;
 
   type SelectionMode = "single" | "toggle" | "range";
 
@@ -661,7 +656,6 @@ export function useSubtitleEditor(currentTime: number, videoDuration: number) {
     selectedSubtitleId,
     selectedSubtitleIds,
     subtitleSearch,
-    activeSubtitleId,
 
     setSubtitleSearch,
     selectSubtitle,

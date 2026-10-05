@@ -1380,6 +1380,13 @@
   top: calc(var(--video-clip-header-height, 18px) - 9px);
 }
 
+/* Left fade handles are positioned with `left`, while right fade handles are
+   positioned with `right`. The right edge therefore needs the opposite
+   translation so 0.00 s sits exactly on the clip boundary. */
+.clip-fade-handle.video.out {
+  transform: translateX(50%);
+}
+
 /* Audio tabs are vertically positioned inline from the current volume line. */
 .clip-fade-handle.audio {
   pointer-events: auto;

@@ -1,7 +1,7 @@
 [package]
-name = "subtitle-editor"
-version = "0.1.0"
-description = "A Tauri App"
+name = "cut-the-crab"
+version = "1.0.0-rc.2"
+description = "Cut The Crab desktop nonlinear video editor"
 authors = ["you"]
 edition = "2021"
 
@@ -25,5 +25,6 @@ serde_json = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 reqwest = { version = "0.12", features = ["stream"] }
-opencc-rs = "0.6.2"
 
+
+sha2 = "0.10"

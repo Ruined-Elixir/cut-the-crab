@@ -1,5 +1,4 @@
 import {
-  Fragment,
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -12,6 +11,9 @@ import {
 } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
+
+import { usePlaybackClockTime } from "../../utils/playbackClock";
+import { useMediaSupervisor } from "../../hooks/useMediaSupervisor";
 
 import {
   canShowNativeContextMenu,
@@ -86,6 +88,14 @@ import {
   evaluateVideoTransformProperty,
   withEvaluatedVideoTransform,
 } from "../../utils/videoTransformKeyframes";
+import {
+  effectiveAdjustmentLayer,
+  effectiveVideoLayer,
+  programStackRankMap,
+  displayLayerNumber,
+} from "../../utils/videoLayers";
+import { TIMELINE_GAP_BRIDGE_EPSILON } from "../../utils/timelineFrames";
+import { traceCut } from "../../utils/cutTrace";
 
 import "./VideoPlayer.css";
 
@@ -162,7 +172,6 @@ type VideoPlayerProps = {
   proxyPathsBySource?: Record<string, string>;
 
   subtitles: Subtitle[];
-  currentTime: number;
 
   selectedSubtitleId?: string | null;
   interactiveSubtitleIds?: string[];
@@ -200,6 +209,10 @@ type OpacityEditorState = {
 const MAX_NATIVE_VIDEO_PREVIEW_RATE = 2;
 const MAX_PROXY_VIDEO_PREVIEW_RATE = 4;
 const HIGH_SPEED_PREVIEW_MIN_SEEK_INTERVAL_MS = 90;
+const PREWARM_FRAME_FALLBACK_MS = 42;
+const PREWARM_MAX_SOURCE_DRIFT_SECONDS = 0.05;
+const PREBUFFER_LOOKAHEAD_SECONDS = 3;
+const PROXY_PROMOTION_GUARD_SECONDS = 1.5;
 
 function videoPreviewPlaybackRate(clip: VideoTimelineClip, hasProxy: boolean) {
   const maxRate = hasProxy
@@ -357,14 +370,69 @@ function findActiveVideoClip(
   timelineTime: number,
   trackId: VideoTrackId,
 ) {
-  return (
-    videoClips.find(
+  const trackClips = videoClips
+    .filter((clip) => clip.trackId === trackId)
+    .sort((a, b) => a.timelineStart - b.timelineStart);
+  const exact = trackClips.find(
+    (clip) =>
+      timelineTime >= clip.timelineStart && timelineTime < clip.timelineEnd,
+  );
+  if (exact) return exact;
+
+  // Edit operations are quantized to 30 fps, but legacy projects and floating
+  // point retimes can still contain a sub-frame gap. Treat a gap shorter than
+  // one output frame as adjacency and hold the outgoing frame until the next
+  // clip begins instead of exposing the black viewer background.
+  const previous = [...trackClips]
+    .reverse()
+    .find((clip) => clip.timelineEnd <= timelineTime);
+  const next = trackClips.find((clip) => clip.timelineStart > timelineTime);
+  if (
+    previous &&
+    next &&
+    next.timelineStart - previous.timelineEnd <= TIMELINE_GAP_BRIDGE_EPSILON &&
+    timelineTime - previous.timelineEnd <= TIMELINE_GAP_BRIDGE_EPSILON
+  ) {
+    return previous;
+  }
+  return null;
+}
+
+function findUpcomingVideoClips(
+  videoClips: VideoTimelineClip[],
+  timelineTime: number,
+  trackId: VideoTrackId,
+  activeClip: VideoTimelineClip | null,
+  count = 4,
+) {
+  const threshold = activeClip
+    ? activeClip.timelineEnd - TIMELINE_GAP_BRIDGE_EPSILON
+    : timelineTime - 0.001;
+  const candidates = videoClips
+    .filter(
       (clip) =>
         clip.trackId === trackId &&
-        timelineTime >= clip.timelineStart &&
-        timelineTime < clip.timelineEnd,
-    ) ?? null
-  );
+        clip.id !== activeClip?.id &&
+        clip.timelineStart >= threshold,
+    )
+    .sort((a, b) => a.timelineStart - b.timelineStart);
+
+  if (candidates.length === 0) return [];
+
+  // Always keep the immediate next edit mounted, even when it is far away.
+  // Additional clips enter the media graph by time horizon rather than by the
+  // active clip changing. This prevents React from creating a new decoder at
+  // the exact A -> B cut just because the old fixed-size window shifted.
+  const selected = [
+    candidates[0],
+    ...candidates.filter(
+      (clip) =>
+        clip.id !== candidates[0].id &&
+        clip.timelineStart <= timelineTime + PREBUFFER_LOOKAHEAD_SECONDS,
+    ),
+  ];
+
+  return selected.slice(0, Math.max(1, count));
 }
 
 function audioTrackIndex(trackId: string) {
@@ -592,6 +660,7 @@ function adjustedVideoTransitionStyle(
       timelineTime,
       clip.trackId,
       trackSettings,
+      effectiveVideoLayer(clip),
     ),
     timelineTime,
   );
@@ -748,7 +817,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       onApplyVideoCropToTrack,
       proxyPathsBySource = {},
       subtitles,
-      currentTime,
       selectedSubtitleId,
       interactiveSubtitleIds,
       onSubtitleSelect,
@@ -756,18 +824,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     },
     ref,
   ) {
+    const currentTime = usePlaybackClockTime();
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [presentedFrameTimelineTime, setPresentedFrameTimelineTime] =
       useState<number | null>(null);
+    const lastSubtitleClockRenderAtRef = useRef(0);
     const [skimPreviewTime, setSkimPreviewTime] = useState<number | null>(null);
     const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
-    const [videoDimensions, setVideoDimensions] = useState<
-      Record<VideoTrackId, VideoDimensions>
+    const [presentedVideoClipIds, setPresentedVideoClipIds] = useState<
+      Record<VideoTrackId, string | null>
     >({});
-    const videoDimensionsRef = useRef<Record<VideoTrackId, VideoDimensions>>(
-      {},
-    );
+    // Intrinsic media geometry belongs to the clip/media instance, not to the
+    // timeline track. Multiple adjacent clips can be mounted on one V-track
+    // while prebuffering and may have completely different aspect ratios.
+    const [videoDimensions, setVideoDimensions] = useState<
+      Record<string, VideoDimensions>
+    >({});
+    const videoDimensionsRef = useRef<Record<string, VideoDimensions>>({});
     const [shellDimensions, setShellDimensions] = useState<ShellDimensions>({
       width: 0,
       height: 0,
@@ -797,11 +871,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const videoRefsByClipId = useRef<Record<string, HTMLVideoElement | null>>(
       {},
     );
-    const dissolveOutgoingRefs = useRef<
-      Record<VideoTrackId, HTMLVideoElement | null>
-    >({});
-    const dissolveIncomingRefs = useRef<
-      Record<VideoTrackId, HTMLVideoElement | null>
+    // Keep each mounted clip on a stable URL while it is active/presented, but
+    // allow an inactive buffered clip to promote to a newly-finished proxy.
+    // The previous source-wide latch kept the original file for the entire
+    // editor session, so proxies only helped after leaving/reopening a project.
+    const latchedPreviewSourceByClipRef = useRef<
+      Record<string, { sourcePath: string; previewPath: string; isProxy: boolean }>
     >({});
     // Linked audio follows the video clip when that clip swaps V-tracks. Keep
     // the decoded audio element keyed by clip identity for the same reason.
@@ -812,7 +887,22 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const shellRef = useRef<HTMLDivElement | null>(null);
     const opacityEditorRef = useRef<HTMLDivElement | null>(null);
     const highSpeedPreviewSeekAtRef = useRef<Record<string, number>>({});
-
+    const presentedVideoClipIdsRef = useRef<
+      Record<VideoTrackId, string | null>
+    >({});
+    const videoReadyByClipIdRef = useRef<Record<string, boolean>>({});
+    const videoWarmStateByClipIdRef = useRef<
+      Record<string, "warming" | "warmed" | undefined>
+    >({});
+    // True only when a hidden prewarm actually produced a composited video
+    // frame. A painted warm deck can be revealed immediately at a hard cut
+    // without waiting for another frame callback.
+    const videoWarmPaintedByClipIdRef = useRef<Record<string, boolean>>({});
+    const audioOwnerByTrackRef = useRef<Record<string, string | null>>({});
+    const handoffPendingByTrackRef = useRef<Record<string, string | undefined>>({});
+    const handoffTimeoutByTrackRef = useRef<Record<string, number | undefined>>({});
+    const cutHoldClipIdRef = useRef<string | null>(null);
+    const failedMediaIdsRef = useRef<Record<string, string>>({});
     const currentTimeRef = useRef(currentTime);
     const timelineDurationRef = useRef(timelineDuration);
     const sourceDurationRef = useRef(duration);
@@ -823,6 +913,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
     const audioTrackIdsRef = useRef<AudioTrackId[]>([]);
     const displayTimeRef = useRef(currentTime);
+    const skimPreviewTimeRef = useRef<number | null>(null);
 
     /*
      * Timeline skimming is an imperative preview operation. Keep a ref to the
@@ -857,12 +948,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       () => ({
         setSkimPreviewTime: (time: number | null) => {
           if (isPlayingRef.current) {
+            skimPreviewTimeRef.current = null;
             setSkimPreviewTime(null);
             return;
           }
 
           if (time === null || !Number.isFinite(time)) {
+            skimPreviewTimeRef.current = null;
             setSkimPreviewTime(null);
+            displayTimeRef.current = currentTimeRef.current;
 
             // Leaving the timeline should immediately restore the actual
             // paused playhead frame, not leave the last skimmed frame visible.
@@ -877,11 +971,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           const maxDuration = Math.max(0, timelineDurationRef.current || 0);
           const nextTime = Math.max(0, Math.min(maxDuration, time));
 
+          skimPreviewTimeRef.current = nextTime;
+          displayTimeRef.current = nextTime;
           setSkimPreviewTime(nextTime);
 
-          // Seek the media immediately. Subtitles already reacted directly to
-          // skimPreviewTime, but without this explicit seek WebKit could keep
-          // displaying the old paused video frame until another editor action.
+          // Skimming is a paused exact-frame operation. Seek immediately, then
+          // let loadeddata/seeked/canplay mark the active destination clip
+          // ready without requiring requestVideoFrameCallback (which may not
+          // fire for a paused hidden element in WKWebView).
           syncAllMediaToTimelineRef.current(nextTime, false, true);
         },
         getProgramPreviewSize: () => {
@@ -900,7 +997,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           }
 
           const dimensions =
-            videoDimensionsRef.current[clip.trackId as VideoTrackId] ??
+            videoDimensionsRef.current[clip.id] ??
             ({ width: 16, height: 9 } satisfies VideoDimensions);
           const bounds = programBoundsForClip(
             clip,
@@ -977,6 +1074,47 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return result;
     }, [displayTime, videoClips, videoTrackIds]);
 
+    const bufferedClipsByTrack = useMemo(() => {
+      const result: Record<string, VideoTimelineClip[]> = {};
+
+      for (const trackId of videoTrackIds) {
+        const activeClip = activeClipsByTrack[trackId] ?? null;
+        const upcomingClips = findUpcomingVideoClips(
+          videoClips,
+          displayTime,
+          trackId,
+          activeClip,
+          4,
+        );
+        const dissolve = findSameTrackDissolve(videoClips, displayTime, trackId);
+        const presentedClipId = presentedVideoClipIds[trackId] ?? null;
+        const presentedClip = presentedClipId
+          ? (videoClips.find((clip) => clip.id === presentedClipId) ?? null)
+          : null;
+
+        const clips = [
+          presentedClip,
+          activeClip,
+          dissolve?.outgoing ?? null,
+          dissolve?.incoming ?? null,
+          ...upcomingClips,
+        ].filter((clip): clip is VideoTimelineClip => !!clip);
+
+        result[trackId] = clips.filter(
+          (clip, index) =>
+            clips.findIndex((candidate) => candidate.id === clip.id) === index,
+        );
+      }
+
+      return result;
+    }, [
+      activeClipsByTrack,
+      displayTime,
+      presentedVideoClipIds,
+      videoClips,
+      videoTrackIds,
+    ]);
+
     const dissolvesByTrack = useMemo(() => {
       const result: Record<string, SameTrackDissolve | null> = {};
       for (const trackId of videoTrackIds) {
@@ -989,20 +1127,89 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return result;
     }, [displayTime, videoClips, videoTrackIds]);
 
-    const sourceUrlsByTrack = useMemo(() => {
-      const result: Record<string, string | null> = {};
+    const programStackRanks = useMemo(
+      () => programStackRankMap(videoClips, adjustmentLayers),
+      [adjustmentLayers, videoClips],
+    );
+
+    const flatBufferedVideoClips = useMemo(() => {
+      const byId = new Map<string, VideoTimelineClip>();
       for (const trackId of videoTrackIds) {
-        const clip = activeClipsByTrack[trackId];
-        if (!clip?.sourcePath) {
-          result[trackId] = null;
-          continue;
+        for (const clip of bufferedClipsByTrack[trackId] ?? []) {
+          byId.set(clip.id, clip);
         }
-        const previewPath =
-          proxyPathsBySource[clip.sourcePath] ?? clip.sourcePath;
-        result[trackId] = convertFileSrc(previewPath);
       }
-      return result;
-    }, [activeClipsByTrack, proxyPathsBySource, videoTrackIds]);
+      return [...byId.values()].sort(
+        (a, b) =>
+          effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+          a.timelineStart - b.timelineStart ||
+          a.id.localeCompare(b.id),
+      );
+    }, [bufferedClipsByTrack, videoTrackIds]);
+
+    const previewSourceForClip = (clip: VideoTimelineClip) => {
+      const existing = latchedPreviewSourceByClipRef.current[clip.id];
+      const proxyPath = proxyPathsBySource[clip.sourcePath];
+
+      if (!existing || existing.sourcePath !== clip.sourcePath) {
+        const resolved = {
+          sourcePath: clip.sourcePath,
+          previewPath: proxyPath ?? clip.sourcePath,
+          isProxy: Boolean(proxyPath),
+        };
+        latchedPreviewSourceByClipRef.current[clip.id] = resolved;
+        return resolved;
+      }
+
+      if (!proxyPath || existing.previewPath === proxyPath) return existing;
+
+      const activeNow = activeClipsByTrack[clip.trackId]?.id === clip.id;
+      const presentedNow = Object.values(presentedVideoClipIds).includes(clip.id);
+      const handoffPending = Object.values(handoffPendingByTrackRef.current).includes(
+        clip.id,
+      );
+      const secondsUntilStart = clip.timelineStart - displayTime;
+      const existingVideo = videoRefsByClipId.current[clip.id] ?? null;
+      const existingDecoderReady =
+        videoReadyByClipIdRef.current[clip.id] === true &&
+        !!existingVideo &&
+        existingVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        !existingVideo.seeking;
+      const preserveReadyDecoderNearCut =
+        existingDecoderReady &&
+        secondsUntilStart >= 0 &&
+        secondsUntilStart < PROXY_PROMOTION_GUARD_SECONDS;
+
+      // Swapping src is safe while a clip is only a background buffer. Never
+      // tear down a decoder that is visible/in a handoff, and preserve a ready
+      // original if the cut is imminent. If the original is still cold, the
+      // completed proxy is the better recovery path even inside the guard.
+      if (
+        activeNow ||
+        presentedNow ||
+        handoffPending ||
+        preserveReadyDecoderNearCut
+      ) {
+        return existing;
+      }
+
+      const promoted = {
+        sourcePath: clip.sourcePath,
+        previewPath: proxyPath,
+        isProxy: true,
+      };
+      latchedPreviewSourceByClipRef.current[clip.id] = promoted;
+      delete videoReadyByClipIdRef.current[clip.id];
+      delete videoWarmStateByClipIdRef.current[clip.id];
+      delete videoWarmPaintedByClipIdRef.current[clip.id];
+      traceCut("preview-proxy-promote", {
+        clipId: clip.id,
+        sourcePath: clip.sourcePath,
+        proxyPath,
+        secondsUntilStart,
+      });
+      return promoted;
+    };
 
     const audioSourcesByTrack = useMemo(() => {
       const result: Record<string, string | null> = {};
@@ -1203,10 +1410,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         : null;
     };
 
-    const dissolveElementsForTrack = (trackId: VideoTrackId) => ({
-      outgoing: dissolveOutgoingRefs.current[trackId] ?? null,
-      incoming: dissolveIncomingRefs.current[trackId] ?? null,
-    });
 
     const syncHighSpeedVideoPreview = (
       element: HTMLVideoElement,
@@ -1221,6 +1424,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const now = performance.now();
         const lastSeekAt = highSpeedPreviewSeekAtRef.current[syncKey] ?? 0;
         const drift = Math.abs(expectedSourceTime - element.currentTime);
+
         if ((forceSeek || drift > 0.035) && now - lastSeekAt >= 45) {
           try {
             element.currentTime = expectedSourceTime;
@@ -1276,31 +1480,31 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         timelineTime,
         trackId,
       );
-      const elements = dissolveElementsForTrack(trackId);
 
-      if (!dissolve) {
-        elements.outgoing?.pause();
-        elements.incoming?.pause();
-        return false;
-      }
+      if (!dissolve) return false;
 
       const pairs = [
-        { element: elements.outgoing, clip: dissolve.outgoing },
-        { element: elements.incoming, clip: dissolve.incoming },
+        {
+          element: videoRefsByClipId.current[dissolve.outgoing.id] ?? null,
+          clip: dissolve.outgoing,
+          gain: 1 - dissolve.progress,
+        },
+        {
+          element: videoRefsByClipId.current[dissolve.incoming.id] ?? null,
+          clip: dissolve.incoming,
+          gain: dissolve.progress,
+        },
       ];
 
-      for (const { element, clip } of pairs) {
-        if (!element || element.dataset.sourcePath !== clip.sourcePath) {
-          continue;
-        }
+      for (const { element, clip, gain } of pairs) {
+        if (!element || element.dataset.sourcePath !== clip.sourcePath) continue;
 
         const rawSourceTime = timelineTimeToSourceTime(clip, timelineTime);
-        const maxSourceTime = Number.isFinite(element.duration)
-          ? element.duration
-          : (clip.sourceDuration ?? clip.sourceOut);
+        const sourceMin = Math.min(clip.sourceIn, clip.sourceOut);
+        const sourceMax = Math.max(clip.sourceIn, clip.sourceOut);
         const safeSourceTime = Math.max(
-          0,
-          Math.min(maxSourceTime || rawSourceTime, rawSourceTime),
+          sourceMin,
+          Math.min(sourceMax, rawSourceTime),
         );
 
         const requestedRate = videoPlaybackRate(clip);
@@ -1323,6 +1527,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           `${trackId}:dissolve:${clip.id}`,
           forceSeek,
         );
+        configureVideoElementAudio(element, clip, trackId, timelineTime);
+        if (!element.muted) element.volume *= Math.max(0, Math.min(1, gain));
 
         if (shouldPlay) {
           if (element.paused) {
@@ -1335,7 +1541,540 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         }
       }
 
+      activeVideoClipIdRefs.current[trackId] =
+        dissolve.progress >= 0.5 ? dissolve.incoming.id : dissolve.outgoing.id;
+      setVideoVisibility((current) =>
+        current[trackId] ? current : { ...current, [trackId]: true },
+      );
       return true;
+    };
+
+    const linkedAudioTrackForVideoTrack = (
+      videoTrackId: VideoTrackId,
+    ): AudioTrackId | null =>
+      (audioTrackIdsRef.current.find(
+        (audioTrackId) =>
+          trackSettingsRef.current[audioTrackId]?.deleted !== true &&
+          trackSettingsRef.current[audioTrackId]?.linkedTrackId ===
+            videoTrackId,
+      ) as AudioTrackId | undefined) ?? null;
+
+    const configureVideoElementAudio = (
+      video: HTMLVideoElement,
+      clip: VideoTimelineClip,
+      videoTrackId: VideoTrackId,
+      timelineTime: number,
+    ) => {
+      const audioTrackId = linkedAudioTrackForVideoTrack(videoTrackId);
+
+      // Normal forward linked clips use the visible video element's own audio.
+      // That makes picture + sound share one decoder/media clock instead of
+      // trying to synchronize separate <video> and <audio> elements.
+      if (
+        !audioTrackId ||
+        isFreezeFrameClip(clip) ||
+        isReverseVideoClip(clip)
+      ) {
+        video.muted = true;
+        video.volume = 0;
+        if (audioOwnerByTrackRef.current[videoTrackId] === clip.id) {
+          traceCut("audio-owner-change", {
+            trackId: videoTrackId,
+            from: clip.id,
+            to: null,
+            timelineTime,
+          });
+          audioOwnerByTrackRef.current[videoTrackId] = null;
+        }
+        return;
+      }
+
+      video.muted = false;
+
+      const trackMuted = isTrackMuted(
+        trackSettingsRef.current,
+        audioTrackId,
+      );
+      const soloMuted =
+        hasSoloAudioTrack(trackSettingsRef.current) &&
+        trackSettingsRef.current[audioTrackId]?.solo !== true;
+      const clipMuted = clip.audioMuted ?? false;
+
+      const clipDuration = Math.max(
+        0.001,
+        clip.timelineEnd - clip.timelineStart,
+      );
+      const fadeInDuration = Math.max(
+        0,
+        Math.min(clip.audioFadeInDuration ?? 0, clipDuration),
+      );
+      const fadeOutDuration = Math.max(
+        0,
+        Math.min(clip.audioFadeOutDuration ?? 0, clipDuration),
+      );
+      const localTime = Math.max(0, timelineTime - clip.timelineStart);
+      const timeToEnd = Math.max(0, clip.timelineEnd - timelineTime);
+      const fadeInGain =
+        fadeInDuration > 0 ? Math.min(1, localTime / fadeInDuration) : 1;
+      const fadeOutGain =
+        fadeOutDuration > 0 ? Math.min(1, timeToEnd / fadeOutDuration) : 1;
+      const fadeGain = Math.max(0, Math.min(1, fadeInGain, fadeOutGain));
+      const volumePercent = clip.audioVolume ?? 100;
+      const gain =
+        trackMuted || soloMuted || clipMuted
+          ? 0
+          : (Math.max(0, Math.min(100, volumePercent)) / 100) * fadeGain;
+
+      video.volume = Math.max(0, Math.min(1, gain));
+      video.preservesPitch = true;
+
+      const previousOwner = audioOwnerByTrackRef.current[videoTrackId] ?? null;
+      if (previousOwner !== clip.id) {
+        traceCut("audio-owner-change", {
+          trackId: videoTrackId,
+          from: previousOwner,
+          to: clip.id,
+          timelineTime,
+          gain: video.volume,
+        });
+        audioOwnerByTrackRef.current[videoTrackId] = clip.id;
+      }
+    };
+
+    const setPresentedVideoClip = (
+      trackId: VideoTrackId,
+      clipId: string | null,
+    ) => {
+      if (presentedVideoClipIdsRef.current[trackId] === clipId) {
+        return;
+      }
+
+      presentedVideoClipIdsRef.current[trackId] = clipId;
+      setPresentedVideoClipIds((current) =>
+        current[trackId] === clipId
+          ? current
+          : { ...current, [trackId]: clipId },
+      );
+    };
+
+    const primeBufferedVideoClip = (
+      trackId: VideoTrackId,
+      clipId: string,
+    ) => {
+      const video = videoRefsByClipId.current[clipId] ?? null;
+      const clip =
+        videoClipsRef.current.find((candidate) => candidate.id === clipId) ??
+        null;
+
+      if (!video || !clip || video.readyState < HTMLMediaElement.HAVE_METADATA) {
+        return;
+      }
+
+      const activeClip = findActiveVideoClip(
+        videoClipsRef.current,
+        displayTimeRef.current,
+        trackId,
+      );
+      if (activeClip?.id === clipId) return;
+
+      video.pause();
+      video.muted = true;
+      video.volume = 0;
+
+      const targetTime = timelineTimeToSourceTime(
+        clip,
+        Math.max(clip.timelineStart, clip.timelineStart + 0.0001),
+      );
+      const maxSourceTime = Number.isFinite(video.duration)
+        ? video.duration
+        : (clip.sourceDuration ?? targetTime);
+      const safeTargetTime = Math.max(
+        0,
+        Math.min(maxSourceTime || targetTime, targetTime),
+      );
+
+      if (Math.abs(video.currentTime - safeTargetTime) > 0.01) {
+        videoReadyByClipIdRef.current[clipId] = false;
+        delete videoWarmStateByClipIdRef.current[clipId];
+        delete videoWarmPaintedByClipIdRef.current[clipId];
+        try {
+          video.currentTime = safeTargetTime;
+        } catch (error) {
+          console.error(`${trackId} preload seek failed:`, error);
+        }
+      } else if (
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        !video.seeking
+      ) {
+        videoReadyByClipIdRef.current[clipId] = true;
+        warmBufferedVideoClip(trackId, clipId);
+      }
+    };
+
+    const warmBufferedVideoClip = (
+      trackId: VideoTrackId,
+      clipId: string,
+    ) => {
+      const video = videoRefsByClipId.current[clipId] ?? null;
+      const clip =
+        videoClipsRef.current.find((candidate) => candidate.id === clipId) ??
+        null;
+      if (
+        !video ||
+        !clip ||
+        isFreezeFrameClip(clip) ||
+        isReverseVideoClip(clip) ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        video.seeking ||
+        videoWarmStateByClipIdRef.current[clipId]
+      ) {
+        return;
+      }
+
+      const timelineTime = isPlayingRef.current
+        ? currentTimeRef.current
+        : displayTimeRef.current;
+      const activeClip = findActiveVideoClip(
+        videoClipsRef.current,
+        timelineTime,
+        trackId,
+      );
+      if (activeClip?.id === clipId) return;
+
+      const targetTime = timelineTimeToSourceTime(
+        clip,
+        Math.max(clip.timelineStart, clip.timelineStart + 0.0001),
+      );
+      const maxSourceTime = Number.isFinite(video.duration)
+        ? video.duration
+        : (clip.sourceDuration ?? targetTime);
+      const safeTargetTime = Math.max(
+        0,
+        Math.min(maxSourceTime || targetTime, targetTime),
+      );
+
+      // Warm exactly one decoded/composited frame. The old timer-based warm-up
+      // played for 60 ms and then sought back to source-in, which could put the
+      // incoming deck back into SEEKING immediately before the edit point.
+      // requestVideoFrameCallback is safe here because transport never waits on
+      // it; it only tells us that this hidden, *playing* deck has actually
+      // painted a frame and can be revealed instantly later.
+      videoWarmStateByClipIdRef.current[clipId] = "warming";
+      videoWarmPaintedByClipIdRef.current[clipId] = false;
+      video.muted = true;
+      video.volume = 0;
+      video.preservesPitch = true;
+
+      let finished = false;
+      let fallbackTimer: number | null = null;
+
+      const finishWarm = (painted: boolean) => {
+        if (finished) return;
+        finished = true;
+        if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+
+        const currentVideo = videoRefsByClipId.current[clipId] ?? null;
+        if (!currentVideo) {
+          delete videoWarmStateByClipIdRef.current[clipId];
+          delete videoWarmPaintedByClipIdRef.current[clipId];
+          return;
+        }
+
+        const nowTimeline = isPlayingRef.current
+          ? currentTimeRef.current
+          : displayTimeRef.current;
+        const nowActive = findActiveVideoClip(
+          videoClipsRef.current,
+          nowTimeline,
+          trackId,
+        );
+        if (nowActive?.id === clipId) {
+          videoWarmStateByClipIdRef.current[clipId] = "warmed";
+          videoWarmPaintedByClipIdRef.current[clipId] = painted;
+          syncVideoTrackToTimeline(
+            trackId,
+            nowTimeline,
+            isPlayingRef.current,
+            false,
+          );
+          return;
+        }
+
+        currentVideo.pause();
+        const sourceDrift = Math.abs(currentVideo.currentTime - safeTargetTime);
+        if (
+          currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          !currentVideo.seeking &&
+          sourceDrift <= PREWARM_MAX_SOURCE_DRIFT_SECONDS
+        ) {
+          videoReadyByClipIdRef.current[clipId] = true;
+          videoWarmStateByClipIdRef.current[clipId] = "warmed";
+          videoWarmPaintedByClipIdRef.current[clipId] = painted;
+          return;
+        }
+
+        // Only reset when the warm-up genuinely ran too far. This is an
+        // exceptional fallback, not the normal path; seeked/canplay will prime
+        // the deck again afterward.
+        delete videoWarmStateByClipIdRef.current[clipId];
+        delete videoWarmPaintedByClipIdRef.current[clipId];
+        videoReadyByClipIdRef.current[clipId] = false;
+        try {
+          currentVideo.currentTime = safeTargetTime;
+        } catch (error) {
+          console.error(`${trackId} prewarm reset failed:`, error);
+        }
+      };
+
+      type WarmFrameVideo = HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      };
+      const frameVideo = video as WarmFrameVideo;
+
+      if (typeof frameVideo.requestVideoFrameCallback === "function") {
+        frameVideo.requestVideoFrameCallback(() => finishWarm(true));
+        fallbackTimer = window.setTimeout(() => {
+          const currentVideo = videoRefsByClipId.current[clipId] ?? null;
+          finishWarm(
+            !!currentVideo &&
+              currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+              !currentVideo.seeking,
+          );
+        }, PREWARM_FRAME_FALLBACK_MS);
+      } else {
+        fallbackTimer = window.setTimeout(() => {
+          const currentVideo = videoRefsByClipId.current[clipId] ?? null;
+          finishWarm(
+            !!currentVideo &&
+              currentVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+              !currentVideo.seeking,
+          );
+        }, PREWARM_FRAME_FALLBACK_MS);
+      }
+
+      void video.play().catch((error) => {
+        if (finished) return;
+        finished = true;
+        if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+        delete videoWarmStateByClipIdRef.current[clipId];
+        delete videoWarmPaintedByClipIdRef.current[clipId];
+        console.error(`${trackId} prewarm playback failed:`, error);
+      });
+    };
+
+    const markBufferedVideoReady = (
+      trackId: VideoTrackId,
+      clipId: string,
+    ) => {
+      const video = videoRefsByClipId.current[clipId] ?? null;
+      if (
+        !video ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        video.seeking
+      ) {
+        return;
+      }
+
+      videoReadyByClipIdRef.current[clipId] = true;
+      const timelineTime =
+        skimPreviewTimeRef.current ??
+        (isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current);
+      const activeClip = findActiveVideoClip(
+        videoClipsRef.current,
+        timelineTime,
+        trackId,
+      );
+
+      if (activeClip?.id === clipId) {
+        syncVideoTrackToTimeline(
+          trackId,
+          timelineTime,
+          isPlayingRef.current,
+          false,
+        );
+      } else {
+        const immediateUpcoming = findUpcomingVideoClips(
+          videoClipsRef.current,
+          timelineTime,
+          trackId,
+          activeClip,
+          1,
+        )[0];
+        if (immediateUpcoming?.id === clipId) {
+          warmBufferedVideoClip(trackId, clipId);
+        }
+      }
+    };
+
+    const handleMediaRebuild = (clipId: string, reason: string) => {
+      const clip = videoClipsRef.current.find((item) => item.id === clipId);
+      if (!clip) return;
+
+      const element = videoRefsByClipId.current[clipId] ?? null;
+      element?.pause();
+      delete latchedPreviewSourceByClipRef.current[clip.id];
+      delete videoReadyByClipIdRef.current[clipId];
+      delete videoWarmStateByClipIdRef.current[clipId];
+      delete videoWarmPaintedByClipIdRef.current[clipId];
+
+      console.warn(`Rebuilding Program media ${clipId} after ${reason}.`);
+    };
+
+    const {
+      epochs: mediaEpochByClipId,
+      report: reportMedia,
+      failedIds: failedMediaIds,
+    } = useMediaSupervisor({
+        getElements: () => {
+          const timelineTime = currentTimeRef.current;
+          const activeIds = new Set<string>();
+
+          for (const trackId of videoTrackIdsRef.current) {
+            if (isTrackHidden(trackSettingsRef.current, trackId)) continue;
+            const activeClip = findActiveVideoClip(
+              videoClipsRef.current,
+              timelineTime,
+              trackId,
+            );
+            if (activeClip) activeIds.add(activeClip.id);
+          }
+
+          return Object.entries(videoRefsByClipId.current).map(
+            ([clipId, element]) => {
+              const clip = videoClipsRef.current.find(
+                (candidate) => candidate.id === clipId,
+              );
+              return {
+                id: clipId,
+                element,
+                active: activeIds.has(clipId),
+                shouldAdvance:
+                  !!clip &&
+                  !isFreezeFrameClip(clip) &&
+                  !isReverseVideoClip(clip),
+              };
+            },
+          );
+        },
+        isPlaying: () => isPlayingRef.current,
+        getClock: () => ({
+          time: currentTimeRef.current,
+          resync: () => {
+            const timelineTime = currentTimeRef.current;
+            playbackAnchorTimelineRef.current = timelineTime;
+            playbackAnchorPerformanceRef.current = performance.now();
+            syncAllMediaToTimelineRef.current(
+              timelineTime,
+              isPlayingRef.current,
+              true,
+            );
+          },
+        }),
+        onRebuild: handleMediaRebuild,
+      });
+
+    useEffect(() => {
+      failedMediaIdsRef.current = failedMediaIds;
+    }, [failedMediaIds]);
+
+    const commitVisualHandoff = (trackId: VideoTrackId, clipId: string) => {
+      if (handoffPendingByTrackRef.current[trackId] !== clipId) return;
+      const previousPresentedClipId = presentedVideoClipIdsRef.current[trackId] ?? null;
+      const incomingClip = videoClipsRef.current.find(
+        (candidate) => candidate.id === clipId,
+      );
+      const incomingVideo = videoRefsByClipId.current[clipId] ?? null;
+      const timelineTime = currentTimeRef.current;
+      const expectedSourceTime = incomingClip
+        ? timelineTimeToSourceTime(incomingClip, timelineTime)
+        : null;
+
+      traceCut("promote", {
+        trackId,
+        clipId,
+        previousPresentedClipId,
+        readyState: incomingVideo?.readyState ?? null,
+        seeking: incomingVideo?.seeking ?? null,
+        mediaTime: incomingVideo?.currentTime ?? null,
+        expectedSourceTime,
+        isPlaying: isPlayingRef.current,
+        warmState: videoWarmStateByClipIdRef.current[clipId] ?? null,
+        warmPainted: videoWarmPaintedByClipIdRef.current[clipId] ?? false,
+      });
+
+      if (incomingVideo) {
+        const requestFrame = (incomingVideo as HTMLVideoElement & {
+          requestVideoFrameCallback?: (
+            callback: (now: number, metadata: { mediaTime: number }) => void,
+          ) => number;
+        }).requestVideoFrameCallback;
+        if (requestFrame) {
+          const startedAt = performance.now();
+          requestFrame.call(incomingVideo, (_now, metadata) => {
+            traceCut("first-frame-after-promote", {
+              clipId,
+              trackId,
+              ms: performance.now() - startedAt,
+              mediaTime: metadata.mediaTime,
+            });
+          });
+        }
+      }
+      handoffPendingByTrackRef.current[trackId] = undefined;
+      const timeoutId = handoffTimeoutByTrackRef.current[trackId];
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      handoffTimeoutByTrackRef.current[trackId] = undefined;
+
+      setPresentedVideoClip(trackId, clipId);
+      setVideoVisibility((current) =>
+        current[trackId] ? current : { ...current, [trackId]: true },
+      );
+
+      if (previousPresentedClipId && previousPresentedClipId !== clipId) {
+        const previous = videoRefsByClipId.current[previousPresentedClipId];
+        previous?.pause();
+        if (previous) {
+          previous.muted = true;
+          previous.volume = 0;
+        }
+      }
+    };
+
+    const scheduleVisualHandoff = (
+      trackId: VideoTrackId,
+      clipId: string,
+      video: HTMLVideoElement,
+      revealImmediately = false,
+    ) => {
+      if (handoffPendingByTrackRef.current[trackId] === clipId) return;
+      handoffPendingByTrackRef.current[trackId] = clipId;
+
+      // If prewarm already proved that this deck produced a composited frame,
+      // there is nothing left to wait for at the edit point. Revealing it in
+      // this same transport tick removes the last held-frame hitch between
+      // ordinary adjacent clips.
+      if (revealImmediately) {
+        commitVisualHandoff(trackId, clipId);
+        return;
+      }
+
+      const fallback = window.setTimeout(
+        () => commitVisualHandoff(trackId, clipId),
+        120,
+      );
+      handoffTimeoutByTrackRef.current[trackId] = fallback;
+
+      type FrameVideo = HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      };
+      const frameVideo = video as FrameVideo;
+      if (typeof frameVideo.requestVideoFrameCallback === "function") {
+        frameVideo.requestVideoFrameCallback(() =>
+          commitVisualHandoff(trackId, clipId),
+        );
+      } else {
+        requestAnimationFrame(() => commitVisualHandoff(trackId, clipId));
+      }
     };
 
     const syncVideoTrackToTimeline = (
@@ -1355,33 +2094,35 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         null;
 
       if (hasTrueDissolve) {
+        // The dissolve reuses the ordinary clip-owned media decks. Never hide
+        // or replace them with cold-mounted transition-specific <video>s.
+        setVideoVisibility((current) =>
+          current[trackId] ? current : { ...current, [trackId]: true },
+        );
+        return;
+      }
+
+      if (!activeClip) {
         activeVideoClipIdRefs.current[trackId] = null;
         video?.pause();
+        setPresentedVideoClip(trackId, null);
         setVideoVisibility((current) =>
           current[trackId] ? { ...current, [trackId]: false } : current,
         );
         return;
       }
 
-      if (!video || !activeClip) {
+      if (!video) {
+        // On an explicit jump React may not have mounted the destination clip's
+        // media element yet. Keep the last decoded frame on screen instead of
+        // clearing the Program Monitor; metadata/seek callbacks will take over
+        // as soon as the destination element exists.
         activeVideoClipIdRefs.current[trackId] = null;
-        video?.pause();
-        setVideoVisibility((current) =>
-          current[trackId] ? { ...current, [trackId]: false } : current,
-        );
         return;
       }
 
       const loadedSourcePath = video.dataset.sourcePath ?? "";
       const hidden = isTrackHidden(trackSettingsRef.current, trackId);
-      const canRenderClip =
-        activeClip.sourcePath === loadedSourcePath && !hidden;
-
-      setVideoVisibility((current) =>
-        current[trackId] === canRenderClip
-          ? current
-          : { ...current, [trackId]: canRenderClip },
-      );
 
       if (activeClip.sourcePath !== loadedSourcePath) {
         activeVideoClipIdRefs.current[trackId] = null;
@@ -1392,6 +2133,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       if (hidden) {
         activeVideoClipIdRefs.current[trackId] = null;
         video.pause();
+        setPresentedVideoClip(trackId, null);
+        setVideoVisibility((current) =>
+          current[trackId] ? { ...current, [trackId]: false } : current,
+        );
         return;
       }
 
@@ -1399,23 +2144,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         activeClip,
         timelineTime,
       );
-      const maxSourceTime = Number.isFinite(video.duration)
+      const mediaMax = Number.isFinite(video.duration)
         ? video.duration
         : (activeClip.sourceDuration ?? sourceDurationRef.current);
-      const safeSourceTime = Math.max(
-        0,
-        Math.min(maxSourceTime || expectedSourceTime, expectedSourceTime),
+      const sourceMin = Math.max(0, Math.min(activeClip.sourceIn, activeClip.sourceOut));
+      const sourceMax = Math.min(
+        mediaMax || Math.max(activeClip.sourceIn, activeClip.sourceOut),
+        Math.max(activeClip.sourceIn, activeClip.sourceOut),
       );
-      const clipChanged =
-        activeVideoClipIdRefs.current[trackId] !== activeClip.id;
+      const safeSourceTime = Math.max(
+        sourceMin,
+        Math.min(sourceMax, expectedSourceTime),
+      );
+      const previousActiveClipId = activeVideoClipIdRefs.current[trackId];
+      const clipChanged = previousActiveClipId !== activeClip.id;
       const sourceTimeDrift = Math.abs(video.currentTime - safeSourceTime);
-      // Track-only layer reorders should not reseek an already-decoded clip.
-      // Seek only when the source position actually differs. This preserves the
-      // existing behavior for scrubbing, trims, reverse/freeze, and source-time
-      // changes while making V-track swaps effectively immediate.
-      const shouldSeek = (clipChanged || forceSeek) && sourceTimeDrift > 0.015;
+      const prebufferedFrameReady =
+        videoReadyByClipIdRef.current[activeClip.id] === true;
+      const clipChangeSeekThreshold = prebufferedFrameReady ? 0.05 : 0.015;
+      const shouldSeek =
+        forceSeek
+          ? sourceTimeDrift > 0.015
+          : clipChanged && sourceTimeDrift > clipChangeSeekThreshold;
 
       if (shouldSeek) {
+        videoReadyByClipIdRef.current[activeClip.id] = false;
+        delete videoWarmStateByClipIdRef.current[activeClip.id];
+        delete videoWarmPaintedByClipIdRef.current[activeClip.id];
         try {
           video.currentTime = safeSourceTime;
         } catch (error) {
@@ -1423,6 +2178,42 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         }
       }
 
+      const frameReady =
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        !video.seeking &&
+        ((!forceSeek && !clipChanged) ||
+          Math.abs(video.currentTime - safeSourceTime) <=
+            (forceSeek ? 0.03 : 0.09));
+      const previousPresentedClipId =
+        presentedVideoClipIdsRef.current[trackId] ?? null;
+
+      if (!frameReady) {
+        const presentedClipId =
+          presentedVideoClipIdsRef.current[trackId] ?? null;
+        const presentedVideo = presentedClipId
+          ? (videoRefsByClipId.current[presentedClipId] ?? null)
+          : null;
+
+        // Hold the outgoing decoded frame instead of exposing the Program
+        // Monitor's black background while the incoming clip finishes its seek.
+        presentedVideo?.pause();
+        if (shouldPlay && !isFreezeFrameClip(activeClip) && !isReverseVideoClip(activeClip)) {
+          video.muted = true;
+          video.volume = 0;
+          if (video.paused && !video.seeking) {
+            void video.play().catch(() => undefined);
+          }
+        } else if (!video.paused) {
+          video.pause();
+        }
+
+        setVideoVisibility((current) =>
+          current[trackId] ? current : { ...current, [trackId]: true },
+        );
+        return;
+      }
+
+      videoReadyByClipIdRef.current[activeClip.id] = true;
       activeVideoClipIdRefs.current[trackId] = activeClip.id;
       syncHighSpeedVideoPreview(
         video,
@@ -1431,9 +2222,81 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         `${trackId}:${activeClip.id}`,
         shouldSeek,
       );
+      configureVideoElementAudio(video, activeClip, trackId, timelineTime);
+
+      const immediateUpcoming = findUpcomingVideoClips(
+        videoClipsRef.current,
+        timelineTime,
+        trackId,
+        activeClip,
+        1,
+      )[0];
+      if (
+        immediateUpcoming &&
+        videoReadyByClipIdRef.current[immediateUpcoming.id] === true
+      ) {
+        warmBufferedVideoClip(trackId, immediateUpcoming.id);
+      }
 
       const seekDrivenPlayback =
         isFreezeFrameClip(activeClip) || isReverseVideoClip(activeClip);
+      const needsVisualHandoff =
+        shouldPlay &&
+        !seekDrivenPlayback &&
+        previousPresentedClipId !== null &&
+        previousPresentedClipId !== activeClip.id;
+
+      if (needsVisualHandoff) {
+        // Freeze the outgoing picture/audio at the logical edit point while the
+        // incoming deck starts underneath it. This prevents a trimmed outgoing
+        // clip from continuing to play (and briefly overlapping audio) during
+        // the visual rVFC handoff window.
+        const previousVideo = previousPresentedClipId
+          ? (videoRefsByClipId.current[previousPresentedClipId] ?? null)
+          : null;
+        if (previousVideo && previousVideo !== video) {
+          previousVideo.pause();
+          previousVideo.muted = true;
+          previousVideo.volume = 0;
+        }
+
+        // Start decoding/playing the incoming clip underneath the held outgoing
+        // frame. The transport never waits on rVFC; it only controls the visual
+        // swap, with a bounded fallback for WebKit.
+        const canRevealWarmFrameImmediately =
+          videoWarmStateByClipIdRef.current[activeClip.id] === "warmed" &&
+          videoWarmPaintedByClipIdRef.current[activeClip.id] === true &&
+          videoReadyByClipIdRef.current[activeClip.id] === true &&
+          video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          !video.seeking;
+
+        if (video.paused) {
+          void video.play().catch((error) => {
+            console.error(`${trackId} handoff playback failed:`, error);
+          });
+        }
+        scheduleVisualHandoff(
+          trackId,
+          activeClip.id,
+          video,
+          canRevealWarmFrameImmediately,
+        );
+        setVideoVisibility((current) =>
+          current[trackId] ? current : { ...current, [trackId]: true },
+        );
+        return;
+      }
+
+      setPresentedVideoClip(trackId, activeClip.id);
+      setVideoVisibility((current) =>
+        current[trackId] ? current : { ...current, [trackId]: true },
+      );
+
+      if (previousPresentedClipId && previousPresentedClipId !== activeClip.id) {
+        const previousVideo = videoRefsByClipId.current[previousPresentedClipId] ?? null;
+        previousVideo?.pause();
+      }
+
       if (shouldPlay && !seekDrivenPlayback) {
         if (video.paused) {
           void video.play().catch((error) => {
@@ -1470,6 +2333,22 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             audioTrackId,
           );
       const activeClip = linkedVideoClip ?? standaloneClip;
+
+      const visibleLinkedVideoOwnsAudio =
+        linkedVideoClip !== null &&
+        typeof linkedVideoTrackId === "string" &&
+        /^video-\d+$/.test(linkedVideoTrackId) &&
+        !isTrackHidden(trackSettingsRef.current, linkedVideoTrackId) &&
+        !isFreezeFrameClip(linkedVideoClip) &&
+        !isReverseVideoClip(linkedVideoClip);
+
+      if (visibleLinkedVideoOwnsAudio) {
+        // The matching visible <video> element outputs this linked clip's
+        // audio, so keep the duplicate hidden <audio> path stopped.
+        activeAudioClipIdRefs.current[audioTrackId] = null;
+        audio?.pause();
+        return;
+      }
 
       if (
         !audio ||
@@ -1588,6 +2467,61 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     };
 
+    const blockingHardCut = (fromTime: number, toTime: number) => {
+      let blocker: {
+        trackId: VideoTrackId;
+        clipId: string;
+        cutTime: number;
+        readyState: number | null;
+        seeking: boolean | null;
+      } | null = null;
+
+      for (const trackId of videoTrackIdsRef.current) {
+        if (isTrackHidden(trackSettingsRef.current, trackId)) continue;
+
+        const clips = videoClipsRef.current
+          .filter((clip) => clip.trackId === trackId)
+          .sort((a, b) => a.timelineStart - b.timelineStart);
+
+        for (let index = 1; index < clips.length; index += 1) {
+          const previous = clips[index - 1];
+          const incoming = clips[index];
+          const gap = incoming.timelineStart - previous.timelineEnd;
+          if (Math.abs(gap) > TIMELINE_GAP_BRIDGE_EPSILON) continue;
+
+          const cutTime = incoming.timelineStart;
+          if (
+            cutTime < fromTime - TIMELINE_GAP_BRIDGE_EPSILON ||
+            cutTime > toTime + TIMELINE_GAP_BRIDGE_EPSILON
+          ) {
+            continue;
+          }
+
+          if (failedMediaIdsRef.current[incoming.id]) continue;
+
+          const video = videoRefsByClipId.current[incoming.id] ?? null;
+          const hasDecodedFrame =
+            videoReadyByClipIdRef.current[incoming.id] === true &&
+            !!video &&
+            video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+            !video.seeking;
+          if (hasDecodedFrame) continue;
+
+          if (!blocker || cutTime < blocker.cutTime) {
+            blocker = {
+              trackId,
+              clipId: incoming.id,
+              cutTime,
+              readyState: video?.readyState ?? null,
+              seeking: video?.seeking ?? null,
+            };
+          }
+        }
+      }
+
+      return blocker;
+    };
+
     const syncAllMediaToTimeline = (
       timelineTime: number,
       shouldPlay: boolean,
@@ -1612,19 +2546,40 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     syncAllMediaToTimelineRef.current = syncAllMediaToTimeline;
 
     const seekTo = (time: number) => {
-      if (!Number.isFinite(time)) {
-        return;
-      }
+      if (!Number.isFinite(time)) return;
+
+      skimPreviewTimeRef.current = null;
+      setSkimPreviewTime(null);
 
       const maxDuration = Math.max(0, timelineDurationRef.current || 0);
       const nextTime = Math.max(0, Math.min(maxDuration, time));
+      const shouldResume = isPlayingRef.current;
+      cutHoldClipIdRef.current = null;
+      displayTimeRef.current = nextTime;
+
+      // A real seek is authoritative immediately. Media is repositioned once,
+      // but no readiness event is allowed to hold the editor clock hostage.
+      for (const element of Object.values(videoRefsByClipId.current)) {
+        element?.pause();
+      }
+      for (const element of Object.values(audioRefsByPlaybackKey.current)) {
+        element?.pause();
+      }
 
       currentTimeRef.current = nextTime;
       playbackAnchorTimelineRef.current = nextTime;
       playbackAnchorPerformanceRef.current = performance.now();
-
       onTimeChangeRef.current?.(nextTime);
-      syncAllMediaToTimeline(nextTime, isPlayingRef.current, true);
+      syncAllMediaToTimeline(nextTime, shouldResume, true);
+
+      if (shouldResume) {
+        requestAnimationFrame(() => {
+          if (!isPlayingRef.current) return;
+          playbackAnchorTimelineRef.current = nextTime;
+          playbackAnchorPerformanceRef.current = performance.now();
+          syncAllMediaToTimelineRef.current(nextTime, true, false);
+        });
+      }
     };
 
     const jumpBy = (seconds: number) => {
@@ -1635,19 +2590,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       if (isPlayingRef.current) {
         isPlayingRef.current = false;
         setIsPlaying(false);
+        cutHoldClipIdRef.current = null;
         (
           Object.values(
             videoRefsByClipId.current,
-          ) as Array<HTMLVideoElement | null>
-        ).forEach((element) => element?.pause());
-        (
-          Object.values(
-            dissolveOutgoingRefs.current,
-          ) as Array<HTMLVideoElement | null>
-        ).forEach((element) => element?.pause());
-        (
-          Object.values(
-            dissolveIncomingRefs.current,
           ) as Array<HTMLVideoElement | null>
         ).forEach((element) => element?.pause());
         (
@@ -1679,7 +2625,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       setCropModeClipId(null);
       cropStartRef.current = null;
       setProgramSnapGuides([]);
+      skimPreviewTimeRef.current = null;
       setSkimPreviewTime(null);
+      cutHoldClipIdRef.current = null;
       isPlayingRef.current = true;
       setIsPlaying(true);
       syncAllMediaToTimeline(playbackStart, true, true);
@@ -1688,6 +2636,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     useEffect(() => {
       setDuration(0);
       setIsPlaying(false);
+      skimPreviewTimeRef.current = null;
       setSkimPreviewTime(null);
       setVideoVisibility({});
 
@@ -1707,6 +2656,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       activeVideoClipIdRefs.current = {};
       activeAudioClipIdRefs.current = {};
       highSpeedPreviewSeekAtRef.current = {};
+      presentedVideoClipIdsRef.current = {};
+      videoReadyByClipIdRef.current = {};
+      videoWarmStateByClipIdRef.current = {};
+      videoWarmPaintedByClipIdRef.current = {};
+      latchedPreviewSourceByClipRef.current = {};
+      cutHoldClipIdRef.current = null;
+      failedMediaIdsRef.current = {};
+      setPresentedVideoClipIds({});
       playbackAnchorTimelineRef.current = 0;
       playbackAnchorPerformanceRef.current = 0;
 
@@ -1756,10 +2713,31 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         const elapsedSeconds =
           (now - playbackAnchorPerformanceRef.current) / 1000;
-        const nextTime = Math.min(
+        const candidateTime = Math.min(
           maxDuration,
           playbackAnchorTimelineRef.current + elapsedSeconds,
         );
+        const blocker = blockingHardCut(currentTimeRef.current, candidateTime);
+        const nextTime = blocker?.cutTime ?? candidateTime;
+
+        if (blocker) {
+          // Never let the editor clock run several seconds into the incoming
+          // clip while its first frame is still unavailable. Holding exactly
+          // on the cut preserves preview/export timing and gives the already-
+          // mounted buffer deck time to finish its seek/decode.
+          playbackAnchorTimelineRef.current = blocker.cutTime;
+          playbackAnchorPerformanceRef.current = now;
+          if (cutHoldClipIdRef.current !== blocker.clipId) {
+            cutHoldClipIdRef.current = blocker.clipId;
+            traceCut("hard-cut-hold", blocker);
+          }
+        } else if (cutHoldClipIdRef.current !== null) {
+          traceCut("hard-cut-release", {
+            clipId: cutHoldClipIdRef.current,
+            timelineTime: candidateTime,
+          });
+          cutHoldClipIdRef.current = null;
+        }
 
         currentTimeRef.current = nextTime;
         onTimeChangeRef.current?.(nextTime);
@@ -1791,43 +2769,48 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       if (video?.videoWidth && video.videoHeight) {
         setVideoDimensions((current) => ({
           ...current,
-          [trackId]: {
+          [clipId]: {
             width: video.videoWidth,
             height: video.videoHeight,
           },
         }));
       }
 
-      activeVideoClipIdRefs.current[trackId] = null;
-      syncVideoTrackToTimeline(
+      const timelineTime = isPlayingRef.current
+        ? currentTimeRef.current
+        : displayTimeRef.current;
+      const activeClip = findActiveVideoClip(
+        videoClipsRef.current,
+        timelineTime,
         trackId,
-        isPlayingRef.current ? currentTimeRef.current : displayTimeRef.current,
-        isPlayingRef.current,
-        true,
       );
+
+      if (activeClip?.id === clipId) {
+        activeVideoClipIdRefs.current[trackId] = null;
+        syncVideoTrackToTimeline(
+          trackId,
+          timelineTime,
+          isPlayingRef.current,
+          true,
+        );
+      } else {
+        primeBufferedVideoClip(trackId, clipId);
+      }
     };
 
-    // When an already-loaded clip is reassigned to another V-track, React keeps
-    // the same <video> element. Refresh the track-indexed dimensions from that
-    // preserved element so transform/crop math stays correct without waiting for
-    // another loadedmetadata event.
+    // A clip can move between V-tracks without remounting its decoded element.
+    // Refresh dimensions by clip identity so portrait/landscape clips mounted
+    // together during prebuffering never overwrite each other's geometry.
     useEffect(() => {
       setVideoDimensions((current) => {
         let next = current;
         let changed = false;
 
-        for (const trackId of videoTrackIds) {
-          const clip = findActiveVideoClip(
-            videoClips,
-            displayTimeRef.current,
-            trackId,
-          );
-          if (!clip) continue;
-
+        for (const clip of videoClips) {
           const video = videoRefsByClipId.current[clip.id];
           if (!video?.videoWidth || !video.videoHeight) continue;
 
-          const previous = current[trackId];
+          const previous = current[clip.id];
           if (
             previous?.width === video.videoWidth &&
             previous?.height === video.videoHeight
@@ -1839,7 +2822,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             next = { ...current };
             changed = true;
           }
-          next[trackId] = {
+          next[clip.id] = {
             width: video.videoWidth,
             height: video.videoHeight,
           };
@@ -1847,7 +2830,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         return changed ? next : current;
       });
-    }, [videoClips, videoTrackIds]);
+    }, [videoClips]);
 
     const handleAudioLoadedMetadata = (
       audioTrackId: AudioTrackId,
@@ -1930,18 +2913,43 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         (clip): clip is VideoTimelineClip =>
           !!clip && !isTrackHidden(trackSettings, clip.trackId),
       )
-      .sort((a, b) => videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId));
+      .sort((a, b) => effectiveVideoLayer(a) - effectiveVideoLayer(b));
     const programLayerItems = visibleActiveClips
       .filter((clip) => isProgramVideoClipInteractive(clip))
       .slice()
       .reverse()
       .map((clip) => ({
         clip,
-        trackLabel: videoTrackLabel(clip.trackId),
+        trackLabel: `Layer ${displayLayerNumber(effectiveVideoLayer(clip))} · ${videoTrackLabel(clip.trackId)}`,
         locked: trackSettings[clip.trackId]?.locked ?? false,
       }));
+    const visiblePresentedClips = videoTrackIds
+      .map((trackId) => {
+        const presentedClipId = presentedVideoClipIds[trackId] ?? null;
+        if (presentedClipId) {
+          const presentedClip =
+            videoClips.find((clip) => clip.id === presentedClipId) ?? null;
+          if (presentedClip && !isTrackHidden(trackSettings, trackId)) {
+            return presentedClip;
+          }
+        }
+
+        const activeClip = activeClipsByTrack[trackId] ?? null;
+        return activeClip && !isTrackHidden(trackSettings, trackId)
+          ? activeClip
+          : null;
+      })
+      .filter((clip): clip is VideoTimelineClip => !!clip)
+      .sort((a, b) => effectiveVideoLayer(a) - effectiveVideoLayer(b));
+
+    // Subtitles must follow the frame the Program Monitor is actually showing,
+    // not merely the logical clip under the playhead. During a buffered handoff
+    // these can differ for a few frames, and using the presented clip keeps
+    // preview timing aligned with the visible picture/export semantics.
     const topVisualClip =
-      visibleActiveClips[visibleActiveClips.length - 1] ?? null;
+      visiblePresentedClips[visiblePresentedClips.length - 1] ??
+      visibleActiveClips[visibleActiveClips.length - 1] ??
+      null;
     const topVisualTrackHasDissolve = topVisualClip
       ? dissolvesByTrack[topVisualClip.trackId] !== null
       : false;
@@ -1954,10 +2962,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const dissolve = dissolvesByTrack[topVisualClip.trackId];
 
       if (dissolve) {
-        const incoming = dissolveIncomingRefs.current[topVisualClip.trackId];
-        const outgoing = dissolveOutgoingRefs.current[topVisualClip.trackId];
+        const incoming = videoRefsByClipId.current[dissolve.incoming.id] ?? null;
+        const outgoing = videoRefsByClipId.current[dissolve.outgoing.id] ?? null;
 
-        if (incoming) {
+        if (incoming && incoming.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           subtitleClockVideo = incoming;
           subtitleClockClip = dissolve.incoming;
         } else if (outgoing) {
@@ -2005,10 +3013,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         if (dissolve) {
           // Either side of the dissolve represents the same timeline instant.
           // Prefer the incoming frame when available, otherwise use outgoing.
-          const incoming = dissolveIncomingRefs.current[topVisualClip.trackId];
-          const outgoing = dissolveOutgoingRefs.current[topVisualClip.trackId];
+          const incoming = videoRefsByClipId.current[dissolve.incoming.id] ?? null;
+          const outgoing = videoRefsByClipId.current[dissolve.outgoing.id] ?? null;
 
-          if (incoming) {
+          if (incoming && incoming.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
             video = incoming;
             clockClip = dissolve.incoming;
           } else if (outgoing) {
@@ -2040,8 +3048,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           Math.min(clockClip.timelineEnd, mappedTime),
         );
 
+        const now = performance.now();
+        if (now - lastSubtitleClockRenderAtRef.current < 32) return;
+        lastSubtitleClockRenderAtRef.current = now;
         setPresentedFrameTimelineTime((previous) =>
-          previous !== null && Math.abs(previous - clampedTime) < 0.0005
+          previous !== null && Math.abs(previous - clampedTime) < 0.001
             ? previous
             : clampedTime,
         );
@@ -2155,8 +3166,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const selectedTrackLocked =
       !!selectedTrackId && (trackSettings[selectedTrackId]?.locked ?? false);
 
-    const selectedVideoSize = selectedTrackId
-      ? (videoDimensions[selectedTrackId] ?? { width: 16, height: 9 })
+    const selectedVideoSize = selectedActiveClip
+      ? (videoDimensions[selectedActiveClip.id] ?? { width: 16, height: 9 })
       : { width: 16, height: 9 };
 
     const fittedVideoRect = useMemo(() => {
@@ -2277,7 +3288,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           otherVisibleBounds.push(
             programBoundsForClip(
               otherClip,
-              videoDimensions[otherClip.trackId] ?? { width: 16, height: 9 },
+              videoDimensions[otherClip.id] ?? { width: 16, height: 9 },
               shellDimensions,
               displayTime,
             ),
@@ -3199,61 +4210,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                * WebKit can otherwise fail to resolve/update url(#filter) on a
                * media element nested inside mix-blend-mode + paint containment.
                */}
-              {videoTrackIds.map((trackId) => {
-                const dissolve = dissolvesByTrack[trackId];
-                if (!dissolve || isTrackHidden(trackSettings, trackId))
-                  return null;
-
-                const outgoingEffects = videoEffectsForClipAtTime(
-                  dissolve.outgoing,
-                  unmaskedAdjustmentLayers,
-                  displayTime,
-                  trackSettings,
-                );
-                const incomingEffects = videoEffectsForClipAtTime(
-                  dissolve.incoming,
-                  unmaskedAdjustmentLayers,
-                  displayTime,
-                  trackSettings,
-                );
-                const previewScale = Math.max(
-                  0.05,
-                  shellDimensions.height / 1080,
-                );
-
-                return (
-                  <Fragment key={`dissolve-fx-defs:${trackId}`}>
-                    <VideoEffectFilterDefs
-                      filterId={videoEffectFilterDomId(
-                        `${dissolve.outgoing.id}-dissolve`,
-                      )}
-                      effects={outgoingEffects}
-                      previewScale={previewScale}
-                    />
-                    <VideoEffectFilterDefs
-                      filterId={videoEffectFilterDomId(
-                        `${dissolve.incoming.id}-dissolve`,
-                      )}
-                      effects={incomingEffects}
-                      previewScale={previewScale}
-                    />
-                  </Fragment>
-                );
-              })}
-
-              {videoTrackIds.map((trackId) => {
-                const clip = activeClipsByTrack[trackId];
-                const sourceUrl = sourceUrlsByTrack[trackId];
-                if (!clip || !sourceUrl || dissolvesByTrack[trackId])
-                  return null;
-
+              {flatBufferedVideoClips.map((clip) => {
                 const previewEffects = videoEffectsForClipAtTime(
                   clip,
                   unmaskedAdjustmentLayers,
                   displayTime,
                   trackSettings,
                 );
-
                 return (
                   <VideoEffectFilterDefs
                     key={`clip-fx-defs:${clip.id}`}
@@ -3265,368 +4228,227 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               })}
 
               <div className="program-video-composite-stack">
-                {videoTrackIds.map((trackId) => {
-                  const dissolve = dissolvesByTrack[trackId];
-                  if (!dissolve || isTrackHidden(trackSettings, trackId))
-                    return null;
-
-                  const zIndex = videoTrackIndex(trackId);
-                  const outgoingEffects = videoEffectsForClipAtTime(
-                    dissolve.outgoing,
-                    unmaskedAdjustmentLayers,
-                    displayTime,
-                    trackSettings,
-                  );
-                  const incomingEffects = videoEffectsForClipAtTime(
-                    dissolve.incoming,
-                    unmaskedAdjustmentLayers,
-                    displayTime,
-                    trackSettings,
-                  );
-                  const outgoingEffectFilterId = videoEffectFilterDomId(
-                    `${dissolve.outgoing.id}-dissolve`,
-                  );
-                  const incomingEffectFilterId = videoEffectFilterDomId(
-                    `${dissolve.incoming.id}-dissolve`,
-                  );
-                  const outgoingRasterFilter = hasRasterVideoEffects(
-                    outgoingEffects,
-                  )
-                    ? `url(#${outgoingEffectFilterId})`
-                    : "";
-                  const incomingRasterFilter = hasRasterVideoEffects(
-                    incomingEffects,
-                  )
-                    ? `url(#${incomingEffectFilterId})`
-                    : "";
-                  const adjustmentFilter = adjustmentCssFilter(
-                    adjustmentLayersAffectingVideoTrack(
-                      unmaskedAdjustmentLayers,
-                      displayTime,
-                      trackId,
-                      trackSettings,
-                    ),
-                    displayTime,
-                  );
-                  const outgoingVignetteStyle = videoVignetteOverlayStyle(
-                    dissolve.outgoing,
-                    outgoingEffects,
-                    videoDimensions[trackId] ?? { width: 16, height: 9 },
-                    shellDimensions,
-                    displayTime,
-                  );
-                  const incomingVignetteStyle = videoVignetteOverlayStyle(
-                    dissolve.incoming,
-                    incomingEffects,
-                    videoDimensions[trackId] ?? { width: 16, height: 9 },
-                    shellDimensions,
-                    displayTime,
-                  );
-                  const outgoingOpacity =
-                    (1 - dissolve.progress) *
-                    videoOpacityFadeFactor(dissolve.outgoing, displayTime) *
-                    (evaluateVideoTransformProperty(
-                      dissolve.outgoing,
-                      "opacity",
-                      displayTime,
-                    ) /
-                      100);
-                  const incomingOpacity =
-                    dissolve.progress *
-                    videoOpacityFadeFactor(dissolve.incoming, displayTime) *
-                    (evaluateVideoTransformProperty(
-                      dissolve.incoming,
-                      "opacity",
-                      displayTime,
-                    ) /
-                      100);
-
-                  return (
-                    <div
-                      key={`dissolve:${trackId}`}
-                      className="program-dissolve-pair"
-                    >
-                      <div
-                        className="program-video-blend-layer"
-                        style={{
-                          zIndex,
-                          mixBlendMode: cssBlendMode(
-                            dissolve.outgoing.blendMode,
-                          ),
-                        }}
-                      >
-                        <div
-                          className="program-video-mask-wrapper"
-                          style={videoMaskCssStyle(
-                            dissolve.outgoing.mask,
-                            shellDimensions.width /
-                              Math.max(1, shellDimensions.height),
-                          )}
-                        >
-                          <div
-                            className="program-video-effect-layer"
-                            style={{
-                              filter:
-                                [outgoingRasterFilter, adjustmentFilter]
-                                  .filter(Boolean)
-                                  .join(" ") || undefined,
-                            }}
-                          >
-                            <video
-                              key={`${trackId}-dissolve-out:${dissolve.outgoing.id}`}
-                              ref={(element) => {
-                                dissolveOutgoingRefs.current[trackId] = element;
-                              }}
-                              src={convertFileSrc(
-                                proxyPathsBySource[
-                                  dissolve.outgoing.sourcePath
-                                ] ?? dissolve.outgoing.sourcePath,
-                              )}
-                              data-source-path={dissolve.outgoing.sourcePath}
-                              data-preview-proxy={
-                                proxyPathsBySource[dissolve.outgoing.sourcePath]
-                                  ? "true"
-                                  : "false"
-                              }
-                              className="video-element video-track-layer program-dissolve-layer"
-                              muted
-                              preload="auto"
-                              style={{
-                                ...videoTransformStyle(
-                                  dissolve.outgoing,
-                                  videoDimensions[trackId] ?? {
-                                    width: 16,
-                                    height: 9,
-                                  },
-                                  shellDimensions,
-                                  displayTime,
-                                ),
-                                opacity: outgoingOpacity,
-                              }}
-                              onLoadedMetadata={() =>
-                                syncSameTrackDissolve(
-                                  trackId,
-                                  isPlayingRef.current
-                                    ? currentTimeRef.current
-                                    : displayTimeRef.current,
-                                  isPlayingRef.current,
-                                  true,
-                                )
-                              }
-                            />
-                          </div>
-                          {outgoingVignetteStyle && (
-                            <div
-                              className="program-video-vignette program-dissolve-layer"
-                              aria-hidden="true"
-                              style={{
-                                ...outgoingVignetteStyle,
-                                opacity: outgoingOpacity,
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div
-                        className="program-video-blend-layer"
-                        style={{
-                          zIndex,
-                          mixBlendMode: cssBlendMode(
-                            dissolve.incoming.blendMode,
-                          ),
-                        }}
-                      >
-                        <div
-                          className="program-video-mask-wrapper"
-                          style={videoMaskCssStyle(
-                            dissolve.incoming.mask,
-                            shellDimensions.width /
-                              Math.max(1, shellDimensions.height),
-                          )}
-                        >
-                          <div
-                            className="program-video-effect-layer"
-                            style={{
-                              filter:
-                                [incomingRasterFilter, adjustmentFilter]
-                                  .filter(Boolean)
-                                  .join(" ") || undefined,
-                            }}
-                          >
-                            <video
-                              key={`${trackId}-dissolve-in:${dissolve.incoming.id}`}
-                              ref={(element) => {
-                                dissolveIncomingRefs.current[trackId] = element;
-                              }}
-                              src={convertFileSrc(
-                                proxyPathsBySource[
-                                  dissolve.incoming.sourcePath
-                                ] ?? dissolve.incoming.sourcePath,
-                              )}
-                              data-source-path={dissolve.incoming.sourcePath}
-                              data-preview-proxy={
-                                proxyPathsBySource[dissolve.incoming.sourcePath]
-                                  ? "true"
-                                  : "false"
-                              }
-                              className="video-element video-track-layer program-dissolve-layer incoming"
-                              muted
-                              preload="auto"
-                              style={{
-                                ...videoTransformStyle(
-                                  dissolve.incoming,
-                                  videoDimensions[trackId] ?? {
-                                    width: 16,
-                                    height: 9,
-                                  },
-                                  shellDimensions,
-                                  displayTime,
-                                ),
-                                opacity: incomingOpacity,
-                              }}
-                              onLoadedMetadata={() =>
-                                syncSameTrackDissolve(
-                                  trackId,
-                                  isPlayingRef.current
-                                    ? currentTimeRef.current
-                                    : displayTimeRef.current,
-                                  isPlayingRef.current,
-                                  true,
-                                )
-                              }
-                            />
-                          </div>
-                          {incomingVignetteStyle && (
-                            <div
-                              className="program-video-vignette program-dissolve-layer"
-                              aria-hidden="true"
-                              style={{
-                                ...incomingVignetteStyle,
-                                opacity: incomingOpacity,
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {videoTrackIds.map((trackId) => {
-                  const clip = activeClipsByTrack[trackId];
-                  const sourceUrl = sourceUrlsByTrack[trackId];
-                  if (!clip || !sourceUrl || dissolvesByTrack[trackId])
-                    return null;
-
+                {flatBufferedVideoClips.map((clip) => {
+                  const trackId = clip.trackId as VideoTrackId;
+                  const activeClip = activeClipsByTrack[trackId] ?? null;
+                  const presentedClipId =
+                    presentedVideoClipIds[trackId] ?? activeClip?.id ?? null;
+                  const isActive = activeClip?.id === clip.id;
+                  const isPresented = presentedClipId === clip.id;
+                  const dissolve = dissolvesByTrack[trackId] ?? null;
+                  const isDissolveOutgoing = dissolve?.outgoing.id === clip.id;
+                  const isDissolveIncoming = dissolve?.incoming.id === clip.id;
+                  const isDissolveParticipant =
+                    isDissolveOutgoing || isDissolveIncoming;
+                  const trackEnabled =
+                    !isTrackHidden(trackSettings, trackId) &&
+                    videoVisibility[trackId] !== false;
+                  const trackVisible =
+                    trackEnabled &&
+                    (isDissolveParticipant || (!dissolve && isPresented));
+                  const renderTime = isDissolveParticipant
+                    ? displayTime
+                    : isActive
+                      ? displayTime
+                      : isPresented
+                        ? Math.max(
+                            clip.timelineStart,
+                            Math.min(
+                              Math.max(clip.timelineStart, clip.timelineEnd - 0.0001),
+                              displayTime,
+                            ),
+                          )
+                        : clip.timelineStart;
+                  const previewSource = previewSourceForClip(clip);
+                  const sourceUrl = convertFileSrc(previewSource.previewPath);
+                  const linkedAudioTrackIdForRender =
+                    linkedAudioTrackForVideoTrack(trackId);
+                  const renderSoloMuted =
+                    linkedAudioTrackIdForRender !== null &&
+                    hasSoloAudioTrack(trackSettings) &&
+                    trackSettings[linkedAudioTrackIdForRender]?.solo !== true;
+                  const renderVideoMuted =
+                    !trackVisible ||
+                    linkedAudioTrackIdForRender === null ||
+                    isFreezeFrameClip(clip) ||
+                    isReverseVideoClip(clip) ||
+                    (clip.audioMuted ?? false) ||
+                    (linkedAudioTrackIdForRender !== null &&
+                      isTrackMuted(trackSettings, linkedAudioTrackIdForRender)) ||
+                    renderSoloMuted;
                   const previewEffects = videoEffectsForClipAtTime(
                     clip,
                     unmaskedAdjustmentLayers,
-                    displayTime,
+                    renderTime,
                     trackSettings,
                   );
                   const effectFilterId = videoEffectFilterDomId(clip.id);
                   const effectFilter = hasRasterVideoEffects(previewEffects)
                     ? `url(#${effectFilterId})`
                     : "";
-                  const transitionStyle = adjustedVideoTransitionStyle(
-                    clip,
-                    displayTime,
-                    unmaskedAdjustmentLayers,
-                    trackSettings,
-                  );
-                  const { filter: transitionFilter, ...transitionVisualStyle } =
-                    transitionStyle;
-                  const previewFilter =
-                    [effectFilter, transitionFilter]
-                      .filter(Boolean)
-                      .join(" ") || undefined;
+                  const transitionStyle = isDissolveParticipant
+                    ? {
+                        filter: adjustmentCssFilter(
+                          adjustmentLayersAffectingVideoTrack(
+                            unmaskedAdjustmentLayers,
+                            renderTime,
+                            trackId,
+                            trackSettings,
+                            effectiveVideoLayer(clip),
+                          ),
+                          renderTime,
+                        ) || undefined,
+                      }
+                    : adjustedVideoTransitionStyle(
+                        clip,
+                        renderTime,
+                        unmaskedAdjustmentLayers,
+                        trackSettings,
+                      );
+                  const {
+                    filter: transitionFilter,
+                    opacity: ordinaryTransitionOpacity,
+                    ...transitionVisualStyle
+                  } = transitionStyle;
+                  const previewFilter = [effectFilter, transitionFilter]
+                    .filter(Boolean)
+                    .join(" ") || undefined;
+                  const dissolveOpacity = isDissolveOutgoing
+                    ? (1 - (dissolve?.progress ?? 0)) *
+                      videoOpacityFadeFactor(clip, renderTime) *
+                      (evaluateVideoTransformProperty(clip, "opacity", renderTime) / 100)
+                    : isDissolveIncoming
+                      ? (dissolve?.progress ?? 0) *
+                        videoOpacityFadeFactor(clip, renderTime) *
+                        (evaluateVideoTransformProperty(clip, "opacity", renderTime) / 100)
+                      : null;
+                  const visualOpacity = trackVisible
+                    ? dissolveOpacity ??
+                      (typeof ordinaryTransitionOpacity === "number"
+                        ? ordinaryTransitionOpacity
+                        : 1)
+                    : 0;
                   const vignetteStyle = videoVignetteOverlayStyle(
                     clip,
                     previewEffects,
-                    videoDimensions[trackId] ?? { width: 16, height: 9 },
+                    videoDimensions[clip.id] ?? { width: 16, height: 9 },
                     shellDimensions,
-                    displayTime,
+                    renderTime,
                   );
+                  const epoch = mediaEpochByClipId[clip.id] ?? 0;
+
                   return (
-                    <Fragment key={clip.id}>
+                    <div
+                      key={`${clip.id}:${epoch}`}
+                      className="program-video-blend-layer"
+                      aria-hidden={!trackVisible}
+                      style={{
+                        zIndex: programStackRanks.get(`video:${clip.id}`) ?? 10,
+                        visibility: "visible",
+                        opacity: visualOpacity,
+                        pointerEvents: isActive ? undefined : "none",
+                        mixBlendMode: cssBlendMode(clip.blendMode),
+                      }}
+                    >
                       <div
-                        className="program-video-blend-layer"
-                        style={{
-                          zIndex: videoTrackIndex(trackId),
-                          visibility:
-                            videoVisibility[trackId] &&
-                            !isTrackHidden(trackSettings, trackId)
-                              ? "visible"
-                              : "hidden",
-                          mixBlendMode: cssBlendMode(clip.blendMode),
-                        }}
+                        className="program-video-mask-wrapper"
+                        style={videoMaskCssStyle(
+                          clip.mask,
+                          shellDimensions.width / Math.max(1, shellDimensions.height),
+                        )}
                       >
                         <div
-                          className="program-video-mask-wrapper"
-                          style={videoMaskCssStyle(
-                            clip.mask,
-                            shellDimensions.width /
-                              Math.max(1, shellDimensions.height),
-                          )}
+                          className="program-video-effect-layer"
+                          style={{ filter: previewFilter }}
                         >
-                          <div
-                            className="program-video-effect-layer"
-                            style={{ filter: previewFilter }}
-                          >
-                            <video
-                              key={clip.id}
-                              ref={(element) => {
-                                videoRefsByClipId.current[clip.id] = element;
-                              }}
-                              src={sourceUrl}
-                              data-source-path={clip.sourcePath}
-                              data-preview-proxy={
-                                proxyPathsBySource[clip.sourcePath]
-                                  ? "true"
-                                  : "false"
-                              }
-                              className="video-element video-track-layer"
-                              muted
-                              preload="auto"
-                              style={{
-                                ...videoTransformStyle(
-                                  clip,
-                                  videoDimensions[trackId] ?? {
-                                    width: 16,
-                                    height: 9,
-                                  },
-                                  shellDimensions,
-                                  displayTime,
-                                ),
-                                ...transitionVisualStyle,
-                              }}
-                              onLoadedMetadata={() =>
-                                handleVideoLoadedMetadata(trackId, clip.id)
-                              }
-                              onPointerDown={(event) =>
-                                handleProgramClipPointerDown(event, clip)
-                              }
-                              onContextMenu={(event) =>
-                                handleProgramClipContextMenu(event, clip)
-                              }
-                            />
-                          </div>
-                          {vignetteStyle && (
-                            <div
-                              className="program-video-vignette"
-                              aria-hidden="true"
-                              style={{
-                                ...vignetteStyle,
-                                opacity:
-                                  typeof transitionStyle.opacity === "number"
-                                    ? transitionStyle.opacity
-                                    : 1,
-                              }}
-                            />
-                          )}
+                          <video
+                            ref={(element) => {
+                              videoRefsByClipId.current[clip.id] = element;
+                            }}
+                            src={sourceUrl}
+                            data-source-path={clip.sourcePath}
+                            data-preview-proxy={previewSource.isProxy ? "true" : "false"}
+                            className="video-element video-track-layer"
+                            muted={renderVideoMuted}
+                            preload="auto"
+                            style={{
+                              ...videoTransformStyle(
+                                clip,
+                                videoDimensions[clip.id] ?? { width: 16, height: 9 },
+                                shellDimensions,
+                                renderTime,
+                              ),
+                              ...transitionVisualStyle,
+                            }}
+                            onLoadStart={() => {
+                              videoReadyByClipIdRef.current[clip.id] = false;
+                              reportMedia(clip.id, "loadstart");
+                              delete videoWarmStateByClipIdRef.current[clip.id];
+                              delete videoWarmPaintedByClipIdRef.current[clip.id];
+                            }}
+                            onLoadedMetadata={() =>
+                              handleVideoLoadedMetadata(trackId, clip.id)
+                            }
+                            onLoadedData={() =>
+                              markBufferedVideoReady(trackId, clip.id)
+                            }
+                            onSeeking={() => {
+                              reportMedia(clip.id, "seeking");
+                              delete videoWarmStateByClipIdRef.current[clip.id];
+                              delete videoWarmPaintedByClipIdRef.current[clip.id];
+                            }}
+                            onSeeked={() => {
+                              reportMedia(
+                                clip.id,
+                                "seeked",
+                                videoRefsByClipId.current[clip.id]?.currentTime ?? 0,
+                              );
+                              markBufferedVideoReady(trackId, clip.id);
+                            }}
+                            onCanPlay={() =>
+                              markBufferedVideoReady(trackId, clip.id)
+                            }
+                            onPlaying={(event) =>
+                              reportMedia(
+                                clip.id,
+                                "playing",
+                                event.currentTarget.currentTime,
+                              )
+                            }
+                            onError={() => reportMedia(clip.id, "error")}
+                            onEmptied={() => reportMedia(clip.id, "emptied")}
+                            onAbort={() => reportMedia(clip.id, "abort")}
+                            onStalled={(event) =>
+                              reportMedia(
+                                clip.id,
+                                "stalled",
+                                event.currentTarget.currentTime,
+                              )
+                            }
+                            onWaiting={(event) =>
+                              reportMedia(
+                                clip.id,
+                                "waiting",
+                                event.currentTarget.currentTime,
+                              )
+                            }
+                            onPointerDown={(event) => {
+                              if (isActive) handleProgramClipPointerDown(event, clip);
+                            }}
+                            onContextMenu={(event) => {
+                              if (isActive) handleProgramClipContextMenu(event, clip);
+                            }}
+                          />
                         </div>
+                        {vignetteStyle && (
+                          <div
+                            className="program-video-vignette"
+                            aria-hidden="true"
+                            style={{ ...vignetteStyle, opacity: visualOpacity }}
+                          />
+                        )}
                       </div>
-                    </Fragment>
+                    </div>
                   );
                 })}
 
@@ -3643,7 +4465,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   )
                   .sort(
                     (a, b) =>
-                      videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
+                      effectiveAdjustmentLayer(a) - effectiveAdjustmentLayer(b) ||
                       a.timelineStart - b.timelineStart,
                   )
                   .map((layer) => {
@@ -3701,7 +4523,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                         className="program-masked-adjustment-layer"
                         aria-hidden="true"
                         style={{
-                          zIndex: videoTrackIndex(layer.trackId) - 0.25,
+                          zIndex: programStackRanks.get(`adjustment:${layer.id}`) ?? 5,
                           mixBlendMode: cssBlendMode(layer.blendMode),
                           opacity: layerStrength,
                           ...(activeVideoMask(layer.mask)
@@ -3874,16 +4696,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 )}
 
               {audioTrackIds.map((audioTrackId) => {
-                const sourcePath = audioSourcesByTrack[audioTrackId];
-                const previewPath = sourcePath
-                  ? (proxyPathsBySource[sourcePath] ?? sourcePath)
-                  : null;
                 const linkedVideoTrackId =
                   trackSettings[audioTrackId]?.linkedTrackId;
                 const linkedVideoClip =
                   linkedVideoTrackId && /^video-\d+$/.test(linkedVideoTrackId)
                     ? (activeClipsByTrack[linkedVideoTrackId] ?? null)
                     : null;
+                const visibleLinkedVideoOwnsAudio =
+                  !!linkedVideoClip &&
+                  !!linkedVideoTrackId &&
+                  !isTrackHidden(trackSettings, linkedVideoTrackId) &&
+                  !isFreezeFrameClip(linkedVideoClip) &&
+                  !isReverseVideoClip(linkedVideoClip);
+                const sourcePath = visibleLinkedVideoOwnsAudio
+                  ? null
+                  : audioSourcesByTrack[audioTrackId];
+                const previewPath = sourcePath
+                  ? (proxyPathsBySource[sourcePath] ?? sourcePath)
+                  : null;
                 const standaloneClip = linkedVideoClip
                   ? null
                   : findActiveAudioClip(audioClips, displayTime, audioTrackId);

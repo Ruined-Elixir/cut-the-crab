@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { traceCut } from "../utils/cutTrace";
 
 export type TranscriptionEngine = "whisper" | "sensevoice";
 
@@ -20,6 +21,7 @@ export async function transcribeVideo(
   engine: TranscriptionEngine,
   model: WhisperModel,
 ): Promise<TranscriptionResult> {
+  traceCut("transcription-task-start", { videoPath, engine, model });
   return invoke<TranscriptionResult>("transcribe_video", {
     videoPath,
     engine,

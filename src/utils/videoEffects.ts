@@ -10,6 +10,7 @@ import {
   adjustmentLayerStrength,
   adjustmentLayersAffectingVideoTrack,
 } from "./adjustmentLayers";
+import { effectiveVideoLayer } from "./videoLayers";
 
 export const VIDEO_EFFECT_KINDS: VideoEffectKind[] = [
   "gaussian-blur",
@@ -180,6 +181,7 @@ export function videoEffectsForClipAtTime(
     timelineTime,
     clip.trackId,
     trackSettings,
+    effectiveVideoLayer(clip),
   ).flatMap((layer) => {
     const strength = adjustmentLayerStrength(layer, timelineTime);
     return (layer.effects ?? []).map((effect) =>

@@ -132,12 +132,12 @@ function SubtitleGenerationModal({
               <p className="subtitle-generation-modal-secondary-status">
                 {engine === "sensevoice"
                   ? "SenseVoice is processing the video locally."
-                  : "Subtitle Editor is temporarily locked while the local transcription model processes this video."}
+                  : "Cut The Crab is temporarily locked while the local transcription model processes this video."}
               </p>
             )}
 
             <p className="subtitle-generation-modal-hint">
-              Please keep Subtitle Editor open until generation finishes.
+              Please keep Cut The Crab open until generation finishes.
             </p>
           </>
         )}

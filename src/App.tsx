@@ -40,9 +40,11 @@ import {
 
 import {
   loadMatchingProjectFile,
+  projectFromLoadResult,
   saveProjectFile,
 } from "./services/projectFiles";
 
+import { setPlaybackClockTime } from "./utils/playbackClock";
 import {
   loadRecentProjects,
   removeRecentProject,
@@ -131,6 +133,10 @@ import {
   type TimelineRange,
   type TimelineRangeEditMode,
 } from "./utils/timelineRangeEdits";
+import {
+  effectiveVideoLayer,
+  normalizedProgramLayersForVideoOrder,
+} from "./utils/videoLayers";
 
 import "./App.css";
 
@@ -527,7 +533,18 @@ function App() {
   // ==========================================================================
 
   const [videoDuration, setVideoDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const currentTimeRef = useRef(0);
+  const setCurrentTime = useCallback((time: number) => {
+    const next = Number.isFinite(time) ? Math.max(0, time) : 0;
+    currentTimeRef.current = next;
+    setPlaybackClockTime(next, true);
+  }, []);
+  const handlePlaybackTimeChange = useCallback((time: number) => {
+    if (!Number.isFinite(time)) return;
+    const next = Math.max(0, time);
+    currentTimeRef.current = next;
+    setPlaybackClockTime(next);
+  }, []);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
@@ -596,8 +613,11 @@ function App() {
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSavingProject, setIsSavingProject] = useState(false);
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
+  const [saveRetryTick, setSaveRetryTick] = useState(0);
 
   const isLoadingVideoRef = useRef(false);
+  const projectLoadGenerationRef = useRef(0);
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
   const timelineRef = useRef<TimelineHandle | null>(null);
   const handleSkimPreviewChange = useCallback((time: number | null) => {
@@ -632,12 +652,6 @@ function App() {
   // ==========================================================================
 
   const { waveformsBySource, generateWaveform } = useWaveform();
-
-  useEffect(() => {
-    for (const asset of mediaAssets) {
-      void generateWaveform(asset.path);
-    }
-  }, [mediaAssets, generateWaveform]);
 
   // ==========================================================================
   // Subtitles
@@ -674,7 +688,7 @@ function App() {
     replaceWithGeneratedSubtitles,
     shiftLinkedSubtitlesByVideoClipDeltas,
     bindPendingGeneratedSubtitlesToVideoClips,
-  } = useSubtitleEditor(currentTime, videoDuration);
+  } = useSubtitleEditor(videoDuration);
 
   useEffect(() => {
     if (activeSubtitleTrackId === DEFAULT_SUBTITLE_TRACK_ID) {
@@ -737,12 +751,12 @@ function App() {
   const videoProxySourcePaths = useMemo(
     () => [
       ...(videoPath ? [videoPath] : []),
-      ...videoClips.map((clip) => clip.sourcePath),
-      ...mediaAssets
-        .filter((asset) => asset.kind === "video")
-        .map((asset) => asset.path),
+      ...videoClips
+        .slice()
+        .sort((a, b) => a.timelineStart - b.timelineStart)
+        .map((clip) => clip.sourcePath),
     ],
-    [mediaAssets, videoClips, videoPath],
+    [videoClips, videoPath],
   );
 
   const { proxyStatesBySource, proxyPathsBySource } = useVideoProxies(
@@ -770,6 +784,24 @@ function App() {
     updateAudioClip,
     replaceAudioClips,
   } = useAudioTimeline({ rippleMode });
+
+  const waveformSourcePaths = useMemo(() => {
+    const paths = new Set<string>();
+    if (videoPath) paths.add(videoPath);
+    for (const clip of videoClips) {
+      if (clip.sourcePath) paths.add(clip.sourcePath);
+    }
+    for (const clip of audioClips) {
+      if (clip.sourcePath) paths.add(clip.sourcePath);
+    }
+    return [...paths];
+  }, [audioClips, videoClips, videoPath]);
+
+  useEffect(() => {
+    for (const sourcePath of waveformSourcePaths) {
+      void generateWaveform(sourcePath);
+    }
+  }, [generateWaveform, waveformSourcePaths]);
 
   const latestSaveStateRef = useRef({
     activeProjectId,
@@ -817,6 +849,18 @@ function App() {
   // Undo / Redo history
   // ==========================================================================
 
+  const historySnapshot = useMemo(
+    () => ({
+      subtitles,
+      markers,
+      videoClips,
+      audioClips,
+      adjustmentLayers,
+      trackSettings,
+    }),
+    [subtitles, markers, videoClips, audioClips, adjustmentLayers, trackSettings],
+  );
+
   const {
     canUndo,
     canRedo,
@@ -827,14 +871,7 @@ function App() {
     beginTransaction: beginHistoryTransaction,
     endTransaction: endHistoryTransaction,
   } = useEditorHistory({
-    snapshot: {
-      subtitles,
-      markers,
-      videoClips,
-      audioClips,
-      adjustmentLayers,
-      trackSettings,
-    },
+    snapshot: historySnapshot,
     enabled: screen === "editor" && !!videoPath && !isLoadingVideoRef.current,
     onApply: (snapshot) => {
       replaceSubtitles(snapshot.subtitles);
@@ -1054,7 +1091,7 @@ function App() {
   const createAdjustmentLayer = () => {
     const rangeStart = timelineRange
       ? Math.min(timelineRange.start, timelineRange.end)
-      : currentTime;
+      : currentTimeRef.current;
     const rangeEnd = timelineRange
       ? Math.max(timelineRange.start, timelineRange.end)
       : rangeStart + DEFAULT_ADJUSTMENT_LAYER_DURATION;
@@ -1737,14 +1774,14 @@ function App() {
     }
 
     if (
-      currentTime <= selectedClip.timelineStart + 0.1 ||
-      currentTime >= selectedClip.timelineEnd - 0.1
+      currentTimeRef.current <= selectedClip.timelineStart + 0.1 ||
+      currentTimeRef.current >= selectedClip.timelineEnd - 0.1
     ) {
       return false;
     }
 
     markNextChangeImmediate();
-    splitVideoClip(selectedVideoClipId, currentTime);
+    splitVideoClip(selectedVideoClipId, currentTimeRef.current);
 
     return true;
   };
@@ -2199,12 +2236,12 @@ function App() {
     const clip = audioClips.find((item) => item.id === selectedAudioClipId);
     if (!clip || trackSettings[clip.trackId]?.locked) return false;
     if (
-      currentTime <= clip.timelineStart + 0.05 ||
-      currentTime >= clip.timelineEnd - 0.05
+      currentTimeRef.current <= clip.timelineStart + 0.05 ||
+      currentTimeRef.current >= clip.timelineEnd - 0.05
     )
       return false;
     markNextChangeImmediate();
-    splitAudioClip(clip.id, currentTime);
+    splitAudioClip(clip.id, currentTimeRef.current);
     return true;
   };
 
@@ -2526,99 +2563,46 @@ function App() {
       )
       .sort(
         (a, b) =>
-          timelineTrackIndexFromId(a.trackId) -
-          timelineTrackIndexFromId(b.trackId),
+          effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+          a.timelineStart - b.timelineStart ||
+          a.id.localeCompare(b.id),
       );
   };
 
-  const overlapsProgramLayerSpan = (
-    startA: number,
-    endA: number,
-    startB: number,
-    endB: number,
-  ) => endA > startB + 0.000001 && startA < endB - 0.000001;
+  const applyProgramVideoLayerOrder = (orderedClipIdsTopToBottom: string[]) => {
+    const visibleIds = new Set(orderedClipIdsTopToBottom);
+    const visibleClips = videoClips.filter((clip) => visibleIds.has(clip.id));
+    if (visibleClips.length !== orderedClipIdsTopToBottom.length) return false;
 
-  const validateProgramLayerAssignments = (
-    assignments: Map<string, TimelineTrackId>,
-  ): string | null => {
-    const movingIds = new Set(assignments.keys());
-    const targetTrackIds = [...assignments.values()];
-
-    if (new Set(targetTrackIds).size !== targetTrackIds.length) {
-      return "Two video layers cannot occupy the same target track.";
-    }
-
-    for (const [clipId, targetTrackId] of assignments) {
-      const clip = videoClips.find((item) => item.id === clipId);
-      if (!clip) return "One of the visible video layers no longer exists.";
-
-      if (
-        trackSettings[clip.trackId]?.locked ||
-        trackSettings[targetTrackId]?.locked
-      ) {
-        return "Unlock the affected video tracks before changing their layer order.";
-      }
-
-      if (
-        timelineTrackKindFromId(targetTrackId) !== "video" ||
-        trackSettings[targetTrackId]?.deleted === true
-      ) {
-        return "The target video layer is not available.";
-      }
-
-      const adjustmentConflict = adjustmentLayers.some(
-        (layer) =>
-          layer.trackId === targetTrackId &&
-          overlapsProgramLayerSpan(
-            clip.timelineStart,
-            clip.timelineEnd,
-            layer.timelineStart,
-            layer.timelineEnd,
-          ),
-      );
-      if (adjustmentConflict) {
-        return "That reorder would place a video clip on a track occupied by an Adjustment Layer during the same time span. Move the Adjustment Layer to another video track first.";
-      }
-
-      const unrelatedVideoConflict = videoClips.some(
-        (other) =>
-          !movingIds.has(other.id) &&
-          other.trackId === targetTrackId &&
-          overlapsProgramLayerSpan(
-            clip.timelineStart,
-            clip.timelineEnd,
-            other.timelineStart,
-            other.timelineEnd,
-          ),
-      );
-      if (unrelatedVideoConflict) {
-        return "That reorder would overlap another video elsewhere on the target track. Move or trim that clip first.";
-      }
-    }
-
-    return null;
-  };
-
-  const applyProgramVideoLayerAssignments = (
-    assignments: Map<string, TimelineTrackId>,
-  ) => {
-    const error = validateProgramLayerAssignments(assignments);
-    if (error) {
-      window.alert(error);
+    if (visibleClips.some((clip) => trackSettings[clip.trackId]?.locked)) {
+      window.alert("Unlock the affected video track before changing its Program layer order.");
       return false;
     }
 
-    const hasChange = [...assignments].some(([id, trackId]) =>
-      videoClips.some((clip) => clip.id === id && clip.trackId !== trackId),
+    const normalized = normalizedProgramLayersForVideoOrder(
+      videoClips,
+      adjustmentLayers,
+      orderedClipIdsTopToBottom,
     );
-    if (!hasChange) return true;
+    if (!normalized) return false;
+
+    const videoChanged = videoClips.some(
+      (clip) => normalized.videoLayers.get(clip.id) !== effectiveVideoLayer(clip),
+    );
+    if (!videoChanged) return true;
 
     markNextChangeImmediate();
     replaceVideoClips(
-      videoClips.map((clip) => {
-        const targetTrackId = assignments.get(clip.id);
-        return targetTrackId ? { ...clip, trackId: targetTrackId } : clip;
-      }),
+      videoClips.map((clip) => ({
+        ...clip,
+        layer: normalized.videoLayers.get(clip.id) ?? clip.layer,
+      })),
+    );
+    setAdjustmentLayers((current) =>
+      current.map((layer) => ({
+        ...layer,
+        layer: normalized.adjustmentLayers.get(layer.id) ?? layer.layer,
+      })),
     );
     return true;
   };
@@ -2628,24 +2612,19 @@ function App() {
     direction: ProgramLayerDirection,
     atTime: number,
   ) => {
-    // Program Monitor compositing is track-based: V1 is behind V2, V2 is
-    // behind V3, etc. Layer commands therefore swap the real V-track IDs
-    // of the two adjacent visible clips. There is no second z-order model.
     const visibleBottomToTop = programVisibleVideoClipsAtTime(atTime);
     const currentIndex = visibleBottomToTop.findIndex((clip) => clip.id === id);
     if (currentIndex < 0) return false;
+    const neighborIndex = direction === "forward" ? currentIndex + 1 : currentIndex - 1;
+    if (neighborIndex < 0 || neighborIndex >= visibleBottomToTop.length) return false;
 
-    const neighborIndex =
-      direction === "forward" ? currentIndex + 1 : currentIndex - 1;
-    const neighbor = visibleBottomToTop[neighborIndex];
-    const clip = visibleBottomToTop[currentIndex];
-    if (!clip || !neighbor) return false;
-
-    return applyProgramVideoLayerAssignments(
-      new Map<string, TimelineTrackId>([
-        [clip.id, neighbor.trackId],
-        [neighbor.id, clip.trackId],
-      ]),
+    const requestedBottomToTop = [...visibleBottomToTop];
+    [requestedBottomToTop[currentIndex], requestedBottomToTop[neighborIndex]] = [
+      requestedBottomToTop[neighborIndex],
+      requestedBottomToTop[currentIndex],
+    ];
+    return applyProgramVideoLayerOrder(
+      requestedBottomToTop.map((clip) => clip.id).reverse(),
     );
   };
 
@@ -2653,12 +2632,8 @@ function App() {
     orderedClipIdsTopToBottom: string[],
     atTime: number,
   ) => {
-    // The Layers panel is only a controller for the existing V-track stack.
-    // Reordering rows reassigns the same currently-visible V-track IDs.
-    const visibleBottomToTop = programVisibleVideoClipsAtTime(atTime);
-    if (visibleBottomToTop.length < 2) return true;
-
-    const visibleIds = new Set(visibleBottomToTop.map((clip) => clip.id));
+    const visible = programVisibleVideoClipsAtTime(atTime);
+    const visibleIds = new Set(visible.map((clip) => clip.id));
     if (
       orderedClipIdsTopToBottom.length !== visibleIds.size ||
       orderedClipIdsTopToBottom.some((id) => !visibleIds.has(id)) ||
@@ -2666,20 +2641,7 @@ function App() {
     ) {
       return false;
     }
-
-    const targetTracksBottomToTop = visibleBottomToTop
-      .map((clip) => clip.trackId)
-      .sort(
-        (a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
-      );
-    const requestedBottomToTop = [...orderedClipIdsTopToBottom].reverse();
-    const assignments = new Map<string, TimelineTrackId>();
-
-    requestedBottomToTop.forEach((clipId, index) => {
-      assignments.set(clipId, targetTracksBottomToTop[index]);
-    });
-
-    return applyProgramVideoLayerAssignments(assignments);
+    return applyProgramVideoLayerOrder(orderedClipIdsTopToBottom);
   };
 
   const handleVideoPlaybackRateChange = (id: string, requestedRate: number) => {
@@ -2748,8 +2710,8 @@ function App() {
       return;
     }
     if (
-      currentTime <= clip.timelineStart + 0.1 ||
-      currentTime >= clip.timelineEnd - 0.1
+      currentTimeRef.current <= clip.timelineStart + 0.1 ||
+      currentTimeRef.current >= clip.timelineEnd - 0.1
     ) {
       window.alert(
         "Move the playhead inside the selected clip before creating a freeze frame.",
@@ -2757,7 +2719,7 @@ function App() {
       return;
     }
     markNextChangeImmediate();
-    insertVideoFreezeFrame(id, currentTime, 2);
+    insertVideoFreezeFrame(id, currentTimeRef.current, 2);
   };
 
   const handleVideoTransformChange = (
@@ -2780,7 +2742,7 @@ function App() {
       return;
     }
 
-    updateVideoClipTransform(id, transform, currentTime);
+    updateVideoClipTransform(id, transform, currentTimeRef.current);
   };
 
   const handleVideoMaskChange = (id: string, mask: VideoMask | undefined) => {
@@ -2969,15 +2931,15 @@ function App() {
     const MIN_SPLIT_GAP = 0.05;
 
     if (
-      currentTime <= selectedSubtitle.startTime + MIN_SPLIT_GAP ||
-      currentTime >= selectedSubtitle.endTime - MIN_SPLIT_GAP
+      currentTimeRef.current <= selectedSubtitle.startTime + MIN_SPLIT_GAP ||
+      currentTimeRef.current >= selectedSubtitle.endTime - MIN_SPLIT_GAP
     ) {
       return;
     }
 
     markNextChangeImmediate();
 
-    splitSubtitle(selectedSubtitleId, currentTime);
+    splitSubtitle(selectedSubtitleId, currentTimeRef.current);
   };
 
   const editableSubtitleIds = (ids: string[]) =>
@@ -3087,11 +3049,6 @@ function App() {
     setMarkers(nextMarkers);
   };
 
-  const replaceSubtitlesWithHistory = (nextSubtitles: typeof subtitles) => {
-    markNextChangeImmediate();
-    replaceSubtitles(nextSubtitles);
-  };
-
   const replaceSubtitleTrackWithHistory = (
     trackId: TimelineTrackId,
     nextSubtitles: typeof subtitles,
@@ -3113,6 +3070,64 @@ function App() {
     setActiveSubtitleTrackId(trackId);
   };
 
+  const reserveSubtitleTrackForTranscription = () => {
+    const activeTrackIds = new Set<TimelineTrackId>([
+      DEFAULT_SUBTITLE_TRACK_ID,
+    ]);
+
+    for (const [trackId, settings] of Object.entries(trackSettings) as [
+      TimelineTrackId,
+      TimelineTrackSettings[TimelineTrackId],
+    ][]) {
+      if (
+        timelineTrackKindFromId(trackId) === "subtitle" &&
+        settings?.deleted !== true
+      ) {
+        activeTrackIds.add(trackId);
+      }
+    }
+
+    for (const subtitle of subtitles) {
+      const trackId = getSubtitleTrackId(subtitle);
+      if (trackSettings[trackId]?.deleted !== true) {
+        activeTrackIds.add(trackId);
+      }
+    }
+
+    const orderedTrackIds = [...activeTrackIds].sort(
+      (a, b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b),
+    );
+    const emptyEditableTrack = orderedTrackIds.find(
+      (trackId) =>
+        !trackSettings[trackId]?.locked &&
+        !subtitles.some(
+          (subtitle) => getSubtitleTrackId(subtitle) === trackId,
+        ),
+    );
+
+    if (emptyEditableTrack) {
+      setActiveSubtitleTrackId(emptyEditableTrack);
+      return emptyEditableTrack;
+    }
+
+    let nextIndex = 1;
+    while (activeTrackIds.has(`subtitle-${nextIndex}`)) {
+      nextIndex += 1;
+    }
+
+    const trackId = `subtitle-${nextIndex}` as TimelineTrackId;
+    setTrackSettings((current) => ({
+      ...current,
+      [trackId]: {
+        ...defaultTrackControlState("subtitle"),
+        linkedTrackId: null,
+        deleted: false,
+      },
+    }));
+    setActiveSubtitleTrackId(trackId);
+    return trackId;
+  };
+
   const replaceGeneratedSubtitlesWithHistory = (
     segments: {
       startTime: number;
@@ -3121,10 +3136,6 @@ function App() {
     }[],
     generatedFromPath: string,
   ) => {
-    if (trackSettings[activeSubtitleTrackId]?.locked) {
-      return;
-    }
-
     const sourceClip = videoClips
       .filter(
         (clip) =>
@@ -3163,8 +3174,13 @@ function App() {
           linkedVideoSourcePath: generatedFromPath,
         }));
 
+    if (linkedSegments.length === 0) {
+      return;
+    }
+
     markNextChangeImmediate();
-    replaceWithGeneratedSubtitles(linkedSegments, activeSubtitleTrackId);
+    const targetTrackId = reserveSubtitleTrackForTranscription();
+    replaceWithGeneratedSubtitles(linkedSegments, targetTrackId);
   };
 
   // ==========================================================================
@@ -3332,12 +3348,16 @@ function App() {
           mediaAssets,
           trackSettings,
         });
+
+        setAutosaveError(null);
       } catch (error) {
         console.error("Autosave failed:", error);
+        setAutosaveError(error instanceof Error ? error.message : String(error));
+        window.setTimeout(() => setSaveRetryTick((tick) => tick + 1), 5000);
       } finally {
         setIsSavingProject(false);
       }
-    }, AUTOSAVE_DEBOUNCE_MS);
+    }, autosaveError ? 0 : AUTOSAVE_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeout);
@@ -3354,6 +3374,7 @@ function App() {
     mediaAssets,
     trackSettings,
     hasUnsavedChanges,
+    saveRetryTick,
   ]);
 
   // ==========================================================================
@@ -3403,10 +3424,6 @@ function App() {
     clip: VideoTimelineClip,
     preset: TranscriptionPreset,
   ) => {
-    if (trackSettings[activeSubtitleTrackId]?.locked) {
-      return;
-    }
-
     const generatedSegments = await generateSubtitles(clip.sourcePath, {
       ...transcriptionOptionsForPreset(preset),
       commitResult: false,
@@ -3416,7 +3433,7 @@ function App() {
       return;
     }
 
-    const mappedSubtitles = generatedSegments.flatMap((segment) => {
+    const mappedSegments = generatedSegments.flatMap((segment) => {
       const sourceStart = Math.max(segment.startTime, clip.sourceIn);
       const sourceEnd = Math.min(segment.endTime, clip.sourceOut);
 
@@ -3426,8 +3443,6 @@ function App() {
 
       return [
         {
-          id: crypto.randomUUID(),
-          trackId: activeSubtitleTrackId,
           startTime: Math.min(
             sourceTimeToTimelineTime(clip, sourceStart),
             sourceTimeToTimelineTime(clip, sourceEnd),
@@ -3443,11 +3458,18 @@ function App() {
       ];
     });
 
-    if (mappedSubtitles.length === 0) {
+    if (mappedSegments.length === 0) {
       return;
     }
 
-    replaceSubtitlesWithHistory([...subtitles, ...mappedSubtitles]);
+    markNextChangeImmediate();
+    const targetTrackId = reserveSubtitleTrackForTranscription();
+    const mappedSubtitles = mappedSegments.map((segment) => ({
+      ...segment,
+      id: crypto.randomUUID(),
+      trackId: targetTrackId,
+    }));
+    replaceSubtitles([...subtitles, ...mappedSubtitles]);
   };
 
   // ==========================================================================
@@ -3457,7 +3479,7 @@ function App() {
   const requestSeek = (time: number) => {
     const nextTime = Math.max(0, Number.isFinite(time) ? time : 0);
 
-    // App.currentTime is the canonical timeline clock. Update it immediately
+    // The playback clock is canonical timeline time. Update it immediately
     // so list/timeline selection and the Program Monitor subtitle reflect the
     // requested subtitle in the same render, before the media elements finish
     // processing the seek.
@@ -3478,6 +3500,8 @@ function App() {
     preferredMetadata?: ProjectMetadata,
     requestedProjectId?: string,
   ) => {
+    const loadGeneration = projectLoadGenerationRef.current + 1;
+    projectLoadGenerationRef.current = loadGeneration;
     isLoadingVideoRef.current = true;
 
     const projectId = requestedProjectId ?? crypto.randomUUID();
@@ -3530,9 +3554,33 @@ function App() {
     };
 
     try {
-      const matchingProject = await loadMatchingProjectFile(projectId, path);
+      const loadResult = await loadMatchingProjectFile(projectId, path);
+      if (projectLoadGenerationRef.current !== loadGeneration) return;
 
-      if (matchingProject) {
+      if (loadResult.status === "error") {
+        setActiveProjectId(null);
+        setVideoPath(null);
+        setVideoName(null);
+        setHasUnsavedChanges(false);
+        lastSavedSnapshotRef.current = "";
+        setScreen("home");
+        setHomeError(
+          `This project could not be opened: ${loadResult.message}` +
+            (loadResult.backupPath
+              ? ` A copy of the file was saved to ${loadResult.backupPath}.`
+              : ""),
+        );
+        return;
+      }
+
+      if (loadResult.status === "ok") {
+        const matchingProject = loadResult.project;
+
+        if (loadResult.recoveredFromBackup) {
+          setHomeError(
+            "The latest save was unreadable, so the previous version was restored.",
+          );
+        }
         const loadedSubtitles = matchingProject.subtitles;
         const loadedMarkers = matchingProject.markers;
         const loadedVideoClips = matchingProject.videoClips;
@@ -3566,6 +3614,7 @@ function App() {
             audioClips: loadedAudioClips,
             mediaAssets: loadedMediaAssets,
           });
+          if (projectLoadGenerationRef.current !== loadGeneration) return;
           setMissingMediaIssues(missingIssues);
           setMissingMediaDialogOpen(missingIssues.length > 0);
         } catch (availabilityError) {
@@ -3595,6 +3644,7 @@ function App() {
         setHasUnsavedChanges(false);
       } else {
         const matchingSubtitles = await loadMatchingSrtFile(path);
+        if (projectLoadGenerationRef.current !== loadGeneration) return;
 
         if (matchingSubtitles) {
           replaceSubtitles(matchingSubtitles);
@@ -3633,33 +3683,26 @@ function App() {
         setHasUnsavedChanges(false);
       }
     } catch (error) {
-      console.error("Failed to load subtitle data:", error);
-
-      loadedHistorySnapshot = {
-        subtitles: [],
-        markers: [],
-        videoClips: [],
-        audioClips: [],
-        adjustmentLayers: [],
-        mediaAssets: [],
-        trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS },
-      };
-
-      lastSavedSnapshotRef.current = JSON.stringify({
-        subtitles: [],
-        markers: [],
-        videoClips: [],
-        audioClips: [],
-        adjustmentLayers: [],
-        mediaAssets: [],
-        trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
-      });
-
-      setHasUnsavedChanges(false);
-    } finally {
+      console.error("Failed to load project data:", error);
+      if (projectLoadGenerationRef.current !== loadGeneration) return;
       isLoadingVideoRef.current = false;
+      setActiveProjectId(null);
+      setVideoPath(null);
+      setVideoName(null);
+      setScreen("home");
+      setHomeError(
+        error instanceof Error
+          ? error.message
+          : "The project could not be loaded safely. The original project file was not overwritten.",
+      );
+      return;
+    } finally {
+      if (projectLoadGenerationRef.current === loadGeneration) {
+        isLoadingVideoRef.current = false;
+      }
     }
 
+    if (projectLoadGenerationRef.current !== loadGeneration) return;
     resetHistory(loadedHistorySnapshot);
 
     setScreen("editor");
@@ -3667,6 +3710,7 @@ function App() {
 
     try {
       await recordRecentProject(projectId, path, resolvedMetadata);
+      if (projectLoadGenerationRef.current !== loadGeneration) return;
     } catch (error) {
       console.error("Failed to update recent projects:", error);
     }
@@ -4033,13 +4077,13 @@ function App() {
           : null) ??
         firstEditableStandaloneAudioTrack() ??
         ensureStandaloneAudioTrack();
-      insertMediaAssetOnTimeline(asset, currentTime, target);
+      insertMediaAssetOnTimeline(asset, currentTimeRef.current, target);
       return;
     }
 
     insertMediaAssetOnTimeline(
       asset,
-      currentTime,
+      currentTimeRef.current,
       selectedVideoClip?.trackId ?? "video-1",
     );
   };
@@ -4128,9 +4172,8 @@ function App() {
     try {
       setHomeError("");
 
-      const matchingProject = await loadMatchingProjectFile(
-        project.projectId,
-        project.videoPath,
+      const matchingProject = projectFromLoadResult(
+        await loadMatchingProjectFile(project.projectId, project.videoPath),
       );
 
       if (matchingProject) {
@@ -4186,9 +4229,8 @@ function App() {
     try {
       setHomeError("");
 
-      const oldProject = await loadMatchingProjectFile(
-        project.projectId,
-        project.videoPath,
+      const oldProject = projectFromLoadResult(
+        await loadMatchingProjectFile(project.projectId, project.videoPath),
       );
       let replacementDurationForRecent = project.duration;
 
@@ -4381,9 +4423,9 @@ function App() {
   // Project saving
   // ==========================================================================
 
-  const handleSaveProject = async () => {
+  const handleSaveProject = async (): Promise<boolean> => {
     if (!activeProjectId || !videoPath) {
-      return;
+      return true;
     }
 
     try {
@@ -4410,8 +4452,13 @@ function App() {
           videoDuration,
         );
       }
+
+      setAutosaveError(null);
+      return true;
     } catch (error) {
       console.error("Failed to save project:", error);
+      setAutosaveError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       setIsSavingProject(false);
     }
@@ -4712,7 +4759,15 @@ function App() {
     switch (command) {
       case "file.new-project":
         if (screen === "editor" && hasUnsavedChanges) {
-          await handleSaveProject();
+          const saved = await handleSaveProject();
+          if (
+            !saved &&
+            !window.confirm(
+              "The project could not be saved. Leave anyway and lose unsaved changes?",
+            )
+          ) {
+            return;
+          }
         }
 
         setScreen("home");
@@ -4721,7 +4776,15 @@ function App() {
 
       case "file.show-home":
         if (screen === "editor" && hasUnsavedChanges) {
-          await handleSaveProject();
+          const saved = await handleSaveProject();
+          if (
+            !saved &&
+            !window.confirm(
+              "The project could not be saved. Leave anyway and lose unsaved changes?",
+            )
+          ) {
+            return;
+          }
         }
 
         setScreen("home");
@@ -4831,7 +4894,7 @@ function App() {
 
       case "edit.add-subtitle":
         if (screen === "editor") {
-          addSubtitleWithHistory(currentTime);
+          addSubtitleWithHistory(currentTimeRef.current);
         }
         return;
 
@@ -4898,20 +4961,23 @@ function App() {
 
     const MIN_SUBTITLE_DURATION = 0.1;
 
-    if (currentTime <= subtitle.startTime || currentTime >= subtitle.endTime) {
+    if (
+      currentTimeRef.current <= subtitle.startTime ||
+      currentTimeRef.current >= subtitle.endTime
+    ) {
       return;
     }
 
     if (
       edge === "start" &&
-      currentTime > subtitle.endTime - MIN_SUBTITLE_DURATION
+      currentTimeRef.current > subtitle.endTime - MIN_SUBTITLE_DURATION
     ) {
       return;
     }
 
     if (
       edge === "end" &&
-      currentTime < subtitle.startTime + MIN_SUBTITLE_DURATION
+      currentTimeRef.current < subtitle.startTime + MIN_SUBTITLE_DURATION
     ) {
       return;
     }
@@ -4919,11 +4985,11 @@ function App() {
     markNextChangeImmediate();
 
     if (edge === "start") {
-      resizeSubtitle(subtitle.id, currentTime, subtitle.endTime);
+      resizeSubtitle(subtitle.id, currentTimeRef.current, subtitle.endTime);
       return;
     }
 
-    resizeSubtitle(subtitle.id, subtitle.startTime, currentTime);
+    resizeSubtitle(subtitle.id, subtitle.startTime, currentTimeRef.current);
   };
 
   useEffect(() => {
@@ -5210,7 +5276,6 @@ function App() {
     nudgeSelectedSubtitles,
     resizeSubtitle,
     markNextChangeImmediate,
-    currentTime,
     timelineRange,
     rippleMode,
     trackSettings,
@@ -5260,23 +5325,6 @@ function App() {
       ? selectedSubtitle.id
       : null;
 
-  const activeSubtitlesForTrack = subtitles.filter(
-    (subtitle) =>
-      getSubtitleTrackId(subtitle) === activeSubtitleTrackId &&
-      currentTime >= subtitle.startTime &&
-      currentTime < subtitle.endTime,
-  );
-
-  // Keep the browser's active/timestamp row in sync with the Program Monitor.
-  // When subtitles overlap (or one starts exactly where another ends), the
-  // currently selected subtitle wins instead of the first array match.
-  const activeSubtitleIdForTrack =
-    (selectedSubtitleForActiveTrack &&
-    activeSubtitlesForTrack.some(
-      (subtitle) => subtitle.id === selectedSubtitleForActiveTrack.id,
-    )
-      ? selectedSubtitleForActiveTrack.id
-      : activeSubtitlesForTrack[0]?.id) ?? null;
 
   // ==========================================================================
   // Home UI
@@ -5312,7 +5360,15 @@ function App() {
           onClick={() => {
             void (async () => {
               if (hasUnsavedChanges) {
-                await handleSaveProject();
+                const saved = await handleSaveProject();
+                if (
+                  !saved &&
+                  !window.confirm(
+                    "The project could not be saved. Leave anyway and lose unsaved changes?",
+                  )
+                ) {
+                  return;
+                }
               }
 
               setScreen("home");
@@ -5345,12 +5401,18 @@ function App() {
                 {missingMediaIssues.length} media missing
               </button>
             )}
-            <span className="project-save-status">
+            <span
+              className={`project-save-status ${autosaveError ? "save-status-error" : ""}`}
+              role={autosaveError ? "alert" : undefined}
+              title={autosaveError ?? undefined}
+            >
               {isSavingProject
                 ? "Saving..."
-                : hasUnsavedChanges
-                  ? "Unsaved changes..."
-                  : "Saved"}
+                : autosaveError
+                  ? "Save failed - retrying"
+                  : hasUnsavedChanges
+                    ? "Unsaved changes..."
+                    : "Saved"}
             </span>
           </div>
         )}
@@ -5375,7 +5437,7 @@ function App() {
             videoName={videoName}
             onChooseVideo={handleChooseVideo}
             onDurationChange={handleVideoDurationChange}
-            onTimeChange={setCurrentTime}
+            onTimeChange={handlePlaybackTimeChange}
             seekRequest={seekRequest}
             videoClips={videoClips}
             audioClips={audioClips}
@@ -5424,7 +5486,6 @@ function App() {
             onApplyVideoCropToTrack={handleApplyVideoCropToTrack}
             proxyPathsBySource={proxyPathsBySource}
             subtitles={subtitles}
-            currentTime={currentTime}
             selectedSubtitleId={selectedProgramSubtitleId}
             interactiveSubtitleIds={programInteractiveSubtitleIds}
             onSubtitleSelect={handleProgramSubtitleSelect}
@@ -5439,14 +5500,13 @@ function App() {
           selectedSubtitleId={selectedSubtitleIdForActiveTrack}
           selectedSubtitleIds={selectedSubtitleIdsForActiveTrack}
           selectedSubtitleCount={selectedSubtitleIdsForActiveTrack.length}
-          activeSubtitleId={activeSubtitleIdForTrack}
           search={subtitleSearch}
           onSearchChange={setSubtitleSearch}
           onSelect={handleSubtitleSelect}
           onTextChange={updateSubtitleTextIfEditable}
           onStyleChange={updateSubtitleStyleWithSelection}
           onApplyAppearance={applySubtitleAppearance}
-          onAdd={() => addSubtitleWithHistory(currentTime)}
+          onAdd={() => addSubtitleWithHistory(currentTimeRef.current)}
           onDelete={deleteSubtitleWithHistory}
           onReveal={(id) => {
             const subtitle = subtitles.find((item) => item.id === id);
@@ -5466,8 +5526,8 @@ function App() {
         ref={timelineRef}
         duration={timelineDuration}
         scaleDuration={videoDuration}
-        currentTime={currentTime}
         waveformsBySource={waveformsBySource}
+        proxyPathsBySource={proxyPathsBySource}
         videoClips={videoClips}
         audioClips={audioClips}
         adjustmentLayers={adjustmentLayers}
@@ -5570,7 +5630,6 @@ function App() {
           ) ?? null
         }
         open={adjustmentPanelOpen}
-        currentTime={currentTime}
         onClose={() => setAdjustmentPanelOpen(false)}
         onChange={updateAdjustmentLayer}
         onSeek={requestSeek}

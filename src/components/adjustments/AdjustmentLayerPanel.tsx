@@ -26,12 +26,13 @@ import {
   normalizeVideoBlendMode,
 } from "../../utils/blendModes";
 
+import { usePlaybackClockTime } from "../../utils/playbackClock";
+
 import "./AdjustmentLayerPanel.css";
 
 type AdjustmentLayerPanelProps = {
   layer: AdjustmentLayerClip | null;
   open: boolean;
-  currentTime: number;
   onClose: () => void;
   onChange: (id: string, patch: Partial<AdjustmentLayerClip>) => void;
   onSeek?: (time: number) => void;
@@ -152,13 +153,13 @@ function AdjustmentSlider({
 export default function AdjustmentLayerPanel({
   layer,
   open,
-  currentTime,
   onClose,
   onChange,
   onSeek,
   onOpenEffects,
   onOpenMasks,
 }: AdjustmentLayerPanelProps) {
+  const currentTime = usePlaybackClockTime();
   const [position, setPosition] = useState<Position>(() => ({
     x: Math.max(12, window.innerWidth - PANEL_WIDTH - 24),
     y: 78,

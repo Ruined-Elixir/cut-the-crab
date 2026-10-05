@@ -23,6 +23,7 @@ import type {
 } from "../../types/timelineModel";
 
 import { useVideoClipFrames } from "../../hooks/useVideoClipFrames";
+import { usePlaybackClockTime } from "../../utils/playbackClock";
 import { buildTimelineModel } from "../../utils/timelineModel";
 import type { TimelineRange } from "../../utils/timelineRangeEdits";
 import { videoPlaybackRate } from "../../utils/videoRetime";
@@ -56,8 +57,8 @@ type TimelineRevealTarget = {
 type TimelineProps = {
   duration: number;
   scaleDuration: number;
-  currentTime: number;
   waveformsBySource: Record<string, number[]>;
+  proxyPathsBySource?: Record<string, string>;
   videoClips: VideoTimelineClip[];
   audioClips: AudioTimelineClip[];
   adjustmentLayers: AdjustmentLayerClip[];
@@ -236,8 +237,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   {
     duration,
     scaleDuration,
-    currentTime,
-    waveformsBySource,
+      waveformsBySource,
+    proxyPathsBySource = {},
     videoClips,
     audioClips,
     adjustmentLayers,
@@ -322,6 +323,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   }: TimelineProps,
   ref,
 ) {
+  const currentTime = usePlaybackClockTime();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const skimmerRef = useRef<HTMLDivElement | null>(null);
@@ -342,6 +344,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     moved: boolean;
   } | null>(null);
   const suppressRangeClickRef = useRef(false);
+  const suppressSelectionRevealWhileDraggingRef = useRef(false);
   const previousZoomRef = useRef(zoom);
   const pendingFrameTargetRef = useRef<TimelineRevealTarget | null>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
@@ -479,6 +482,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     pixelsPerSecond,
     visibleTimelineStart,
     visibleTimelineEnd,
+    proxyPathsBySource,
   );
 
   const markerTimes = useMemo(
@@ -823,6 +827,46 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   const revealSelection = () =>
     selectionRevealTarget ? revealTarget(selectionRevealTarget) : false;
 
+  const startVideoDragWithoutReveal = (id: string) => {
+    suppressSelectionRevealWhileDraggingRef.current = true;
+    const result = onVideoClipMoveStart?.(id);
+
+    if (result === false) {
+      suppressSelectionRevealWhileDraggingRef.current = false;
+    }
+
+    return result;
+  };
+
+  const endVideoDragWithoutReveal = () => {
+    suppressSelectionRevealWhileDraggingRef.current = false;
+    onVideoClipMoveEnd?.();
+  };
+
+  const startAudioDragWithoutReveal = (id: string) => {
+    suppressSelectionRevealWhileDraggingRef.current = true;
+    const result = onAudioClipMoveStart?.(id);
+
+    if (result === false) {
+      suppressSelectionRevealWhileDraggingRef.current = false;
+    }
+
+    return result;
+  };
+
+  const endAudioDragWithoutReveal = () => {
+    suppressSelectionRevealWhileDraggingRef.current = false;
+    onAudioClipMoveEnd?.();
+  };
+
+  const startFadeResizeWithoutReveal = () => {
+    suppressSelectionRevealWhileDraggingRef.current = true;
+  };
+
+  const endFadeResizeWithoutReveal = () => {
+    suppressSelectionRevealWhileDraggingRef.current = false;
+  };
+
   const frameSelection = () => {
     if (!selectionRevealTarget) return false;
 
@@ -860,6 +904,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
 
   useEffect(() => {
     if (!selectionRevealTarget) return;
+    if (suppressSelectionRevealWhileDraggingRef.current) return;
     revealTarget(selectionRevealTarget);
   }, [
     selectedAudioClipId,
@@ -1390,7 +1435,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   const startCollapsedCompoundRegionMove = (compoundId: string) => {
     const group = compoundDisplay.groups.get(compoundId);
     if (!group) return false;
-    return onVideoClipMoveStart?.(group.anchorVideoId);
+    return startVideoDragWithoutReveal(group.anchorVideoId);
   };
 
   const moveCollapsedCompoundRegion = (
@@ -1427,8 +1472,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             showLabel={false}
             onSeek={onSeek}
             onSelect={onVideoClipSelect}
-            onMoveStart={onVideoClipMoveStart}
-            onMoveEnd={onVideoClipMoveEnd}
+            onMoveStart={startVideoDragWithoutReveal}
+            onMoveEnd={endVideoDragWithoutReveal}
             onMove={onVideoClipMove}
             onMoveToTrack={onVideoClipMoveToTrack}
             onResizeStart={onVideoClipResizeStart}
@@ -1438,6 +1483,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             onToggleHidden={onToggleTrackHidden}
             onTransitionChange={onVideoTransitionChange}
             onFadeChange={onVideoFadeChange}
+            onFadeResizeStart={startFadeResizeWithoutReveal}
+            onFadeResizeEnd={endFadeResizeWithoutReveal}
             onPasteTargetChange={onPasteTargetChange}
             snapTargets={videoMoveSnapTargets}
             onSnapGuideChange={setSnapGuideTime}
@@ -1502,8 +1549,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             onPasteTargetChange={onPasteTargetChange}
             onToggleMute={onToggleTrackMute}
             onSelect={onAudioClipSelect}
-            onMoveStart={onAudioClipMoveStart}
-            onMoveEnd={onAudioClipMoveEnd}
+            onMoveStart={startAudioDragWithoutReveal}
+            onMoveEnd={endAudioDragWithoutReveal}
             onMove={onAudioClipMove}
             onMoveToTrack={onAudioClipMoveToTrack}
             onResize={onAudioClipResize}
@@ -1528,7 +1575,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             onCompoundOpen={onOpenCompound}
             onCompoundMoveStart={startCollapsedCompoundRegionMove}
             onCompoundMove={moveCollapsedCompoundRegion}
-            onCompoundMoveEnd={onVideoClipMoveEnd}
+            onCompoundMoveEnd={endVideoDragWithoutReveal}
             expandedCompoundId={expandedCompoundId}
           />
         );

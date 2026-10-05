@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 
+import { probeMediaStreams, type MediaStreams } from "./mediaProbe";
+
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 import type {
   AdjustmentLayerClip,
@@ -31,6 +33,10 @@ import {
 } from "../utils/videoTransformKeyframes";
 import { videoEffectFfmpegFilters } from "../utils/videoEffects";
 import { activeVideoMask, normalizeVideoMask } from "../utils/videoMasks";
+import {
+  effectiveAdjustmentLayer,
+  effectiveVideoLayer,
+} from "../utils/videoLayers";
 import {
   ffmpegBlendMode,
   isNormalBlendMode,
@@ -498,12 +504,50 @@ function appendMaskToRgba(
   return outputLabel;
 }
 
+function createStreamAllocator(
+  filterParts: string[],
+  videoUses: Map<number, number>,
+  audioUses: Map<number, number>,
+) {
+  const queues = new Map<string, string[]>();
+
+  const register = (kind: "v" | "a", index: number, uses: number) => {
+    if (uses <= 1) return;
+    const labels = Array.from({ length: uses }, (_, useIndex) =>
+      `s${kind}${index}_${useIndex}`,
+    );
+    const filter = kind === "v" ? "split" : "asplit";
+    filterParts.push(
+      `[${index}:${kind}]${filter}=${uses}${labels
+        .map((label) => `[${label}]`)
+        .join("")}`,
+    );
+    queues.set(`${kind}${index}`, labels);
+  };
+
+  for (const [index, uses] of videoUses) register("v", index, uses);
+  for (const [index, uses] of audioUses) register("a", index, uses);
+
+  const take = (kind: "v" | "a", index: number) =>
+    queues.get(`${kind}${index}`)?.shift() ?? `${index}:${kind}`;
+
+  return {
+    takeVideo: (index: number) => take("v", index),
+    takeAudio: (index: number) => take("a", index),
+  };
+}
+
+function incrementStreamUse(map: Map<number, number>, inputIndex: number) {
+  map.set(inputIndex, (map.get(inputIndex) ?? 0) + 1);
+}
+
 function buildTimelineFilterGraph(
   videoClips: VideoTimelineClip[],
   audioClips: AudioTimelineClip[],
   adjustmentLayers: AdjustmentLayerClip[],
   trackSettings: TimelineTrackSettings,
   timelineDuration: number,
+  streams: Map<string, MediaStreams>,
   range?: ExportTimelineRange | null,
   frameSize?: ExportFrameSize,
   programPreviewSize?: ExportProgramPreviewSize,
@@ -548,8 +592,9 @@ function buildTimelineFilterGraph(
     .filter((clip) => /^video-\d+$/.test(clip.trackId))
     .sort(
       (a, b) =>
-        videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
-        a.timelineStart - b.timelineStart,
+        effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+        a.timelineStart - b.timelineStart ||
+        a.id.localeCompare(b.id),
     );
 
   const standaloneAudioClips = [...audioClips]
@@ -564,19 +609,92 @@ function buildTimelineFilterGraph(
         a.trackId.localeCompare(b.trackId) || a.timelineStart - b.timelineStart,
     );
 
-  const inputPaths = [
-    ...renderableClips.map((clip) => clip.sourcePath),
-    ...standaloneAudioClips.map((clip) => clip.sourcePath),
-  ];
-  const clipInputIndex = new Map<string, number>();
-  renderableClips.forEach((clip, index) => clipInputIndex.set(clip.id, index));
-  const standaloneAudioInputIndex = new Map<string, number>();
-  standaloneAudioClips.forEach((clip, index) =>
-    standaloneAudioInputIndex.set(clip.id, renderableClips.length + index),
+  const sourceHasVideo = (sourcePath: string) =>
+    streams.get(sourcePath)?.hasVideo === true;
+  const sourceHasAudio = (sourcePath: string) =>
+    streams.get(sourcePath)?.hasAudio === true;
+
+  const contributesLinkedAudio = (clip: VideoTimelineClip) => {
+    const audioTrackId = linkedAudioTrackId(clip.trackId, trackSettings);
+    return (
+      !isFreezeFrameClip(clip) &&
+      !!audioTrackId &&
+      !audioTrackMuted(audioTrackId, trackSettings) &&
+      !clip.audioMuted &&
+      sourceHasAudio(clip.sourcePath)
+    );
+  };
+
+  const contributesStandaloneAudio = (clip: AudioTimelineClip) =>
+    !audioTrackMuted(clip.trackId, trackSettings) &&
+    !clip.muted &&
+    sourceHasAudio(clip.sourcePath);
+
+  const orderedVideoClips = renderableClips.filter(
+    (clip) =>
+      videoTrackVisible(clip.trackId, trackSettings) &&
+      sourceHasVideo(clip.sourcePath),
   );
 
-  const orderedVideoClips = renderableClips.filter((clip) =>
-    videoTrackVisible(clip.trackId, trackSettings),
+  // FFmpeg opens each unique source file once. Because a single unlabeled input
+  // stream cannot feed multiple filter chains directly, shared video/audio
+  // streams are split/asplit exactly once below and each consumer takes one
+  // generated label. Hidden video tracks still contribute linked audio.
+  const requiredLinkedClips = renderableClips.filter(
+    (clip) =>
+      (videoTrackVisible(clip.trackId, trackSettings) &&
+        sourceHasVideo(clip.sourcePath)) ||
+      contributesLinkedAudio(clip),
+  );
+
+  const inputPaths = [
+    ...new Set([
+      ...requiredLinkedClips.map((clip) => clip.sourcePath),
+      ...standaloneAudioClips
+        .filter(contributesStandaloneAudio)
+        .map((clip) => clip.sourcePath),
+    ]),
+  ];
+
+  const inputIndexByPath = new Map(
+    inputPaths.map((path, index) => [path, index] as const),
+  );
+  const clipInputIndex = new Map<string, number>();
+  requiredLinkedClips.forEach((clip) => {
+    const inputIndex = inputIndexByPath.get(clip.sourcePath);
+    if (inputIndex !== undefined) clipInputIndex.set(clip.id, inputIndex);
+  });
+
+  const standaloneAudioInputIndex = new Map<string, number>();
+  standaloneAudioClips.forEach((clip) => {
+    const inputIndex = inputIndexByPath.get(clip.sourcePath);
+    if (inputIndex !== undefined) {
+      standaloneAudioInputIndex.set(clip.id, inputIndex);
+    }
+  });
+
+  const videoUses = new Map<number, number>();
+  for (const clip of orderedVideoClips) {
+    const inputIndex = clipInputIndex.get(clip.id);
+    if (inputIndex !== undefined) incrementStreamUse(videoUses, inputIndex);
+  }
+
+  const audioUses = new Map<number, number>();
+  for (const clip of renderableClips) {
+    if (!contributesLinkedAudio(clip)) continue;
+    const inputIndex = clipInputIndex.get(clip.id);
+    if (inputIndex !== undefined) incrementStreamUse(audioUses, inputIndex);
+  }
+  for (const clip of standaloneAudioClips) {
+    if (!contributesStandaloneAudio(clip)) continue;
+    const inputIndex = standaloneAudioInputIndex.get(clip.id);
+    if (inputIndex !== undefined) incrementStreamUse(audioUses, inputIndex);
+  }
+
+  const streamAllocator = createStreamAllocator(
+    filterParts,
+    videoUses,
+    audioUses,
   );
 
   const overlayLabels: string[] = [];
@@ -760,7 +878,9 @@ function buildTimelineFilterGraph(
 
     videoFilters.push(`setpts=PTS+${n(window.timelineStart)}/TB`);
 
-    filterParts.push(`[${inputIndex}:v]${videoFilters.join(",")}[${label}]`);
+    filterParts.push(
+      `[${streamAllocator.takeVideo(inputIndex)}]${videoFilters.join(",")}[${label}]`,
+    );
     overlayLabels.push(label);
   }
 
@@ -771,36 +891,40 @@ function buildTimelineFilterGraph(
     overlayLabelByClipId.set(clip.id, overlayLabels[index]),
   );
 
-  const compositionTrackIds = [
-    ...new Set([
-      ...orderedVideoClips.map((clip) => clip.trackId),
-      ...adjustmentLayers
-        .filter(
-          (layer) =>
-            /^video-\d+$/.test(layer.trackId) &&
-            trackSettings[layer.trackId]?.deleted !== true &&
-            trackSettings[layer.trackId]?.hidden !== true,
-        )
-        .map((layer) => layer.trackId),
-    ]),
-  ].sort((a, b) => videoTrackIndex(a) - videoTrackIndex(b));
-
-  for (const trackId of compositionTrackIds) {
-    const trackAdjustments = adjustmentLayers
+  const compositionItems = [
+    ...orderedVideoClips.map((clip) => ({
+      kind: "video" as const,
+      id: clip.id,
+      timelineStart: clip.timelineStart,
+      layer: effectiveVideoLayer(clip),
+      clip,
+    })),
+    ...adjustmentLayers
       .filter(
         (layer) =>
-          layer.trackId === trackId &&
+          /^video-\d+$/.test(layer.trackId) &&
           layer.enabled !== false &&
           trackSettings[layer.trackId]?.deleted !== true &&
           trackSettings[layer.trackId]?.hidden !== true,
       )
-      .sort((a, b) => a.timelineStart - b.timelineStart);
+      .map((layer) => ({
+        kind: "adjustment" as const,
+        id: layer.id,
+        timelineStart: layer.timelineStart,
+        layer: effectiveAdjustmentLayer(layer),
+        adjustment: layer,
+      })),
+  ].sort(
+    (a, b) =>
+      a.layer - b.layer ||
+      (a.kind === b.kind ? 0 : a.kind === "adjustment" ? -1 : 1) ||
+      a.timelineStart - b.timelineStart ||
+      a.id.localeCompare(b.id),
+  );
 
-    // An adjustment layer lives on a video track and affects the composite of
-    // tracks below it. Apply it before media from its own track is overlaid.
-    // v1.1 evaluates every animated channel per frame using FFmpeg's eq
-    // expression engine, so Program Monitor keyframes survive final export.
-    for (const layer of trackAdjustments) {
+  for (const item of compositionItems) {
+    if (item.kind === "adjustment") {
+      const layer = item.adjustment;
       const opacity = ffmpegAdjustmentPropertyExpression(layer, "opacity");
       const exposure = ffmpegAdjustmentPropertyExpression(layer, "exposure");
       const contrastControl = ffmpegAdjustmentPropertyExpression(
@@ -938,12 +1062,10 @@ function buildTimelineFilterGraph(
         `[${mixBaseLabel}][${fullResultLabel}]blend=all_expr='A*(1-(${mixStrength}))+B*(${mixStrength})':eof_action=pass:repeatlast=0:shortest=0[${mixedLabel}]`,
       );
       currentVideoLabel = mixedLabel;
+      continue;
     }
 
-    const trackClips = orderedVideoClips.filter(
-      (clip) => clip.trackId === trackId,
-    );
-    for (const clip of trackClips) {
+    const clip = item.clip;
       const overlayLabel = overlayLabelByClipId.get(clip.id);
       if (!overlayLabel) continue;
       const nextLabel = `vstack${compositeStage++}`;
@@ -1058,7 +1180,6 @@ function buildTimelineFilterGraph(
         );
       }
       currentVideoLabel = nextLabel;
-    }
   }
 
   // The Program Monitor's black is a viewer background, not a blend source.
@@ -1109,17 +1230,10 @@ function buildTimelineFilterGraph(
   const audioLabels: string[] = [];
 
   for (const clip of renderableClips) {
-    if (isFreezeFrameClip(clip)) continue;
-    const audioTrackId = linkedAudioTrackId(clip.trackId, trackSettings);
-    if (
-      !audioTrackId ||
-      audioTrackMuted(audioTrackId, trackSettings) ||
-      clip.audioMuted
-    ) {
-      continue;
-    }
+    if (!contributesLinkedAudio(clip)) continue;
 
-    const inputIndex = clipInputIndex.get(clip.id)!;
+    const inputIndex = clipInputIndex.get(clip.id);
+    if (inputIndex === undefined) continue;
     const duration = clipDuration(clip);
     const volume = clamp(clip.audioVolume ?? 100, 0, 100) / 100;
     const fadeIn = clamp(clip.audioFadeInDuration ?? 0, 0, duration);
@@ -1146,14 +1260,14 @@ function buildTimelineFilterGraph(
     const delayMs = Math.max(0, Math.round(clip.timelineStart * 1000));
     filters.push(`adelay=${delayMs}:all=1`);
 
-    filterParts.push(`[${inputIndex}:a]${filters.join(",")}[${label}]`);
+    filterParts.push(
+      `[${streamAllocator.takeAudio(inputIndex)}]${filters.join(",")}[${label}]`,
+    );
     audioLabels.push(label);
   }
 
   for (const clip of standaloneAudioClips) {
-    if (audioTrackMuted(clip.trackId, trackSettings) || clip.muted) {
-      continue;
-    }
+    if (!contributesStandaloneAudio(clip)) continue;
 
     const inputIndex = standaloneAudioInputIndex.get(clip.id);
     if (inputIndex === undefined) continue;
@@ -1177,7 +1291,9 @@ function buildTimelineFilterGraph(
 
     const delayMs = Math.max(0, Math.round(clip.timelineStart * 1000));
     filters.push(`adelay=${delayMs}:all=1`);
-    filterParts.push(`[${inputIndex}:a]${filters.join(",")}[${label}]`);
+    filterParts.push(
+      `[${streamAllocator.takeAudio(inputIndex)}]${filters.join(",")}[${label}]`,
+    );
     audioLabels.push(label);
   }
 
@@ -1261,6 +1377,11 @@ export async function exportStyledVideo(
       sourceViewport: exportViewportForFrameSize(frameSize),
     },
   );
+  const streams = await probeMediaStreams([
+    ...options.videoClips.map((clip) => clip.sourcePath),
+    ...options.audioClips.map((clip) => clip.sourcePath),
+  ]);
+
   const { inputPaths, filterComplex, outputDuration } =
     buildTimelineFilterGraph(
       options.videoClips,
@@ -1268,6 +1389,7 @@ export async function exportStyledVideo(
       options.adjustmentLayers,
       options.trackSettings,
       options.timelineDuration,
+      streams,
       normalizedRange,
       frameSize,
       options.programPreviewSize,

@@ -190,3 +190,9 @@ button {
 .missing-media-status-button:hover {
   background: rgba(255, 69, 58, 0.22);
 }
+
+.project-save-status.error {
+  color: #ffb3b3;
+}
+
+.save-status-error { color: #ff6b6b; font-weight: 600; }

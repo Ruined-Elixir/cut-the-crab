@@ -30,35 +30,19 @@ pub fn get_sensevoice_paths(app: &tauri::AppHandle) -> Result<SenseVoicePaths, S
     fs::create_dir_all(&models_dir)
         .map_err(|e| format!("Failed to create SenseVoice directories: {e}"))?;
 
-    #[cfg(target_os = "windows")]
-    let binary = sensevoice_dir.join("llama-funasr-sensevoice.exe");
+    // Execute SenseVoice directly from the application resource bundle.
+    // Its dependent dylibs live beside it and are resolved through @loader_path.
+    let binary = bundled_sensevoice_binary(app)?;
 
-    #[cfg(not(target_os = "windows"))]
-    let binary = sensevoice_dir.join("llama-funasr-sensevoice");
+    if !binary.exists() {
+        return Err(format!(
+            "Bundled SenseVoice binary was not found at {}",
+            binary.display()
+        ));
+    }
 
     let model = models_dir.join("sensevoice-small.gguf");
     let vad_model = models_dir.join("fsmn-vad.gguf");
-
-    if !binary.exists() {
-        let bundled_binary = bundled_sensevoice_binary(app)?;
-
-        fs::copy(&bundled_binary, &binary)
-            .map_err(|e| format!("Failed to install SenseVoice binary: {e}"))?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&binary)
-                .map_err(|e| format!("Failed to read SenseVoice binary permissions: {e}"))?
-                .permissions();
-
-            permissions.set_mode(0o755);
-
-            fs::set_permissions(&binary, permissions)
-                .map_err(|e| format!("Failed to set SenseVoice binary permissions: {e}"))?;
-        }
-    }
 
     Ok(SenseVoicePaths {
         binary,

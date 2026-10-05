@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 
 import { formatPlaybackTime } from "../../utils/time";
 
@@ -58,9 +58,12 @@ function TimelineRuler({
     markerTimes.push(duration);
   }
 
-  const seekFromPointer = (element: HTMLElement, clientX: number) => {
+  const seekFrameRef = useRef<number | null>(null);
+  const pendingSeekTimeRef = useRef<number | null>(null);
+
+  const timeFromPointer = (element: HTMLElement, clientX: number) => {
     if (duration <= 0) {
-      return;
+      return 0;
     }
 
     const rect = element.getBoundingClientRect();
@@ -69,8 +72,46 @@ function TimelineRuler({
       Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),
     );
 
-    onSeek?.(ratio * duration);
+    return ratio * duration;
   };
+
+  const flushPendingSeek = () => {
+    if (seekFrameRef.current !== null) {
+      window.cancelAnimationFrame(seekFrameRef.current);
+      seekFrameRef.current = null;
+    }
+
+    const time = pendingSeekTimeRef.current;
+    pendingSeekTimeRef.current = null;
+    if (time !== null) {
+      onSeek?.(time);
+    }
+  };
+
+  const scheduleSeekFromPointer = (element: HTMLElement, clientX: number) => {
+    pendingSeekTimeRef.current = timeFromPointer(element, clientX);
+
+    if (seekFrameRef.current !== null) {
+      return;
+    }
+
+    seekFrameRef.current = window.requestAnimationFrame(() => {
+      seekFrameRef.current = null;
+      const time = pendingSeekTimeRef.current;
+      pendingSeekTimeRef.current = null;
+      if (time !== null) {
+        onSeek?.(time);
+      }
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (seekFrameRef.current !== null) {
+        window.cancelAnimationFrame(seekFrameRef.current);
+      }
+    };
+  }, []);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (duration <= 0 || event.button !== 0) {
@@ -79,7 +120,8 @@ function TimelineRuler({
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    seekFromPointer(event.currentTarget, event.clientX);
+    pendingSeekTimeRef.current = null;
+    onSeek?.(timeFromPointer(event.currentTarget, event.clientX));
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -88,10 +130,11 @@ function TimelineRuler({
     }
 
     event.preventDefault();
-    seekFromPointer(event.currentTarget, event.clientX);
+    scheduleSeekFromPointer(event.currentTarget, event.clientX);
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    flushPendingSeek();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }

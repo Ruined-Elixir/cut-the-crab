@@ -138,6 +138,23 @@ function VideoSubtitleOverlay({
 
   const frontCanvasIndexRef = useRef<0 | 1>(0);
   const renderRevisionRef = useRef(0);
+  // subtitles-octopus's dispose() is not safe to call twice: once its worker
+  // is torn down, a second dispose() reaches for `self.worker.postMessage`
+  // on a null worker and throws. Two independent code paths can end up
+  // holding a reference to the same renderer (the effect that supersedes a
+  // back-buffer renderer, and that renderer's own delayed onReady callback),
+  // so dispose is routed through this guard everywhere instead of being
+  // called directly.
+  const disposedRenderersRef = useRef(new WeakSet<SubtitlesOctopus>());
+  const disposeRendererOnce = (renderer: SubtitlesOctopus | null | undefined) => {
+    if (!renderer || disposedRenderersRef.current.has(renderer)) return;
+    disposedRenderersRef.current.add(renderer);
+    try {
+      renderer.dispose();
+    } catch (error) {
+      console.error("Failed to dispose libass renderer:", error);
+    }
+  };
 
   const draftPositionRef = useRef<DraftPosition | null>(null);
 
@@ -609,10 +626,10 @@ function VideoSubtitleOverlay({
      * The visible/front renderer stays alive.
      */
     if (backIndex === 0) {
-      renderer0Ref.current?.dispose();
+      disposeRendererOnce(renderer0Ref.current);
       renderer0Ref.current = null;
     } else {
-      renderer1Ref.current?.dispose();
+      disposeRendererOnce(renderer1Ref.current);
       renderer1Ref.current = null;
     }
 
@@ -663,7 +680,11 @@ function VideoSubtitleOverlay({
                * while this renderer was starting/painting.
                */
               if (revision !== renderRevisionRef.current) {
-                renderer?.dispose();
+                // Another effect run may have already superseded and
+                // disposed THIS SAME renderer object (it's reachable via
+                // renderer0Ref/renderer1Ref, not just this closure). The
+                // guard makes that safe either way.
+                disposeRendererOnce(renderer);
                 return;
               }
 
@@ -685,10 +706,10 @@ function VideoSubtitleOverlay({
                */
               window.requestAnimationFrame(() => {
                 if (oldFrontIndex === 0) {
-                  renderer0Ref.current?.dispose();
+                  disposeRendererOnce(renderer0Ref.current);
                   renderer0Ref.current = null;
                 } else {
-                  renderer1Ref.current?.dispose();
+                  disposeRendererOnce(renderer1Ref.current);
                   renderer1Ref.current = null;
                 }
               });
@@ -723,8 +744,8 @@ function VideoSubtitleOverlay({
 
   useEffect(() => {
     return () => {
-      renderer0Ref.current?.dispose();
-      renderer1Ref.current?.dispose();
+      disposeRendererOnce(renderer0Ref.current);
+      disposeRendererOnce(renderer1Ref.current);
 
       renderer0Ref.current = null;
       renderer1Ref.current = null;

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { TIMELINE_FRAME_DURATION, snapTimelineTimeToFrame } from "../utils/timelineFrames";
 
 import type { ProjectMediaAsset } from "../types/project";
 import type {
@@ -162,7 +163,24 @@ type UseAudioTimelineOptions = { rippleMode?: boolean };
 export function useAudioTimeline({
   rippleMode = false,
 }: UseAudioTimelineOptions = {}) {
-  const [audioClips, setAudioClips] = useState<AudioTimelineClip[]>([]);
+  const [audioClips, setAudioClipsState] = useState<AudioTimelineClip[]>([]);
+  const setAudioClips = (
+    update:
+      | AudioTimelineClip[]
+      | ((current: AudioTimelineClip[]) => AudioTimelineClip[]),
+  ) => {
+    setAudioClipsState((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      return next.map((clip) => {
+        const timelineStart = Math.max(0, snapTimelineTimeToFrame(clip.timelineStart));
+        const timelineEnd = Math.max(
+          timelineStart + TIMELINE_FRAME_DURATION,
+          snapTimelineTimeToFrame(clip.timelineEnd),
+        );
+        return { ...clip, timelineStart, timelineEnd };
+      });
+    });
+  };
   const [selectedAudioClipId, setSelectedAudioClipId] = useState<string | null>(
     null,
   );
@@ -254,6 +272,7 @@ export function useAudioTimeline({
   };
 
   const moveAudioClip = (id: string, requestedStart: number) => {
+    requestedStart = snapTimelineTimeToFrame(requestedStart);
     setAudioClips((current) => {
       const origin = moveOriginRef.current;
       if (origin?.anchorId === id && origin.selected.length > 0) {
@@ -449,6 +468,7 @@ export function useAudioTimeline({
   };
 
   const splitAudioClip = (id: string, time: number) => {
+    time = snapTimelineTimeToFrame(time);
     setAudioClips((current) => {
       const clip = current.find((value) => value.id === id);
       if (

@@ -1,3 +1,4 @@
+import { defaultLayerForTrack, effectiveAdjustmentLayer } from "./videoLayers";
 import type {
   AdjustmentLayerClip,
   AdjustmentLayerKeyframe,
@@ -432,19 +433,23 @@ export function adjustmentLayersAffectingVideoTrack(
   timelineTime: number,
   videoTrackId: string,
   trackSettings?: TimelineTrackSettings,
+  targetLayerOverride?: number,
 ) {
-  const targetIndex = videoTrackIndex(videoTrackId);
+  const targetLayer = Number.isFinite(targetLayerOverride)
+    ? (targetLayerOverride as number)
+    : defaultLayerForTrack(videoTrackId);
 
   return layers
     .filter(
       (layer) =>
         adjustmentLayerIsActive(layer, timelineTime, trackSettings) &&
-        videoTrackIndex(layer.trackId) > targetIndex,
+        effectiveAdjustmentLayer(layer) > targetLayer,
     )
     .sort(
       (a, b) =>
-        videoTrackIndex(a.trackId) - videoTrackIndex(b.trackId) ||
-        a.timelineStart - b.timelineStart,
+        effectiveAdjustmentLayer(a) - effectiveAdjustmentLayer(b) ||
+        a.timelineStart - b.timelineStart ||
+        a.id.localeCompare(b.id),
     );
 }
 

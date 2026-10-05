@@ -34,7 +34,7 @@ import type {
   ProjectMetadata,
 } from "../types/project";
 
-export const CURRENT_PROJECT_VERSION = 27;
+export const CURRENT_PROJECT_VERSION = 28;
 
 export type SubtitleProject = {
   version: number;
@@ -381,6 +381,7 @@ function normalizeVideoClip(
         ? value.id
         : `video-clip-${index}-${crypto.randomUUID()}`,
     kind: "video",
+    layer: asOptionalNumber(value.layer),
     trackId: typeof value.trackId === "string" ? value.trackId : "video-1",
     sourceId:
       typeof value.sourceId === "string" && value.sourceId.length > 0
@@ -563,6 +564,7 @@ function normalizeAdjustmentLayer(
         ? value.id
         : `adjustment-${index}-${crypto.randomUUID()}`,
     kind: "adjustment",
+    layer: asOptionalNumber(value.layer),
     trackId,
     name:
       typeof value.name === "string" && value.name.trim()
@@ -770,32 +772,94 @@ function normalizeProject(
  * code does not need to know where project files live. The backend also
  * migrates legacy sidecar projects automatically on first load.
  */
+export type LoadProjectResult =
+  | { status: "missing" }
+  | { status: "ok"; project: SubtitleProject; recoveredFromBackup?: boolean }
+  | { status: "error"; message: string; backupPath?: string };
+
+/** For callers that only need the project (rename / relink). Throws on error, null if missing. */
+export function projectFromLoadResult(
+  result: LoadProjectResult,
+): SubtitleProject | null {
+  if (result.status === "ok") return result.project;
+  if (result.status === "error") throw new Error(result.message);
+  return null;
+}
+
+function parseProject(
+  content: string,
+  projectId: string,
+  videoPath: string,
+): SubtitleProject {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Project file contains invalid JSON.");
+  }
+
+  return normalizeProject(parsed, projectId, videoPath);
+}
+
 export async function loadMatchingProjectFile(
   projectId: string,
   videoPath: string,
-): Promise<SubtitleProject | null> {
+): Promise<LoadProjectResult> {
+  let content: string | null;
+
   try {
-    const content = await invoke<string | null>("read_matching_project", {
+    content = await invoke<string | null>("read_matching_project", {
       projectId,
       videoPath,
     });
+  } catch (error) {
+    return {
+      status: "error",
+      message: `Could not read the project file: ${String(error)}`,
+    };
+  }
 
-    if (!content) {
-      return null;
-    }
+  if (!content) return { status: "missing" };
 
-    let parsed: unknown;
+  try {
+    return {
+      status: "ok",
+      project: parseProject(content, projectId, videoPath),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isNewerVersion = message.includes("newer project format");
+
+    // Never discard the unreadable file: copy it before attempting recovery.
+    let backupPath: string | undefined;
 
     try {
-      parsed = JSON.parse(content);
-    } catch {
-      throw new Error("Project file contains invalid JSON.");
+      backupPath = await invoke<string>("quarantine_project", { projectId });
+    } catch (backupError) {
+      console.error("Could not back up unreadable project:", backupError);
     }
 
-    return normalizeProject(parsed, projectId, videoPath);
-  } catch (error) {
-    console.error("Failed to load subtitle project:", error);
-    return null;
+    // A newer project format is not corruption. Never replace it with an older backup.
+    if (!isNewerVersion) {
+      try {
+        const backup = await invoke<string | null>("read_project_backup", {
+          projectId,
+        });
+
+        if (backup) {
+          return {
+            status: "ok",
+            project: parseProject(backup, projectId, videoPath),
+            recoveredFromBackup: true,
+          };
+        }
+      } catch (backupError) {
+        console.error("Project backup is unreadable too:", backupError);
+      }
+    }
+
+    return { status: "error", message, backupPath };
   }
 }
 

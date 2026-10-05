@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { traceCut } from "../utils/cutTrace";
 
 const WAVEFORM_POINTS = 1200;
+const WAVEFORM_START_DELAY_MS = 350;
 
 type WaveformMap = Record<string, number[]>;
 
@@ -11,42 +13,66 @@ export function useWaveform() {
   const [waveformError, setWaveformError] = useState<string | null>(null);
 
   const inFlightRef = useRef<Set<string>>(new Set());
+  const queuedRef = useRef<Set<string>>(new Set());
+  const queueRef = useRef<string[]>([]);
+  const processingRef = useRef(false);
   const cacheRef = useRef<WaveformMap>({});
 
   const generateWaveform = useCallback(async (videoPath: string) => {
-    if (!videoPath) {
+    if (!videoPath) return;
+    if (
+      cacheRef.current[videoPath] ||
+      inFlightRef.current.has(videoPath) ||
+      queuedRef.current.has(videoPath)
+    ) {
       return;
     }
 
-    if (cacheRef.current[videoPath] || inFlightRef.current.has(videoPath)) {
-      return;
-    }
+    queuedRef.current.add(videoPath);
+    queueRef.current.push(videoPath);
 
-    inFlightRef.current.add(videoPath);
+    if (processingRef.current) return;
+    processingRef.current = true;
     setWaveformError(null);
     setIsGeneratingWaveform(true);
 
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, WAVEFORM_START_DELAY_MS);
+    });
+
     try {
-      const data = await invoke<number[]>("extract_waveform", {
-        videoPath,
-        points: WAVEFORM_POINTS,
-      });
+      while (queueRef.current.length > 0) {
+        const nextPath = queueRef.current.shift();
+        if (!nextPath) continue;
+        queuedRef.current.delete(nextPath);
 
-      cacheRef.current = {
-        ...cacheRef.current,
-        [videoPath]: data,
-      };
+        if (cacheRef.current[nextPath]) continue;
 
-      setWaveformsBySource(cacheRef.current);
-    } catch (error) {
-      const message =
-        typeof error === "string" ? error : "Failed to extract waveform.";
+        inFlightRef.current.add(nextPath);
+        try {
+          traceCut("waveform-task-start", { sourcePath: nextPath });
+          const data = await invoke<number[]>("extract_waveform", {
+            videoPath: nextPath,
+            points: WAVEFORM_POINTS,
+          });
 
-      setWaveformError(message);
-      console.error("Waveform extraction failed:", error);
+          cacheRef.current = {
+            ...cacheRef.current,
+            [nextPath]: data,
+          };
+          setWaveformsBySource(cacheRef.current);
+        } catch (error) {
+          const message =
+            typeof error === "string" ? error : "Failed to extract waveform.";
+          setWaveformError(message);
+          console.error("Waveform extraction failed:", error);
+        } finally {
+          inFlightRef.current.delete(nextPath);
+        }
+      }
     } finally {
-      inFlightRef.current.delete(videoPath);
-      setIsGeneratingWaveform(inFlightRef.current.size > 0);
+      processingRef.current = false;
+      setIsGeneratingWaveform(false);
     }
   }, []);
 

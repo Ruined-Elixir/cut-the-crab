@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -9,6 +9,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,106 @@ mod transcription;
 mod whisper_paths;
 
 const APP_MENU_COMMAND_EVENT: &str = "app-menu-command";
+
+
+fn timestamp_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+    path.with_file_name(format!("{file_name}{suffix}"))
+}
+
+fn sync_parent_directory(path: &Path) {
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        if let Ok(directory) = fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+    }
+}
+
+fn atomic_write_file(path: &Path, contents: &[u8], keep_backup: bool) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create parent directory: {error}"))?;
+    }
+
+    let temporary = sibling_with_suffix(path, &format!(".tmp-{}-{}", std::process::id(), timestamp_ms()));
+    let mut file = fs::File::create(&temporary)
+        .map_err(|error| format!("Failed to create temporary file: {error}"))?;
+    file.write_all(contents)
+        .map_err(|error| format!("Failed to write temporary file: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("Failed to flush temporary file: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("Failed to sync temporary file: {error}"))?;
+    drop(file);
+
+    let backup = sibling_with_suffix(path, ".bak");
+    if path.exists() && keep_backup {
+        fs::copy(path, &backup)
+            .map_err(|error| format!("Failed to create backup file: {error}"))?;
+        if let Ok(file) = fs::File::open(&backup) {
+            let _ = file.sync_all();
+        }
+    }
+
+    match fs::rename(&temporary, path) {
+        Ok(()) => {
+            sync_parent_directory(path);
+            Ok(())
+        }
+        Err(first_error) if path.exists() => {
+            // Windows does not replace an existing destination with rename().
+            // A synced .bak exists before this fallback, so the previous file
+            // remains recoverable even if the second rename fails.
+            fs::remove_file(path)
+                .map_err(|error| format!("Failed to prepare atomic replacement: {error}"))?;
+            if let Err(error) = fs::rename(&temporary, path) {
+                if keep_backup && backup.exists() {
+                    let _ = fs::copy(&backup, path);
+                }
+                return Err(format!(
+                    "Failed to finalize atomic replacement ({first_error}; retry: {error})"
+                ));
+            }
+            sync_parent_directory(path);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temporary);
+            Err(format!("Failed to finalize atomic write: {error}"))
+        }
+    }
+}
+
+fn backup_corrupt_file(path: &Path) -> Result<Option<PathBuf>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let backup = sibling_with_suffix(path, &format!(".corrupt-{}", timestamp_ms()));
+    fs::copy(path, &backup)
+        .map_err(|error| format!("Failed to back up corrupt file: {error}"))?;
+    if let Ok(file) = fs::File::open(&backup) {
+        let _ = file.sync_all();
+    }
+    Ok(Some(backup))
+}
+
+struct RemoveFileOnDrop(PathBuf);
+impl Drop for RemoveFileOnDrop {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 struct WindowFrame {
@@ -189,25 +290,31 @@ fn recent_projects_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn read_recent_projects_file(app: &tauri::AppHandle) -> Result<Vec<RecentProject>, String> {
     let path = recent_projects_path(app)?;
-
     if !path.exists() {
         return Ok(Vec::new());
     }
 
     let content = fs::read_to_string(&path)
         .map_err(|error| format!("Failed to read recent projects: {error}"))?;
-
-    let mut projects: Vec<RecentProject> = serde_json::from_str(&content)
-        .map_err(|error| format!("Failed to parse recent projects: {error}"))?;
+    let mut projects: Vec<RecentProject> = match serde_json::from_str(&content) {
+        Ok(projects) => projects,
+        Err(error) => {
+            let backup = backup_corrupt_file(&path)?;
+            eprintln!(
+                "Recent project registry was corrupt ({error}); backup: {:?}",
+                backup
+            );
+            atomic_write_file(&path, b"[]", false)?;
+            Vec::new()
+        }
+    };
 
     for project in &mut projects {
         if project.project_id.trim().is_empty() {
             project.project_id = format!("legacy-{:016x}", stable_path_hash(&project.video_path));
         }
     }
-
     projects.sort_by(|a, b| b.last_opened_at.cmp(&a.last_opened_at));
-
     Ok(projects)
 }
 
@@ -216,11 +323,9 @@ fn write_recent_projects_file(
     projects: &[RecentProject],
 ) -> Result<(), String> {
     let path = recent_projects_path(app)?;
-
-    let content = serde_json::to_string_pretty(projects)
+    let content = serde_json::to_vec_pretty(projects)
         .map_err(|error| format!("Failed to serialize recent projects: {error}"))?;
-
-    fs::write(path, content).map_err(|error| format!("Failed to save recent projects: {error}"))
+    atomic_write_file(&path, &content, true)
 }
 
 #[tauri::command]
@@ -365,11 +470,11 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     // -------------------------------------------------------------------------
 
     let window_fill = MenuItemBuilder::with_id("window.fill", "Fill")
-        .accelerator("Ctrl+F")
+        .accelerator("Ctrl+Alt+F")
         .build(app)?;
 
     let window_center = MenuItemBuilder::with_id("window.center", "Center")
-        .accelerator("Ctrl+C")
+        .accelerator("Ctrl+Alt+C")
         .build(app)?;
 
     let window_left = MenuItemBuilder::with_id("window.left", "Left")
@@ -398,7 +503,7 @@ fn install_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let native_minimize = PredefinedMenuItem::minimize(app, Some("Minimize"))?;
 
     // On macOS the first submenu becomes the application menu.
-    let app_menu = SubmenuBuilder::new(app, "Subtitle Editor")
+    let app_menu = SubmenuBuilder::new(app, "Cut The Crab")
         .about(None)
         .separator()
         .quit()
@@ -629,85 +734,75 @@ fn update_transcription_menu_targets(
 }
 
 #[tauri::command]
-fn extract_waveform(
+async fn extract_waveform(
     app: tauri::AppHandle,
     video_path: String,
     points: usize,
 ) -> Result<Vec<f32>, String> {
-    let ffmpeg_path = get_ffmpeg_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffmpeg_path = get_ffmpeg_path(&app)?;
+        let output = Command::new(&ffmpeg_path)
+            .arg("-nostdin")
+            .args([
+                "-i",
+                &video_path,
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "8000",
+                "-f",
+                "s16le",
+                "-",
+            ])
+            .output()
+            .map_err(|error| error.to_string())?;
 
-    let output = Command::new(&ffmpeg_path)
-        .args([
-            "-i",
-            &video_path,
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "8000",
-            "-f",
-            "s16le",
-            "-",
-        ])
-        .output()
-        .map_err(|error| error.to_string())?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
-
-    let bytes = output.stdout;
-
-    if bytes.is_empty() {
-        return Err("No audio samples were extracted.".to_string());
-    }
-
-    let samples: Vec<i16> = bytes
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-
-    if samples.is_empty() {
-        return Err("No valid PCM samples were extracted.".to_string());
-    }
-
-    let point_count = points.max(1).min(samples.len());
-    let samples_per_point = samples.len() / point_count;
-
-    let mut waveform = Vec::with_capacity(point_count);
-
-    for index in 0..point_count {
-        let start = index * samples_per_point;
-
-        let end = if index == point_count - 1 {
-            samples.len()
-        } else {
-            (start + samples_per_point).min(samples.len())
-        };
-
-        let chunk = &samples[start..end];
-
-        let sum_squares: f32 = chunk
-            .iter()
-            .map(|sample| {
-                let normalized = *sample as f32 / i16::MAX as f32;
-                normalized * normalized
-            })
-            .sum();
-
-        let rms = (sum_squares / chunk.len() as f32).sqrt();
-        waveform.push(rms);
-    }
-
-    let max_amplitude = waveform.iter().copied().fold(0.0_f32, f32::max);
-
-    if max_amplitude > 0.0 {
-        for value in &mut waveform {
-            *value /= max_amplitude;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
         }
-    }
+        let bytes = output.stdout;
+        if bytes.is_empty() {
+            return Err("No audio samples were extracted.".to_string());
+        }
+        let samples: Vec<i16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        if samples.is_empty() {
+            return Err("No valid PCM samples were extracted.".to_string());
+        }
 
-    Ok(waveform)
+        let point_count = points.max(1).min(samples.len());
+        let samples_per_point = samples.len() / point_count;
+        let mut waveform = Vec::with_capacity(point_count);
+        for index in 0..point_count {
+            let start = index * samples_per_point;
+            let end = if index == point_count - 1 {
+                samples.len()
+            } else {
+                (start + samples_per_point).min(samples.len())
+            };
+            let chunk = &samples[start..end];
+            let sum_squares: f32 = chunk
+                .iter()
+                .map(|sample| {
+                    let normalized = *sample as f32 / i16::MAX as f32;
+                    normalized * normalized
+                })
+                .sum();
+            waveform.push((sum_squares / chunk.len() as f32).sqrt());
+        }
+        let max_amplitude = waveform.iter().copied().fold(0.0_f32, f32::max);
+        if max_amplitude > 0.0 {
+            for value in &mut waveform {
+                *value /= max_amplitude;
+            }
+        }
+        Ok(waveform)
+    })
+    .await
+    .map_err(|error| format!("Waveform task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -723,6 +818,46 @@ fn read_matching_srt(video_path: String) -> Result<Option<String>, String> {
         .map_err(|error| error.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaStreams {
+    path: String,
+    has_video: bool,
+    has_audio: bool,
+}
+
+#[tauri::command]
+async fn probe_media_streams(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<Vec<MediaStreams>, String> {
+    let ffmpeg = get_ffmpeg_path(&app)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|path| {
+                // `ffmpeg -i file` exits non-zero when no output is requested,
+                // but its stderr still contains the authoritative stream list.
+                let output = Command::new(&ffmpeg)
+                    .args(["-hide_banner", "-nostdin", "-i", &path])
+                    .stdin(Stdio::null())
+                    .output()
+                    .map_err(|error| format!("Failed to probe {path}: {error}"))?;
+                let text = String::from_utf8_lossy(&output.stderr);
+
+                Ok(MediaStreams {
+                    path,
+                    has_video: text.contains(": Video:"),
+                    has_audio: text.contains(": Audio:"),
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("Probe task failed: {error}"))?
+}
+
 fn escape_ffmpeg_filter_path(path: &Path) -> String {
     path.to_string_lossy()
         .replace('\\', "/")
@@ -730,17 +865,15 @@ fn escape_ffmpeg_filter_path(path: &Path) -> String {
         .replace('\'', "\\'")
 }
 
-fn development_fonts_dir() -> Option<PathBuf> {
-    #[cfg(debug_assertions)]
-    {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public/fonts");
-
-        if path.exists() {
-            return Some(path);
-        }
+fn export_fonts_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("fonts"));
+        candidates.push(resource_dir.join("public").join("fonts"));
+        candidates.push(resource_dir.join("_up_").join("public").join("fonts"));
     }
-
-    None
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public/fonts"));
+    candidates.into_iter().find(|path| path.is_dir())
 }
 
 #[derive(Clone, Serialize)]
@@ -752,7 +885,7 @@ struct VideoExportProgress {
 
 #[derive(Clone)]
 struct ActiveVideoExport {
-    child: Arc<Mutex<Child>>,
+    child: Option<Arc<Mutex<Child>>>,
     cancelled: Arc<AtomicBool>,
 }
 
@@ -766,7 +899,6 @@ fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into
         progress: progress.clamp(0.0, 100.0),
         status: status.into(),
     };
-
     if let Err(error) = app.emit("video-export-progress", payload) {
         eprintln!("Failed to emit export progress: {error}");
     }
@@ -775,59 +907,153 @@ fn emit_export_progress(app: &tauri::AppHandle, progress: f64, status: impl Into
 fn ffmpeg_error_detail(stderr: &str) -> String {
     const MAX_LINES: usize = 40;
     const MAX_CHARS: usize = 12_000;
-
     let lines = stderr
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
-
     if lines.is_empty() {
         return "FFmpeg did not provide an error message.".to_string();
     }
-
     let start = lines.len().saturating_sub(MAX_LINES);
-    let mut detail = lines[start..].join("\n");
-
-    if detail.len() > MAX_CHARS {
-        detail = detail[detail.len() - MAX_CHARS..].to_string();
+    let detail = lines[start..].join("\n");
+    if detail.chars().count() <= MAX_CHARS {
+        return detail;
     }
 
     detail
+        .chars()
+        .rev()
+        .take(MAX_CHARS)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+fn register_export_job(
+    app: &tauri::AppHandle,
+    export_job_id: &str,
+    cancelled: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let registry = app.state::<VideoExportRegistry>();
+    let mut active = registry
+        .active
+        .lock()
+        .map_err(|_| "Export process registry is unavailable.".to_string())?;
+    if active.contains_key(export_job_id) {
+        return Err("An export with this job ID is already active.".to_string());
+    }
+    active.insert(
+        export_job_id.to_string(),
+        ActiveVideoExport {
+            child: None,
+            cancelled,
+        },
+    );
+    Ok(())
+}
+
+fn attach_export_child(
+    app: &tauri::AppHandle,
+    export_job_id: &str,
+    child: Arc<Mutex<Child>>,
+) -> Result<bool, String> {
+    let registry = app.state::<VideoExportRegistry>();
+    let mut active = registry
+        .active
+        .lock()
+        .map_err(|_| "Export process registry is unavailable.".to_string())?;
+    let job = active
+        .get_mut(export_job_id)
+        .ok_or_else(|| "Export job disappeared before FFmpeg started.".to_string())?;
+    job.child = Some(child);
+    Ok(job.cancelled.load(Ordering::SeqCst))
+}
+
+fn unregister_export_job(app: &tauri::AppHandle, export_job_id: &str) {
+    let registry = app.state::<VideoExportRegistry>();
+    if let Ok(mut active) = registry.active.lock() {
+        active.remove(export_job_id);
+    };
 }
 
 #[tauri::command]
-fn cancel_video_export(
-    app: tauri::AppHandle,
-    export_job_id: String,
-) -> Result<(), String> {
-    let active_export = {
+fn cancel_video_export(app: tauri::AppHandle, export_job_id: String) -> Result<(), String> {
+    let child = {
         let registry = app.state::<VideoExportRegistry>();
-        let active = registry
+        let mut active = registry
             .active
             .lock()
             .map_err(|_| "Export process registry is unavailable.".to_string())?;
+        let Some(job) = active.get_mut(&export_job_id) else {
+            return Ok(());
+        };
+        job.cancelled.store(true, Ordering::SeqCst);
+        job.child.clone()
+    };
 
-        active.get(&export_job_id).cloned()
+    if let Some(child) = child {
+        let mut child = child
+            .lock()
+            .map_err(|_| "The active FFmpeg process is unavailable.".to_string())?;
+        if child
+            .try_wait()
+            .map_err(|error| format!("Failed to inspect FFmpeg process: {error}"))?
+            .is_none()
+        {
+            let _ = child.kill();
+        }
     }
-    .ok_or_else(|| "That export is no longer running.".to_string())?;
+    Ok(())
+}
 
-    active_export.cancelled.store(true, Ordering::SeqCst);
+fn temporary_export_path(output: &Path, job_id: &str) -> PathBuf {
+    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let stem = output.file_stem().and_then(|value| value.to_str()).unwrap_or("export");
+    let extension = output.extension().and_then(|value| value.to_str()).unwrap_or("mp4");
+    let safe_job = job_id
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+        .collect::<String>();
+    parent.join(format!(".{stem}.ctc-{safe_job}-{}.tmp.{extension}", timestamp_ms()))
+}
 
-    let mut child = active_export
-        .child
-        .lock()
-        .map_err(|_| "The active FFmpeg process is unavailable.".to_string())?;
-
-    match child
-        .try_wait()
-        .map_err(|error| format!("Failed to inspect FFmpeg process: {error}"))?
-    {
-        Some(_) => Ok(()),
-        None => child
-            .kill()
-            .map_err(|error| format!("Failed to stop FFmpeg export: {error}")),
+fn commit_export_output(temp_output: &Path, final_output: &Path) -> Result<(), String> {
+    let backup = sibling_with_suffix(final_output, ".pre-export.bak");
+    let had_existing = final_output.exists();
+    if had_existing {
+        fs::copy(final_output, &backup)
+            .map_err(|error| format!("Failed to protect the existing export: {error}"))?;
+        if let Ok(file) = fs::File::open(&backup) {
+            let _ = file.sync_all();
+        }
     }
+
+    let replace = match fs::rename(temp_output, final_output) {
+        Ok(()) => Ok(()),
+        Err(first_error) if had_existing => {
+            fs::remove_file(final_output)
+                .map_err(|error| format!("Failed to prepare export replacement: {error}"))?;
+            if let Err(error) = fs::rename(temp_output, final_output) {
+                let _ = fs::copy(&backup, final_output);
+                Err(format!(
+                    "Failed to finalize export ({first_error}; retry: {error}). The previous file was restored."
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        Err(error) => Err(format!("Failed to finalize export: {error}")),
+    };
+
+    if replace.is_ok() {
+        sync_parent_directory(final_output);
+        if had_existing {
+            let _ = fs::remove_file(&backup);
+        }
+    }
+    replace
 }
 
 #[tauri::command]
@@ -845,65 +1071,60 @@ async fn export_styled_video(
         return Err("Export job ID is missing.".to_string());
     }
 
-    tauri::async_runtime::spawn_blocking(move || {
-        use std::time::{SystemTime, UNIX_EPOCH};
+    let cancelled = Arc::new(AtomicBool::new(false));
+    register_export_job(&app, &export_job_id, Arc::clone(&cancelled))?;
+    let task_app = app.clone();
+    let task_job_id = export_job_id.clone();
 
-        let ffmpeg_path = get_ffmpeg_path(&app)?;
+    let task = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err("EXPORT_CANCELLED".to_string());
+        }
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
-            .as_millis();
-
+        let ffmpeg_path = get_ffmpeg_path(&task_app)?;
         let ass_path = std::env::temp_dir().join(format!(
-            "cut-the-crab-export-{}-{timestamp}.ass",
-            export_job_id.replace(|character: char| !character.is_ascii_alphanumeric(), "-")
+            "cut-the-crab-export-{}-{}.ass",
+            task_job_id
+                .chars()
+                .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+                .collect::<String>(),
+            timestamp_ms()
         ));
-
         fs::write(&ass_path, ass_content)
             .map_err(|error| format!("Failed to create temporary ASS file: {error}"))?;
+        let _ass_cleanup = RemoveFileOnDrop(ass_path.clone());
 
+        let requested_output = PathBuf::from(&output_path);
+        let temp_output = temporary_export_path(&requested_output, &task_job_id);
+        let _output_cleanup = RemoveFileOnDrop(temp_output.clone());
         let ass_path_string = escape_ffmpeg_filter_path(&ass_path);
-
-        let ass_filter = if let Some(fonts_dir) = development_fonts_dir() {
-            let fonts_dir_string = escape_ffmpeg_filter_path(&fonts_dir);
-
+        let ass_filter = if let Some(fonts_dir) = export_fonts_dir(&task_app) {
             format!(
                 "ass=filename='{}':fontsdir='{}'",
-                ass_path_string, fonts_dir_string,
+                ass_path_string,
+                escape_ffmpeg_filter_path(&fonts_dir)
             )
         } else {
             format!("ass=filename='{}'", ass_path_string)
         };
 
-        println!("Exporting with FFmpeg: {}", ffmpeg_path.display());
-        emit_export_progress(&app, 0.0, "Starting FFmpeg...");
-
+        emit_export_progress(&task_app, 0.0, "Starting FFmpeg...");
         let timeline_mode = filter_complex.is_some()
-            && input_paths
-                .as_ref()
-                .map(|paths| !paths.is_empty())
-                .unwrap_or(false);
-
+            && input_paths.as_ref().map(|paths| !paths.is_empty()).unwrap_or(false);
         let mut command = Command::new(&ffmpeg_path);
         command
+            .arg("-nostdin")
             .arg("-hide_banner")
             .arg("-loglevel")
             .arg("error")
             .arg("-y");
 
         if timeline_mode {
-            let inputs = input_paths.unwrap_or_default();
-
-            for input_path in &inputs {
+            for input_path in input_paths.unwrap_or_default() {
                 command.arg("-i").arg(input_path);
             }
-
             let base_filter = filter_complex.unwrap_or_default();
             let full_filter = format!("{};[vcomp]{},format=yuv420p[vout]", base_filter, ass_filter);
-
-            println!("Timeline filter graph: {}", full_filter);
-
             command
                 .arg("-filter_complex")
                 .arg(full_filter)
@@ -912,11 +1133,7 @@ async fn export_styled_video(
                 .arg("-map")
                 .arg("[aout]");
         } else {
-            command
-                .arg("-i")
-                .arg(&video_path)
-                .arg("-vf")
-                .arg(&ass_filter);
+            command.arg("-i").arg(&video_path).arg("-vf").arg(&ass_filter);
         }
 
         command
@@ -937,62 +1154,30 @@ async fn export_styled_video(
             .arg("-progress")
             .arg("pipe:1")
             .arg("-nostats")
-            .arg(&output_path)
+            .arg(&temp_output)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = fs::remove_file(&ass_path);
-                return Err(format!("Failed to start FFmpeg: {error}"));
-            }
-        };
-
-        let stdout = match child.stdout.take() {
-            Some(stdout) => stdout,
-            None => {
+        let mut spawned = command
+            .spawn()
+            .map_err(|error| format!("Failed to start FFmpeg: {error}"))?;
+        let stdout = spawned
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to read FFmpeg progress output.".to_string())?;
+        let stderr = spawned.stderr.take();
+        let child = Arc::new(Mutex::new(spawned));
+        if attach_export_child(&task_app, &task_job_id, Arc::clone(&child))? {
+            if let Ok(mut child) = child.lock() {
                 let _ = child.kill();
-                let _ = child.wait();
-                let _ = fs::remove_file(&ass_path);
-                return Err("Failed to read FFmpeg progress output.".to_string());
             }
-        };
-
-        let stderr = child.stderr.take();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let child = Arc::new(Mutex::new(child));
-
-        {
-            let registry = app.state::<VideoExportRegistry>();
-            let mut active = registry
-                .active
-                .lock()
-                .map_err(|_| "Export process registry is unavailable.".to_string())?;
-
-            if active.contains_key(&export_job_id) {
-                if let Ok(mut child) = child.lock() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-                let _ = fs::remove_file(&ass_path);
-                return Err("An export with this job ID is already active.".to_string());
-            }
-
-            active.insert(
-                export_job_id.clone(),
-                ActiveVideoExport {
-                    child: Arc::clone(&child),
-                    cancelled: Arc::clone(&cancelled),
-                },
-            );
         }
 
         let stderr_thread = stderr.map(|stderr| {
             thread::spawn(move || {
                 let mut reader = BufReader::new(stderr);
                 let mut output = String::new();
-
                 match reader.read_to_string(&mut output) {
                     Ok(_) => output,
                     Err(error) => format!("Failed while reading FFmpeg error output: {error}"),
@@ -1000,28 +1185,21 @@ async fn export_styled_video(
             })
         });
 
-        let reader = BufReader::new(stdout);
-        let mut progress_error: Option<String> = None;
-
-        for line in reader.lines() {
+        let mut progress_error = None;
+        for line in BufReader::new(stdout).lines() {
             let line = match line {
                 Ok(line) => line,
                 Err(error) => {
-                    progress_error = Some(format!(
-                        "Failed to read FFmpeg progress output: {error}"
-                    ));
+                    progress_error = Some(format!("Failed to read FFmpeg progress output: {error}"));
                     break;
                 }
             };
-
             if let Some(value) = line.strip_prefix("out_time_us=") {
                 if let Ok(microseconds) = value.parse::<f64>() {
                     if video_duration > 0.0 {
-                        let seconds = microseconds / 1_000_000.0;
-                        let percent = (seconds / video_duration) * 100.0;
-
+                        let percent = (microseconds / 1_000_000.0 / video_duration) * 100.0;
                         emit_export_progress(
-                            &app,
+                            &task_app,
                             percent.min(99.0),
                             if timeline_mode {
                                 "Rendering edited timeline..."
@@ -1032,67 +1210,42 @@ async fn export_styled_video(
                     }
                 }
             }
-
-            if line == "progress=end" {
-                emit_export_progress(&app, 100.0, "Finishing export...");
-            }
         }
 
-        let status_result = child
+        let status = child
             .lock()
             .map_err(|_| "The active FFmpeg process is unavailable.".to_string())?
             .wait()
-            .map_err(|error| format!("Failed while waiting for FFmpeg: {error}"));
-
+            .map_err(|error| format!("Failed while waiting for FFmpeg: {error}"))?;
         let stderr_output = stderr_thread
-            .map(|handle| {
-                handle
-                    .join()
-                    .unwrap_or_else(|_| "FFmpeg error reader thread failed.".to_string())
-            })
+            .map(|handle| handle.join().unwrap_or_else(|_| "FFmpeg error reader thread failed.".to_string()))
             .unwrap_or_default();
 
-        {
-            let registry = app.state::<VideoExportRegistry>();
-            if let Ok(mut active) = registry.active.lock() {
-                active.remove(&export_job_id);
-            };
-        }
-
-        let _ = fs::remove_file(&ass_path);
-
         if cancelled.load(Ordering::SeqCst) {
-            let _ = fs::remove_file(&output_path);
             return Err("EXPORT_CANCELLED".to_string());
         }
-
-        let status = match status_result {
-            Ok(status) => status,
-            Err(error) => {
-                let _ = fs::remove_file(&output_path);
-                return Err(error);
-            }
-        };
-
         if let Some(error) = progress_error {
-            let _ = fs::remove_file(&output_path);
             return Err(error);
         }
-
         if !status.success() {
-            let _ = fs::remove_file(&output_path);
             return Err(format!(
                 "FFmpeg export failed with status: {status}\n{}",
                 ffmpeg_error_detail(&stderr_output)
             ));
         }
 
-        emit_export_progress(&app, 100.0, "Export complete.");
-
+        commit_export_output(&temp_output, &requested_output)?;
+        emit_export_progress(&task_app, 100.0, "Export complete.");
         Ok(())
     })
-    .await
-    .map_err(|error| format!("Export task failed: {error}"))?
+    .await;
+
+    unregister_export_job(&app, &export_job_id);
+
+    match task {
+        Ok(result) => result,
+        Err(error) => Err(format!("Export task failed: {error}")),
+    }
 }
 
 fn stable_path_hash(value: &str) -> u64 {
@@ -1187,6 +1340,67 @@ fn legacy_matching_project_path(video_path: &Path) -> PathBuf {
     video_path.with_extension("subtitle-project.json")
 }
 
+const ALLOWED_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "mov", "m4v", "webm", "mkv", "avi", "mp3", "wav", "m4a", "aac", "flac",
+    "ogg", "opus",
+];
+
+fn collect_media_paths(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                if matches!(key.as_str(), "sourcePath" | "videoPath" | "path") {
+                    if let Some(text) = child.as_str() {
+                        out.push(text.to_string());
+                    }
+                }
+                collect_media_paths(child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_media_paths(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Re-authorize only media files referenced by a project that was loaded from
+/// managed storage. Runtime dialog grants disappear after restart, so this
+/// restores exactly the files the saved project already knows about instead of
+/// exposing the user's whole home directory to the asset protocol.
+fn allow_project_media(app: &tauri::AppHandle, project_json: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(project_json) else {
+        return;
+    };
+
+    let mut paths = Vec::new();
+    collect_media_paths(&value, &mut paths);
+    paths.sort();
+    paths.dedup();
+
+    let scope = app.asset_protocol_scope();
+
+    for text in paths {
+        let path = PathBuf::from(&text);
+        let extension_ok = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| {
+                let extension = extension.to_ascii_lowercase();
+                ALLOWED_MEDIA_EXTENSIONS.contains(&extension.as_str())
+            })
+            .unwrap_or(false);
+
+        if path.is_absolute() && extension_ok && path.is_file() {
+            if let Err(error) = scope.allow_file(&path) {
+                eprintln!("Could not allow media {}: {error}", path.display());
+            }
+        }
+    }
+}
+
 fn managed_projects_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let app_data = app
         .path()
@@ -1227,22 +1441,10 @@ fn write_managed_project(
     project_json: &str,
 ) -> Result<(), String> {
     let project_path = managed_project_path_for_id(app, project_id)?;
-    let temporary_path = project_path.with_extension("json.tmp");
-
-    fs::write(&temporary_path, project_json)
-        .map_err(|error| format!("Failed to write temporary project file: {error}"))?;
-
-    if project_path.exists() {
-        fs::remove_file(&project_path)
-            .map_err(|error| format!("Failed to replace existing project file: {error}"))?;
-    }
-
-    fs::rename(&temporary_path, &project_path)
-        .map_err(|error| format!("Failed to finalize project save: {error}"))
+    atomic_write_file(&project_path, project_json.as_bytes(), true)
 }
 
-#[tauri::command]
-fn read_matching_project(
+fn read_matching_project_inner(
     app: tauri::AppHandle,
     project_id: String,
     video_path: String,
@@ -1297,18 +1499,76 @@ fn read_matching_project(
 }
 
 #[tauri::command]
-fn save_subtitle_project(
+fn read_matching_project(
+    app: tauri::AppHandle,
+    project_id: String,
+    video_path: String,
+) -> Result<Option<String>, String> {
+    let content = read_matching_project_inner(app.clone(), project_id, video_path)?;
+    if let Some(text) = &content {
+        allow_project_media(&app, text);
+    }
+    Ok(content)
+}
+
+#[tauri::command]
+async fn save_subtitle_project(
     app: tauri::AppHandle,
     project_id: String,
     project_json: String,
 ) -> Result<(), String> {
-    write_managed_project(&app, &project_id, &project_json)
+    tauri::async_runtime::spawn_blocking(move || {
+        write_managed_project(&app, &project_id, &project_json)
+    })
+    .await
+    .map_err(|error| format!("Project save task failed: {error}"))?
+}
+
+#[tauri::command]
+fn backup_corrupt_project(
+    app: tauri::AppHandle,
+    project_id: String,
+) -> Result<Option<String>, String> {
+    let path = managed_project_path_for_id(&app, &project_id)?;
+    backup_corrupt_file(&path).map(|backup| backup.map(|path| path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn quarantine_project(app: tauri::AppHandle, project_id: String) -> Result<String, String> {
+    let path = managed_project_path_for_id(&app, &project_id)?;
+
+    if !path.exists() {
+        return Err("There is no project file to back up.".to_string());
+    }
+
+    backup_corrupt_file(&path)?
+        .map(|copy| copy.to_string_lossy().into_owned())
+        .ok_or_else(|| "There is no project file to back up.".to_string())
+}
+
+#[tauri::command]
+fn read_project_backup(
+    app: tauri::AppHandle,
+    project_id: String,
+) -> Result<Option<String>, String> {
+    let project_path = managed_project_path_for_id(&app, &project_id)?;
+    let backup_path = sibling_with_suffix(&project_path, ".bak");
+
+    if !backup_path.exists() {
+        return Ok(None);
+    }
+
+    let text = fs::read_to_string(&backup_path)
+        .map_err(|error| format!("Failed to read project backup: {error}"))?;
+    allow_project_media(&app, &text);
+    Ok(Some(text))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(VideoExportRegistry::default())
+        .manage(proxy_media::ProxyRegistry::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -1320,14 +1580,19 @@ pub fn run() {
             update_transcription_menu_targets,
             transcription::transcribe_video,
             read_matching_srt,
+            probe_media_streams,
             read_matching_project,
             save_subtitle_project,
+            backup_corrupt_project,
+            quarantine_project,
+            read_project_backup,
             read_recent_projects,
             upsert_recent_project,
             remove_recent_project,
             path_exists,
             get_project_thumbnail,
             proxy_media::ensure_video_proxy,
+            proxy_media::cancel_video_proxy,
             export_styled_video,
             cancel_video_export
         ])

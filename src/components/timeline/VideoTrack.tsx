@@ -74,6 +74,8 @@ type VideoTrackProps = {
     transition: { type?: VideoTransitionType; duration?: number },
   ) => void;
   onFadeChange?: (id: string, edge: "in" | "out", duration: number) => void;
+  onFadeResizeStart?: () => void;
+  onFadeResizeEnd?: () => void;
   onPasteTargetChange?: (trackId: TimelineTrackId, time: number) => void;
   snapTargets?: VideoMoveSnapTarget[];
   onSnapGuideChange?: (time: number | null) => void;
@@ -141,6 +143,8 @@ function VideoTrack({
   onToggleHidden,
   onTransitionChange,
   onFadeChange,
+  onFadeResizeStart,
+  onFadeResizeEnd,
   onPasteTargetChange,
   snapTargets = [],
   onSnapGuideChange,
@@ -450,6 +454,7 @@ function VideoTrack({
       return;
     }
 
+    onFadeResizeStart?.();
     onSelect?.(clip.id);
 
     const rect = clipElement.getBoundingClientRect();
@@ -488,6 +493,7 @@ function VideoTrack({
 
     const handleMouseUp = () => {
       setFadeDrag(null);
+      onFadeResizeEnd?.();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -1153,7 +1159,7 @@ function VideoTrack({
                       .filter(Boolean)
                       .join(" ")}
                     style={{
-                      left: `clamp(5px, ${videoFadeInWidth}%, calc(100% - 5px))`,
+                      left: `${videoFadeInWidth}%`,
                     }}
                     onMouseDown={(event) => startFadeResize(event, clip, "in")}
                     onClick={(event) => event.stopPropagation()}
@@ -1173,7 +1179,7 @@ function VideoTrack({
                       .filter(Boolean)
                       .join(" ")}
                     style={{
-                      right: `clamp(5px, ${videoFadeOutWidth}%, calc(100% - 5px))`,
+                      right: `${videoFadeOutWidth}%`,
                     }}
                     onMouseDown={(event) => startFadeResize(event, clip, "out")}
                     onClick={(event) => event.stopPropagation()}

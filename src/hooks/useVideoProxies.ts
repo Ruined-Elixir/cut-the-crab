@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ensureVideoProxy } from "../services/proxyMedia";
+import { cancelVideoProxy, ensureVideoProxy } from "../services/proxyMedia";
 
 export type VideoProxyStatus = "queued" | "generating" | "ready" | "error";
 
@@ -22,6 +22,8 @@ export function useVideoProxies(sourcePaths: string[]) {
   const requestedPathsRef = useRef<Set<string>>(new Set());
   const generationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
+  const activeGenerationPathRef = useRef<string | null>(null);
+  const desiredPathsRef = useRef<Set<string>>(new Set());
 
   const sourceKey = useMemo(
     () => normalizeSourcePaths(sourcePaths).join("\u0000"),
@@ -33,11 +35,28 @@ export function useVideoProxies(sourcePaths: string[]) {
 
     return () => {
       mountedRef.current = false;
+      const activePath = activeGenerationPathRef.current;
+      if (activePath) {
+        void cancelVideoProxy(activePath).catch(() => undefined);
+      }
     };
   }, []);
 
   useEffect(() => {
     const paths = sourceKey ? sourceKey.split("\u0000") : [];
+    const desired = new Set(paths);
+    desiredPathsRef.current = desired;
+
+    const activePath = activeGenerationPathRef.current;
+    if (activePath && !desired.has(activePath)) {
+      void cancelVideoProxy(activePath).catch(() => undefined);
+    }
+
+    for (const sourcePath of [...requestedPathsRef.current]) {
+      if (!desired.has(sourcePath)) {
+        requestedPathsRef.current.delete(sourcePath);
+      }
+    }
 
     for (const sourcePath of paths) {
       if (requestedPathsRef.current.has(sourcePath)) {
@@ -54,8 +73,12 @@ export function useVideoProxies(sourcePaths: string[]) {
       generationQueueRef.current = generationQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          if (!mountedRef.current) return;
+          if (!mountedRef.current || !desiredPathsRef.current.has(sourcePath)) {
+            requestedPathsRef.current.delete(sourcePath);
+            return;
+          }
 
+          activeGenerationPathRef.current = sourcePath;
           setProxyStatesBySource((current) => ({
             ...current,
             [sourcePath]: { status: "generating" },
@@ -64,7 +87,7 @@ export function useVideoProxies(sourcePaths: string[]) {
           try {
             const proxyPath = await ensureVideoProxy(sourcePath);
 
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || !desiredPathsRef.current.has(sourcePath)) return;
 
             setProxyStatesBySource((current) => ({
               ...current,
@@ -74,15 +97,29 @@ export function useVideoProxies(sourcePaths: string[]) {
               },
             }));
           } catch (error) {
-            if (!mountedRef.current) return;
+            const message = error instanceof Error ? error.message : String(error);
+            if (!mountedRef.current || !desiredPathsRef.current.has(sourcePath)) return;
+            if (message.includes("PROXY_CANCELLED")) {
+              requestedPathsRef.current.delete(sourcePath);
+              setProxyStatesBySource((current) => {
+                const next = { ...current };
+                delete next[sourcePath];
+                return next;
+              });
+              return;
+            }
 
             setProxyStatesBySource((current) => ({
               ...current,
               [sourcePath]: {
                 status: "error",
-                error: error instanceof Error ? error.message : String(error),
+                error: message,
               },
             }));
+          } finally {
+            if (activeGenerationPathRef.current === sourcePath) {
+              activeGenerationPathRef.current = null;
+            }
           }
         });
     }
