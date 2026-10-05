@@ -312,11 +312,11 @@
   position: absolute;
   top: 5px;
   bottom: 5px;
-  min-width: 8px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
+  min-width: 1px;
+  padding: 0;
+  display: block;
+  overflow: visible;
+  box-sizing: border-box;
   border: none;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.14);
@@ -338,9 +338,47 @@
 }
 
 .subtitle-clip-text {
+  position: absolute;
+  inset: 0;
   min-width: 0;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
   overflow: hidden;
+  box-sizing: border-box;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Subtitle clips use their true timeline width. The representation becomes
+   progressively simpler as a caption gets too narrow to contain useful text. */
+.subtitle-clip.density-compact {
+  border-radius: 7px;
+  font-size: 10px;
+}
+
+.subtitle-clip.density-compact .subtitle-clip-text {
+  padding: 0 5px;
+}
+
+.subtitle-clip.density-bar {
+  top: 12px;
+  bottom: 12px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.19);
+}
+
+.subtitle-clip.density-marker {
+  top: 9px;
+  bottom: 9px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.subtitle-clip.density-bar.selected,
+.subtitle-clip.density-marker.selected {
+  background: rgba(10, 132, 255, 0.5);
 }
 
 .subtitle-resize-handle {
@@ -348,8 +386,14 @@
   top: 0;
   bottom: 0;
   z-index: 5;
-  width: 8px;
+  width: 6px;
   cursor: ew-resize;
+}
+
+/* Keep the timing block visually exact while making selected edges easier to
+   grab. These hit areas are interaction-only and do not change clip width. */
+.subtitle-clip.selected .subtitle-resize-handle {
+  width: 12px;
 }
 
 .subtitle-resize-handle::after {
@@ -373,16 +417,32 @@
   left: 0;
 }
 
+.subtitle-clip.selected .subtitle-resize-handle.left {
+  left: -6px;
+}
+
 .subtitle-resize-handle.left::after {
-  left: 3px;
+  left: 2px;
+}
+
+.subtitle-clip.selected .subtitle-resize-handle.left::after {
+  left: 6px;
 }
 
 .subtitle-resize-handle.right {
   right: 0;
 }
 
+.subtitle-clip.selected .subtitle-resize-handle.right {
+  right: -6px;
+}
+
 .subtitle-resize-handle.right::after {
-  right: 3px;
+  right: 2px;
+}
+
+.subtitle-clip.selected .subtitle-resize-handle.right::after {
+  right: 6px;
 }
 
 .timeline-marker-layer {

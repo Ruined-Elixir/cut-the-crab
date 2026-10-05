@@ -18,6 +18,7 @@ export type SubtitleSelectionMode = "single" | "toggle" | "range";
 
 type SubtitleTrackProps = {
   duration: number;
+  pixelsPerSecond: number;
   track: TimelineTrack;
   subtitles: Subtitle[];
   selectedSubtitleId: string | null;
@@ -52,6 +53,19 @@ type SubtitleTrackProps = {
 
 const MIN_SUBTITLE_DURATION = 0.1;
 const SNAP_TOLERANCE_PX = 12;
+
+const FULL_TEXT_MIN_WIDTH_PX = 72;
+const COMPACT_TEXT_MIN_WIDTH_PX = 34;
+const BAR_MIN_WIDTH_PX = 12;
+
+type SubtitleDensity = "full" | "compact" | "bar" | "marker";
+
+function subtitleDensityForWidth(pixelWidth: number): SubtitleDensity {
+  if (pixelWidth >= FULL_TEXT_MIN_WIDTH_PX) return "full";
+  if (pixelWidth >= COMPACT_TEXT_MIN_WIDTH_PX) return "compact";
+  if (pixelWidth >= BAR_MIN_WIDTH_PX) return "bar";
+  return "marker";
+}
 
 function getSnapTolerance(trackWidth: number, duration: number) {
   if (trackWidth <= 0 || duration <= 0) {
@@ -242,6 +256,7 @@ function selectionModeFromEvent(event: ReactMouseEvent): SubtitleSelectionMode {
 
 function SubtitleTrack({
   duration,
+  pixelsPerSecond,
   track,
   subtitles,
   selectedSubtitleId,
@@ -597,12 +612,19 @@ function SubtitleTrack({
           const isSelected = selectedSubtitleIds.includes(subtitle.id);
 
           const isPrimary = selectedSubtitleId === subtitle.id;
+          const subtitlePixelWidth = Math.max(
+            0,
+            (subtitle.endTime - subtitle.startTime) * pixelsPerSecond,
+          );
+          const density = subtitleDensityForWidth(subtitlePixelWidth);
+          const showText = density === "full" || density === "compact";
 
           return (
             <div
               key={subtitle.id}
               className={[
                 "subtitle-clip",
+                `density-${density}`,
                 isSelected ? "selected" : "",
                 isPrimary ? "primary-selected" : "",
                 draggingSubtitleIds.includes(subtitle.id) ? "dragging" : "",
@@ -650,7 +672,9 @@ function SubtitleTrack({
                 onMouseDown={(event) => startResize(event, subtitle, "left")}
               />
 
-              <span className="subtitle-clip-text">{subtitle.text}</span>
+              {showText && (
+                <span className="subtitle-clip-text">{subtitle.text}</span>
+              )}
 
               <div
                 className="subtitle-resize-handle right"

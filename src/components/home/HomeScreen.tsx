@@ -10,15 +10,22 @@ import {
 
 import { getProjectThumbnailUrl } from "../../services/projectThumbnails";
 import { videoPathExists } from "../../services/projectRegistry";
+import {
+  MAX_PROJECT_TITLE_LENGTH,
+  normalizeProjectTitle,
+  projectTitleExists,
+} from "../../utils/projectIdentity";
 
 import "./HomeScreen.css";
 
 type HomeScreenProps = {
   projects: RecentProject[];
   pendingVideoPath: string | null;
+  pendingProjectTitle: string | null;
+  newProjectRequestId: number;
   errorMessage: string;
 
-  onChooseNewVideo: () => void | Promise<void>;
+  onChooseNewVideo: (projectTitle: string) => Promise<boolean>;
   onCancelNewProject: () => void;
   onCreateProject: (language: ProjectLanguage) => void | Promise<void>;
 
@@ -88,6 +95,8 @@ function formatDuration(duration: number) {
 function HomeScreen({
   projects,
   pendingVideoPath,
+  pendingProjectTitle,
+  newProjectRequestId,
   errorMessage,
   onChooseNewVideo,
   onCancelNewProject,
@@ -99,6 +108,11 @@ function HomeScreen({
 }: HomeScreenProps) {
   const [selectedLanguage, setSelectedLanguage] =
     useState<ProjectLanguage>("english");
+  const [projectNameDialogOpen, setProjectNameDialogOpen] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [projectNameError, setProjectNameError] = useState("");
+  const [isChoosingNewProjectVideo, setIsChoosingNewProjectVideo] =
+    useState(false);
 
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
@@ -119,8 +133,17 @@ function HomeScreen({
   useEffect(() => {
     if (pendingVideoPath) {
       setSelectedLanguage("english");
+      setProjectNameDialogOpen(false);
+      setProjectNameError("");
     }
   }, [pendingVideoPath]);
+
+  useEffect(() => {
+    if (newProjectRequestId <= 0) return;
+    setProjectNameDraft("");
+    setProjectNameError("");
+    setProjectNameDialogOpen(true);
+  }, [newProjectRequestId]);
 
   useEffect(() => {
     if (!projectContextMenu) {
@@ -259,6 +282,51 @@ function HomeScreen({
     cancelRename();
   };
 
+  const beginNewProject = () => {
+    setProjectNameDraft("");
+    setProjectNameError("");
+    setProjectNameDialogOpen(true);
+  };
+
+  const cancelProjectNameDialog = () => {
+    if (isChoosingNewProjectVideo) return;
+    setProjectNameDialogOpen(false);
+    setProjectNameDraft("");
+    setProjectNameError("");
+  };
+
+  const continueNewProject = async () => {
+    if (isChoosingNewProjectVideo) return;
+
+    const title = normalizeProjectTitle(projectNameDraft);
+    if (!title) {
+      setProjectNameError("Enter a project name.");
+      return;
+    }
+    if (title.length > MAX_PROJECT_TITLE_LENGTH) {
+      setProjectNameError(
+        `Project names can be up to ${MAX_PROJECT_TITLE_LENGTH} characters.`,
+      );
+      return;
+    }
+    if (projectTitleExists(projects, title)) {
+      setProjectNameError("That project name is already in use. Choose a unique name.");
+      return;
+    }
+
+    setProjectNameError("");
+    setIsChoosingNewProjectVideo(true);
+    try {
+      const selected = await onChooseNewVideo(title);
+      if (selected) {
+        setProjectNameDraft(title);
+        setProjectNameDialogOpen(false);
+      }
+    } finally {
+      setIsChoosingNewProjectVideo(false);
+    }
+  };
+
   const pendingVideoName = useMemo(
     () => (pendingVideoPath ? getFileName(pendingVideoPath) : ""),
     [pendingVideoPath],
@@ -283,7 +351,7 @@ function HomeScreen({
           <button
             type="button"
             className="home-new-project-button"
-            onClick={() => void onChooseNewVideo()}
+            onClick={beginNewProject}
           >
             <span aria-hidden="true">＋</span>
             New Project
@@ -504,9 +572,9 @@ function HomeScreen({
                 ▶
               </div>
               <h3>No recent projects yet</h3>
-              <p>Choose a video to create your first subtitle project.</p>
-              <button type="button" onClick={() => void onChooseNewVideo()}>
-                Choose Video
+              <p>Name your project, then choose its source video and language.</p>
+              <button type="button" onClick={beginNewProject}>
+                New Project
               </button>
             </div>
           )}
@@ -599,6 +667,94 @@ function HomeScreen({
         </div>
       )}
 
+      {projectNameDialogOpen && !pendingVideoPath && (
+        <div className="new-project-backdrop">
+          <section
+            className="new-project-dialog project-name-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-name-title"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelProjectNameDialog();
+              }
+            }}
+          >
+            <div className="new-project-dialog-header">
+              <div>
+                <span>NEW PROJECT</span>
+                <h2 id="project-name-title">Name your project</h2>
+              </div>
+
+              <button
+                type="button"
+                className="new-project-close"
+                onClick={cancelProjectNameDialog}
+                aria-label="Cancel new project"
+                disabled={isChoosingNewProjectVideo}
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="new-project-help">
+              The project name identifies this edit independently from its source video.
+              Two projects can use the same video without sharing subtitles or timeline state.
+            </p>
+
+            <label className="project-name-field">
+              <span>Project Name</span>
+              <input
+                autoFocus
+                type="text"
+                value={projectNameDraft}
+                maxLength={MAX_PROJECT_TITLE_LENGTH}
+                placeholder="My Project"
+                disabled={isChoosingNewProjectVideo}
+                onChange={(event) => {
+                  setProjectNameDraft(event.target.value);
+                  if (projectNameError) setProjectNameError("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void continueNewProject();
+                  }
+                }}
+              />
+            </label>
+
+            <div className="project-name-meta">
+              <span className={projectNameError ? "project-name-error visible" : "project-name-error"}>
+                {projectNameError || "Project names must be unique."}
+              </span>
+              <span>{normalizeProjectTitle(projectNameDraft).length}/{MAX_PROJECT_TITLE_LENGTH}</span>
+            </div>
+
+            <div className="new-project-actions">
+              <button
+                type="button"
+                className="new-project-secondary"
+                onClick={cancelProjectNameDialog}
+                disabled={isChoosingNewProjectVideo}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="new-project-primary"
+                onClick={() => void continueNewProject()}
+                disabled={isChoosingNewProjectVideo}
+              >
+                {isChoosingNewProjectVideo ? "Choosing…" : "Choose Video…"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {pendingVideoPath && (
         <div className="new-project-backdrop">
           <section
@@ -610,7 +766,10 @@ function HomeScreen({
             <div className="new-project-dialog-header">
               <div>
                 <span>NEW PROJECT</span>
-                <h2 id="new-project-title">{pendingVideoName}</h2>
+                <h2 id="new-project-title">{pendingProjectTitle ?? "New Project"}</h2>
+                <div className="new-project-source" title={pendingVideoPath}>
+                  {pendingVideoName}
+                </div>
               </div>
 
               <button
@@ -624,8 +783,8 @@ function HomeScreen({
             </div>
 
             <p className="new-project-help">
-              Choose the main spoken language. The project opens immediately,
-              and subtitle generation runs inside the editor.
+              Choose the main spoken language. This project has its own unique
+              save identity even if another project uses the same source video.
             </p>
 
             <div className="language-grid" role="radiogroup">

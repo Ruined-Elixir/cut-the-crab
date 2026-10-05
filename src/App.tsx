@@ -142,6 +142,11 @@ import {
   mergeRegeneratedLinkedSubtitles,
   preferredLinkedSubtitleTrack,
 } from "./utils/subtitleRegeneration";
+import {
+  MAX_PROJECT_TITLE_LENGTH,
+  normalizeProjectTitle,
+  projectTitleExists,
+} from "./utils/projectIdentity";
 
 import "./App.css";
 
@@ -537,6 +542,10 @@ function App() {
   const [pendingNewProjectPath, setPendingNewProjectPath] = useState<
     string | null
   >(null);
+  const [pendingNewProjectTitle, setPendingNewProjectTitle] = useState<
+    string | null
+  >(null);
+  const [newProjectRequestId, setNewProjectRequestId] = useState(0);
   const [projectMetadata, setProjectMetadata] =
     useState<ProjectMetadata | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -4344,27 +4353,65 @@ function App() {
     await handleVideoPathChange(selected);
   };
 
-  const handleChooseNewProjectVideo = async () => {
+  const handleChooseNewProjectVideo = async (requestedTitle: string) => {
+    const title = normalizeProjectTitle(requestedTitle);
+
+    if (!title) {
+      setHomeError("Enter a project name before choosing a video.");
+      return false;
+    }
+
+    if (projectTitleExists(recentProjects, title)) {
+      setHomeError(`A project named “${title}” already exists. Choose a unique project name.`);
+      return false;
+    }
+
     const selected = await chooseVideoPath();
 
     if (!selected) {
-      return;
+      return false;
     }
 
     setHomeError("");
+    setPendingNewProjectTitle(title);
     setPendingNewProjectPath(selected);
+    return true;
+  };
+
+  const cancelNewProject = () => {
+    setPendingNewProjectPath(null);
+    setPendingNewProjectTitle(null);
+    setHomeError("");
   };
 
   const handleCreateProject = async (language: ProjectLanguage) => {
-    if (!pendingNewProjectPath) {
+    if (!pendingNewProjectPath || !pendingNewProjectTitle) {
       return;
     }
 
     const path = pendingNewProjectPath;
+    const title = normalizeProjectTitle(pendingNewProjectTitle);
+
+    if (!title) {
+      setHomeError("Enter a project name before creating the project.");
+      return;
+    }
+
+    if (projectTitleExists(recentProjects, title)) {
+      setHomeError(`A project named “${title}” already exists. Choose a unique project name.`);
+      setPendingNewProjectPath(null);
+      setPendingNewProjectTitle(null);
+      setNewProjectRequestId((value) => value + 1);
+      return;
+    }
+
+    // Project identity is intentionally independent from the selected media.
+    // Two projects may use the same source video, but every project receives a
+    // fresh UUID and therefore its own save/autosave/subtitle/timeline state.
     const projectId = crypto.randomUUID();
 
     const metadata: ProjectMetadata = {
-      title: getVideoTitle(path),
+      title,
       languages: [language],
     };
 
@@ -4383,6 +4430,7 @@ function App() {
       );
 
       setPendingNewProjectPath(null);
+      setPendingNewProjectTitle(null);
 
       await handleVideoPathChange(path, metadata, projectId);
 
@@ -4399,9 +4447,19 @@ function App() {
     project: RecentProject,
     nextTitle: string,
   ) => {
-    const title = nextTitle.trim();
+    const title = normalizeProjectTitle(nextTitle);
 
     if (!title || title === project.title) {
+      return;
+    }
+
+    if (title.length > MAX_PROJECT_TITLE_LENGTH) {
+      setHomeError(`Project names can be up to ${MAX_PROJECT_TITLE_LENGTH} characters.`);
+      return;
+    }
+
+    if (projectTitleExists(recentProjects, title, project.projectId)) {
+      setHomeError(`A project named “${title}” already exists. Project names must be unique.`);
       return;
     }
 
@@ -5008,8 +5066,11 @@ function App() {
           }
         }
 
+        setPendingNewProjectPath(null);
+        setPendingNewProjectTitle(null);
+        setHomeError("");
+        setNewProjectRequestId((value) => value + 1);
         setScreen("home");
-        await handleChooseNewProjectVideo();
         return;
 
       case "file.show-home":
@@ -5598,9 +5659,11 @@ function App() {
         <HomeScreen
           projects={recentProjects}
           pendingVideoPath={pendingNewProjectPath}
+          pendingProjectTitle={pendingNewProjectTitle}
+          newProjectRequestId={newProjectRequestId}
           errorMessage={homeError}
           onChooseNewVideo={handleChooseNewProjectVideo}
-          onCancelNewProject={() => setPendingNewProjectPath(null)}
+          onCancelNewProject={cancelNewProject}
           onCreateProject={handleCreateProject}
           onOpenProject={handleOpenRecentProject}
           onRenameProject={handleRenameRecentProject}

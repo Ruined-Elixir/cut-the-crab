@@ -1655,6 +1655,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
           <SubtitleTrack
             key={track.id}
             duration={workspaceDuration}
+            pixelsPerSecond={pixelsPerSecond}
             track={track}
             subtitles={displaySubtitles.filter(
               (subtitle) => getSubtitleTrackId(subtitle) === track.id,
