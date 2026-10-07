@@ -43,9 +43,9 @@ import "./VideoSubtitleOverlay.css";
 type VideoSubtitleOverlayProps = {
   subtitles: Subtitle[];
   currentTime: number;
+  isPlaying: boolean;
   videoSourceKey?: string;
   clockVideo?: HTMLVideoElement | null;
-  videoTimeOffset?: number;
 
   selectedSubtitleId?: string | null;
   interactiveSubtitleIds?: string[];
@@ -72,27 +72,54 @@ type DraftPosition = {
   positionY: number;
 };
 
-function setRendererTimeOffset(
-  renderer: SubtitlesOctopus | null,
-  timeOffset: number,
-) {
-  const timelineRenderer = renderer as
-    | (SubtitlesOctopus & {
-        timeOffset?: number;
-      })
-    | null;
+type PlaybackSyncedRenderer = SubtitlesOctopus & {
+  setCurrentTime?: (time: number) => void;
+  setIsPaused?: (paused: boolean, time: number) => void;
+  setRate?: (rate: number) => void;
+};
 
-  if (timelineRenderer) {
-    timelineRenderer.timeOffset = timeOffset;
+function syncRendererToTimelineState(
+  renderer: SubtitlesOctopus | null,
+  timelineTime: number,
+  isPlaying: boolean,
+  hardSync = false,
+) {
+  if (!renderer || !Number.isFinite(timelineTime)) return;
+
+  const syncedRenderer = renderer as PlaybackSyncedRenderer;
+
+  try {
+    if (hardSync) {
+      // Force an immediate paint at discontinuities (clip handoff / seek).
+      // The renderer is canvas-driven, so this does not create a second media
+      // clock: timelineTime already comes from the presented Program frame.
+      syncedRenderer.setIsPaused?.(true, timelineTime);
+      syncedRenderer.setCurrentTime?.(timelineTime);
+      if (isPlaying) {
+        syncedRenderer.setIsPaused?.(false, timelineTime);
+      }
+      return;
+    }
+
+    syncedRenderer.setCurrentTime?.(timelineTime);
+  } catch (error) {
+    console.error("Failed to synchronize libass timeline clock:", error);
+  }
+}
+
+function clearSubtitleCanvas(canvas: HTMLCanvasElement | null) {
+  const context = canvas?.getContext("2d");
+  if (canvas && context) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
   }
 }
 
 function VideoSubtitleOverlay({
   subtitles,
   currentTime,
+  isPlaying,
   videoSourceKey = "",
   clockVideo = null,
-  videoTimeOffset = 0,
   selectedSubtitleId,
   interactiveSubtitleIds,
   shellRef,
@@ -134,7 +161,30 @@ function VideoSubtitleOverlay({
 
   const renderer0Ref = useRef<SubtitlesOctopus | null>(null);
   const renderer1Ref = useRef<SubtitlesOctopus | null>(null);
-  const videoTimeOffsetRef = useRef(videoTimeOffset);
+
+  // @biliblitz/libass-wasm documents canvas-only mode, but its current fork
+  // unconditionally calls the internal onSeeked() once at construction time.
+  // That callback dereferences self.video.currentTime even when no video was
+  // supplied, so a true canvas-only constructor throws before the worker can
+  // become usable. Give libass a stable, detached HTMLVideoElement purely as a
+  // constructor/event host. CTC still owns the subtitle clock below through
+  // setCurrentTime/setIsPaused; this dummy element never plays and therefore
+  // cannot compete with the Program Monitor media clock.
+  const libassClockVideoRef = useRef<HTMLVideoElement | null>(null);
+  if (!libassClockVideoRef.current) {
+    const clock = document.createElement("video");
+    clock.preload = "none";
+    clock.muted = true;
+    clock.playsInline = true;
+    libassClockVideoRef.current = clock;
+  }
+
+  const currentTimeRef = useRef(currentTime);
+  const isPlayingRef = useRef(isPlaying);
+  const lastTimelineObservationRef = useRef(currentTime);
+  const lastWorkerSyncAtRef = useRef(0);
+  const lastVideoSourceKeyRef = useRef(videoSourceKey);
+  const lastActiveSubtitleIdRef = useRef<string | null>(null);
 
   const frontCanvasIndexRef = useRef<0 | 1>(0);
   const renderRevisionRef = useRef(0);
@@ -163,11 +213,77 @@ function VideoSubtitleOverlay({
     [interactiveSubtitleIds],
   );
 
+  currentTimeRef.current = currentTime;
+  isPlayingRef.current = isPlaying;
+
+  const syncLiveRenderers = (hardSync = false) => {
+    syncRendererToTimelineState(
+      renderer0Ref.current,
+      currentTimeRef.current,
+      isPlayingRef.current,
+      hardSync,
+    );
+    syncRendererToTimelineState(
+      renderer1Ref.current,
+      currentTimeRef.current,
+      isPlayingRef.current,
+      hardSync,
+    );
+  };
+
+  // CTC manually drives SubtitlesOctopus from canonical timeline time. Pushing
+  // setCurrentTime on every Program frame can outpace its worker and grow a
+  // large render queue. Keep the worker running between sparse corrections and
+  // reserve immediate hard syncs for real discontinuities.
   useEffect(() => {
-    videoTimeOffsetRef.current = videoTimeOffset;
-    setRendererTimeOffset(renderer0Ref.current, videoTimeOffset);
-    setRendererTimeOffset(renderer1Ref.current, videoTimeOffset);
-  }, [videoTimeOffset]);
+    const sourceChanged = lastVideoSourceKeyRef.current !== videoSourceKey;
+    const jumped =
+      Math.abs(currentTime - lastTimelineObservationRef.current) > 0.2;
+    const hardSync = sourceChanged || jumped;
+    const now = performance.now();
+
+    currentTimeRef.current = currentTime;
+    isPlayingRef.current = isPlaying;
+
+    if (hardSync) {
+      clearSubtitleCanvas(canvas0Ref.current);
+      clearSubtitleCanvas(canvas1Ref.current);
+    }
+
+    // While playing, SubtitlesOctopus advances from setIsPaused(false, time).
+    // Four corrections per second are enough to keep it aligned without
+    // flooding the worker. Paused/seeking states still synchronize immediately.
+    if (
+      hardSync ||
+      !isPlaying ||
+      now - lastWorkerSyncAtRef.current >= 250
+    ) {
+      syncLiveRenderers(hardSync);
+      lastWorkerSyncAtRef.current = now;
+    }
+
+    lastTimelineObservationRef.current = currentTime;
+    lastVideoSourceKeyRef.current = videoSourceKey;
+  }, [currentTime, isPlaying, videoSourceKey]);
+
+  // setIsPaused controls libass's internal render-ahead behavior. Keep it in
+  // lockstep with the editor transport, then seed the exact current frame.
+  useEffect(() => {
+    const applyTransportState = (renderer: SubtitlesOctopus | null) => {
+      if (!renderer) return;
+      const syncedRenderer = renderer as PlaybackSyncedRenderer;
+      try {
+        syncedRenderer.setRate?.(1);
+        syncedRenderer.setIsPaused?.(!isPlaying, currentTimeRef.current);
+        syncedRenderer.setCurrentTime?.(currentTimeRef.current);
+      } catch (error) {
+        console.error("Failed to update libass transport state:", error);
+      }
+    };
+
+    applyTransportState(renderer0Ref.current);
+    applyTransportState(renderer1Ref.current);
+  }, [isPlaying]);
 
   const activeSubtitle = useMemo(() => {
     const active = subtitles.filter(
@@ -192,6 +308,28 @@ function VideoSubtitleOverlay({
       return bIndex - aIndex;
     })[0];
   }, [currentTime, interactiveSubtitleIdSet, selectedSubtitleId, subtitles]);
+
+  useEffect(() => {
+    const activeId = activeSubtitle?.id ?? null;
+    if (activeId === lastActiveSubtitleIdRef.current) return;
+
+    lastActiveSubtitleIdRef.current = activeId;
+
+    if (!activeId) {
+      // wasm-blend can retain the last painted bitmap when the requested frame
+      // contains no dialogue. Explicitly clear both buffers so a subtitle can
+      // never remain over a no-subtitle section.
+      clearSubtitleCanvas(canvas0Ref.current);
+      clearSubtitleCanvas(canvas1Ref.current);
+      return;
+    }
+
+    // Entering a new cue is a semantic boundary even if the media source did
+    // not change. Force exactly one immediate frame so a following clip/cue
+    // does not wait for a later pause/play event to become visible.
+    syncLiveRenderers(true);
+    lastWorkerSyncAtRef.current = performance.now();
+  }, [activeSubtitle?.id]);
 
   const previewScale = (renderedVideoRect?.height ?? ASS_HEIGHT) / ASS_HEIGHT;
 
@@ -595,152 +733,166 @@ function VideoSubtitleOverlay({
     };
   }, [clockVideo, shellRef, videoSourceKey]);
 
+  const assContent = useMemo(() => buildAssTrack(subtitles), [subtitles]);
+
   /*
    * Double-buffered libass refresh.
    *
-   * The currently visible renderer is never disposed before the replacement
-   * renderer is ready. This is what prevents style-change flicker.
+   * The subtitle list can change many times per second while Ripple/Freeze or
+   * other timeline gestures are previewing. Creating a fresh WASM worker for
+   * every transient array would retain large heaps until WebKit/GC catches up.
+   * Coalesce those transient updates and keep the visible renderer alive until
+   * one replacement is genuinely ready.
    */
   useEffect(() => {
-    if (!clockVideo) {
-      return;
-    }
-
-    const backIndex: 0 | 1 = frontCanvasIndexRef.current === 0 ? 1 : 0;
-
-    const canvas = backIndex === 0 ? canvas0Ref.current : canvas1Ref.current;
-
-    if (!canvas) {
-      return;
-    }
-
     renderRevisionRef.current += 1;
     const revision = renderRevisionRef.current;
 
-    const assContent = buildAssTrack(subtitles);
-
-    const fontUrl = new URL(DEFAULT_ASS_FONT_URL, window.location.origin).href;
-
-    /*
-     * Dispose only the renderer already attached to the BACK canvas.
-     * The visible/front renderer stays alive.
-     */
-    if (backIndex === 0) {
-      disposeRendererOnce(renderer0Ref.current);
-      renderer0Ref.current = null;
-    } else {
-      disposeRendererOnce(renderer1Ref.current);
-      renderer1Ref.current = null;
-    }
-
+    let cancelled = false;
+    let startTimer: number | null = null;
+    let firstPaintFrame: number | null = null;
+    let secondPaintFrame: number | null = null;
+    let swapTimer: number | null = null;
+    let disposeFrame: number | null = null;
     let renderer: SubtitlesOctopus | null = null;
+    let backIndex: 0 | 1 | null = null;
+    let promoted = false;
 
-    /*
-     * @biliblitz/libass-wasm is the video-attached fork used by CTC. Keep
-     * exactly one renderer clock: the HTMLVideoElement's native media clock.
-     * CTC updates only timeOffset so source-media time maps into canonical
-     * timeline time for moved/trimmed/retimed clips. Do not also call
-     * setCurrentTime() while a video is attached; that reintroduces the
-     * two-clock flicker/early-cue regression.
-     */
-    const rendererOptions = {
-      video: clockVideo,
-      canvas,
-      subContent: assContent,
+    const startRenderer = () => {
+      if (cancelled || revision !== renderRevisionRef.current) return;
 
-      fonts: [fontUrl],
-      fallbackFont: fontUrl,
+      backIndex = frontCanvasIndexRef.current === 0 ? 1 : 0;
+      const canvas = backIndex === 0 ? canvas0Ref.current : canvas1Ref.current;
+      if (!canvas) return;
 
-      renderMode: "wasm-blend",
+      const fontUrl = new URL(DEFAULT_ASS_FONT_URL, window.location.origin).href;
 
-      prescaleHeightLimit: ASS_HEIGHT,
-      maxRenderHeight: ASS_HEIGHT,
-      timeOffset: videoTimeOffsetRef.current,
+      // Only the non-visible buffer is replaceable. Never tear down the current
+      // front renderer until the replacement has rendered and been promoted.
+      if (backIndex === 0) {
+        disposeRendererOnce(renderer0Ref.current);
+        renderer0Ref.current = null;
+      } else {
+        disposeRendererOnce(renderer1Ref.current);
+        renderer1Ref.current = null;
+      }
 
-      onReady: () => {
-        setRendererTimeOffset(renderer, videoTimeOffsetRef.current);
+      const libassClockVideo = libassClockVideoRef.current;
+      if (!libassClockVideo) return;
 
-        /*
-         * onReady means the new worker/libass instance is initialized, but it
-         * does NOT necessarily mean the new subtitle frame has already been
-         * painted into the back canvas.
-         *
-         * Swapping canvases immediately here can therefore expose a blank
-         * back canvas for a moment, which looks like a flash.
-         *
-         * Give the new renderer a couple of browser frames plus a short paint
-         * grace period before making it visible. The old front canvas remains
-         * visible and translated at the dropped position during this time.
-         */
-        window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(() => {
-            window.setTimeout(() => {
-              /*
-               * Ignore stale workers if another subtitle change happened
-               * while this renderer was starting/painting.
-               */
-              if (revision !== renderRevisionRef.current) {
-                // Another effect run may have already superseded and
-                // disposed THIS SAME renderer object (it's reachable via
-                // renderer0Ref/renderer1Ref, not just this closure). The
-                // guard makes that safe either way.
-                disposeRendererOnce(renderer);
-                return;
-              }
+      const rendererOptions = {
+        // The biliblitz fork currently invokes onSeeked() unconditionally at
+        // the end of its constructor. A detached real <video> keeps that path
+        // valid while all actual subtitle timing remains manually driven from
+        // CTC's presented-frame timeline clock.
+        video: libassClockVideo,
+        timeOffset: currentTimeRef.current,
+        canvas,
+        subContent: assContent,
+        fonts: [fontUrl],
+        fallbackFont: fontUrl,
+        renderMode: "wasm-blend",
+        targetFps: 24,
+        // The library defaults both libass caches to unlimited. CTC subtitles
+        // are ordinary dialogue tracks, so bounded caches prevent a pathological
+        // subtitle/animation from consuming gigabytes of WASM memory.
+        libassMemoryLimit: 64,
+        libassGlyphLimit: 32,
+        prescaleHeightLimit: ASS_HEIGHT,
+        maxRenderHeight: ASS_HEIGHT,
 
-              const oldFrontIndex = frontCanvasIndexRef.current;
+        onReady: () => {
+          if (
+            cancelled ||
+            revision !== renderRevisionRef.current ||
+            backIndex === null
+          ) {
+            disposeRendererOnce(renderer);
+            return;
+          }
 
-              frontCanvasIndexRef.current = backIndex;
-              setFrontCanvasIndex(backIndex);
+          syncRendererToTimelineState(
+            renderer,
+            currentTimeRef.current,
+            isPlayingRef.current,
+            true,
+          );
 
-              /*
-               * The replacement ASS renderer now contains the committed drag
-               * position, so the temporary translation is no longer needed.
-               */
-              setDraftPosition(null);
-              draftPositionRef.current = null;
-
-              /*
-               * Wait one more frame before disposing the old renderer so the
-               * newly visible canvas has definitely been composited.
-               */
-              window.requestAnimationFrame(() => {
-                if (oldFrontIndex === 0) {
-                  disposeRendererOnce(renderer0Ref.current);
-                  renderer0Ref.current = null;
-                } else {
-                  disposeRendererOnce(renderer1Ref.current);
-                  renderer1Ref.current = null;
+          firstPaintFrame = window.requestAnimationFrame(() => {
+            secondPaintFrame = window.requestAnimationFrame(() => {
+              swapTimer = window.setTimeout(() => {
+                if (
+                  cancelled ||
+                  revision !== renderRevisionRef.current ||
+                  backIndex === null
+                ) {
+                  disposeRendererOnce(renderer);
+                  return;
                 }
-              });
-            }, 50);
+
+                const oldFrontIndex = frontCanvasIndexRef.current;
+                frontCanvasIndexRef.current = backIndex;
+                promoted = true;
+                setFrontCanvasIndex(backIndex);
+                setDraftPosition(null);
+                draftPositionRef.current = null;
+
+                disposeFrame = window.requestAnimationFrame(() => {
+                  if (oldFrontIndex === backIndex) return;
+                  if (oldFrontIndex === 0) {
+                    disposeRendererOnce(renderer0Ref.current);
+                    renderer0Ref.current = null;
+                  } else {
+                    disposeRendererOnce(renderer1Ref.current);
+                    renderer1Ref.current = null;
+                  }
+                });
+              }, 50);
+            });
           });
-        });
-      },
+        },
 
-      onError: (error: Error) => {
-        console.error("libass preview renderer failed:", error);
-      },
-    } as unknown as ConstructorParameters<typeof SubtitlesOctopus>[0];
+        onError: (error: Error) => {
+          console.error("libass preview renderer failed:", error);
+        },
+      } as unknown as ConstructorParameters<typeof SubtitlesOctopus>[0];
 
-    try {
-      renderer = new SubtitlesOctopus(rendererOptions);
-    } catch (error) {
-      /*
-       * A synchronous libass constructor failure must never take down the
-       * entire React editor. Keep the project open and surface the real
-       * renderer error in DevTools instead of producing a grey screen.
-       */
-      console.error("Failed to initialize libass preview renderer:", error);
-      return;
-    }
+      try {
+        renderer = new SubtitlesOctopus(rendererOptions);
+      } catch (error) {
+        console.error("Failed to initialize libass preview renderer:", error);
+        return;
+      }
 
-    if (backIndex === 0) {
-      renderer0Ref.current = renderer;
-    } else {
-      renderer1Ref.current = renderer;
-    }
-  }, [clockVideo, subtitles, videoSourceKey]);
+      if (backIndex === 0) renderer0Ref.current = renderer;
+      else renderer1Ref.current = renderer;
+    };
+
+    // Initial mount should render immediately. Once a renderer exists, briefly
+    // debounce full ASS-track rebuilds so a drag generates one replacement
+    // worker rather than dozens of short-lived workers.
+    const hasLiveRenderer = !!renderer0Ref.current || !!renderer1Ref.current;
+    if (hasLiveRenderer) startTimer = window.setTimeout(startRenderer, 80);
+    else startRenderer();
+
+    return () => {
+      cancelled = true;
+      if (startTimer !== null) window.clearTimeout(startTimer);
+      if (firstPaintFrame !== null) window.cancelAnimationFrame(firstPaintFrame);
+      if (secondPaintFrame !== null) window.cancelAnimationFrame(secondPaintFrame);
+      if (swapTimer !== null) window.clearTimeout(swapTimer);
+      if (disposeFrame !== null) window.cancelAnimationFrame(disposeFrame);
+
+      // A renderer that never became the visible front buffer is safe to tear
+      // down immediately. This closes the last worker-leak path during rapid
+      // subtitle topology changes.
+      if (renderer && !promoted) {
+        if (renderer0Ref.current === renderer) renderer0Ref.current = null;
+        if (renderer1Ref.current === renderer) renderer1Ref.current = null;
+        disposeRendererOnce(renderer);
+      }
+    };
+  }, [assContent]);
 
   useEffect(() => {
     return () => {

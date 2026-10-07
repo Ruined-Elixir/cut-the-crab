@@ -1,6 +1,3 @@
-
-    
-  
 #!/usr/bin/env bash
 # Usage: scripts/verify-release.sh "src-tauri/target/release/bundle/macos/Cut The Crab.app"
 set -u

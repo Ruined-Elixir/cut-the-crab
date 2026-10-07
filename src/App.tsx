@@ -147,6 +147,7 @@ import {
   normalizeProjectTitle,
   projectTitleExists,
 } from "./utils/projectIdentity";
+import { videoSubtitleTopologyKey } from "./utils/linkedSubtitles";
 
 import "./App.css";
 
@@ -615,6 +616,7 @@ function App() {
   const [exportCancelError, setExportCancelError] = useState<string | null>(null);
   const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null);
   const exportCancelRequestedRef = useRef(false);
+  const exportStartingRef = useRef(false);
   const [exportSettingsRequest, setExportSettingsRequest] = useState<{
     range: TimelineRange | null;
   } | null>(null);
@@ -660,6 +662,8 @@ function App() {
     time: number;
   } | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const creatingProjectRef = useRef(false);
+  const openingRecentProjectIdRef = useRef<string | null>(null);
   const resolveProjectLoadWaiter = useCallback((generation: number) => {
     const resolve = projectLoadWaitersRef.current.get(generation);
     if (!resolve) return;
@@ -722,7 +726,8 @@ function App() {
     deleteSubtitles,
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
-    shiftLinkedSubtitlesByVideoClipDeltas,
+    syncLinkedSubtitlesToVideoTopology,
+    syncLinkedSubtitlesToVideoTopologyFromSnapshot,
     bindPendingGeneratedSubtitlesToVideoClips,
     splitLinkedSubtitlesForVideoClip,
     syncLinkedSubtitlesToVideoWindows,
@@ -782,10 +787,12 @@ function App() {
     rippleMode,
   });
 
-  const videoMoveSubtitleSyncActiveRef = useRef(false);
-  const previousVideoClipMoveStateRef = useRef(
-    new Map<string, { timelineStart: number; sourceIn: number }>(),
-  );
+  const suppressNextVideoTopologySubtitleSyncRef = useRef(false);
+  const previousVideoSubtitleTopologyRef = useRef({
+    key: videoSubtitleTopologyKey(videoClips),
+    videoClips,
+    subtitles,
+  });
 
   const videoProxySourcePaths = useMemo(
     () => [
@@ -1574,6 +1581,11 @@ function App() {
     subtitles: Subtitle[];
     clipIds: Set<string>;
   } | null>(null);
+  const videoMoveSubtitleSyncActiveRef = useRef(false);
+  const videoMoveSubtitleOriginRef = useRef<{
+    videoClips: VideoTimelineClip[];
+    subtitles: Subtitle[];
+  } | null>(null);
   const lastVideoResizeSubtitleSyncKeyRef = useRef<string | null>(null);
   const latestVideoClipsRef = useRef(videoClips);
   latestVideoClipsRef.current = videoClips;
@@ -1618,50 +1630,64 @@ function App() {
   }, [syncActiveVideoResizeSubtitles, videoClips]);
 
   useEffect(() => {
-    const previous = previousVideoClipMoveStateRef.current;
+    const previous = previousVideoSubtitleTopologyRef.current;
+    const key = videoSubtitleTopologyKey(videoClips);
 
-    if (videoMoveSubtitleSyncActiveRef.current) {
-      const deltas = new Map<string, number>();
-
-      for (const clip of videoClips) {
-        const before = previous.get(clip.id);
-        if (!before) continue;
-
-        const delta = clip.timelineStart - before.timelineStart;
-        const sourceBoundaryUnchanged =
-          Math.abs(clip.sourceIn - before.sourceIn) <= 0.000001;
-
-        if (sourceBoundaryUnchanged && Math.abs(delta) > 0.000001) {
-          deltas.set(clip.id, delta);
-        }
+    // Project hydration intentionally replaces subtitles and video topology in
+    // several React state updates. Never interpret those load-time transitions
+    // as timeline edits: reconciling the previous in-memory project against an
+    // intermediate empty/new clip list can delete perfectly valid persisted
+    // linked captions. handleVideoPathChange seeds `previous...Ref` with the
+    // topology that is about to be hydrated; once that exact topology is
+    // committed we may safely keep its subtitle snapshot current, including
+    // the legacy pending-link binder below.
+    if (isLoadingVideoRef.current) {
+      if (key === previous.key) {
+        previousVideoSubtitleTopologyRef.current = {
+          key,
+          videoClips,
+          subtitles,
+        };
+        bindPendingGeneratedSubtitlesToVideoClips(
+          videoClips.filter((clip) => clip.freezeFrameSourceTime === undefined),
+        );
       }
-
-      const compoundId = compoundMoveOriginRef.current?.compoundId;
-      const alreadyMovedByCompound = compoundId
-        ? new Set(
-            subtitles
-              .filter((subtitle) => subtitle.compoundId === compoundId)
-              .map((subtitle) => subtitle.id),
-          )
-        : undefined;
-
-      shiftLinkedSubtitlesByVideoClipDeltas(
-        deltas,
-        alreadyMovedByCompound,
-      );
+      return;
     }
 
-    previousVideoClipMoveStateRef.current = new Map(
-      videoClips.map((clip) => [
-        clip.id,
-        { timelineStart: clip.timelineStart, sourceIn: clip.sourceIn },
-      ]),
-    );
+    const topologyChanged = key !== previous.key;
+
+    if (topologyChanged) {
+      if (suppressNextVideoTopologySubtitleSyncRef.current) {
+        suppressNextVideoTopologySubtitleSyncRef.current = false;
+      } else if (
+        !videoResizeSubtitleOriginRef.current &&
+        !videoMoveSubtitleSyncActiveRef.current
+      ) {
+        syncLinkedSubtitlesToVideoTopology(
+          previous.videoClips,
+          videoClips,
+          previous.subtitles,
+        );
+      }
+    }
+
+    previousVideoSubtitleTopologyRef.current = {
+      key,
+      videoClips,
+      subtitles,
+    };
 
     bindPendingGeneratedSubtitlesToVideoClips(
       videoClips.filter((clip) => clip.freezeFrameSourceTime === undefined),
     );
-  }, [videoClips]);
+  }, [
+    bindPendingGeneratedSubtitlesToVideoClips,
+    subtitles,
+    syncLinkedSubtitlesToVideoTopology,
+    syncLinkedSubtitlesToVideoTopologyFromSnapshot,
+    videoClips,
+  ]);
 
   const applyCompoundTimelineState = (next: CompoundTimelineState) => {
     replaceVideoClips(next.videoClips);
@@ -1819,7 +1845,19 @@ function App() {
       );
       return;
     }
-    moveVideoClip(id, requestedStart);
+    const nextClips = moveVideoClip(id, requestedStart);
+    const moveOrigin = videoMoveSubtitleOriginRef.current;
+    if (moveOrigin && nextClips) {
+      // Keep picture and linked captions in the same React batch. Waiting for a
+      // post-render topology effect made captions visibly trail fast drags and
+      // allowed a later pointer event to treat stale caption positions as if
+      // they had fallen outside the clip.
+      syncLinkedSubtitlesToVideoTopologyFromSnapshot(
+        moveOrigin.videoClips,
+        nextClips,
+        moveOrigin.subtitles,
+      );
+    }
   };
 
   const handleCompoundAwareVideoMoveEnd = () => {
@@ -1846,6 +1884,10 @@ function App() {
 
     beginHistoryTransaction();
 
+    // Resize previews intentionally derive linked subtitles from the gesture-start
+    // snapshot so trimming inward and then back outward restores captions exactly.
+    // Other subtitle edits should therefore not be committed concurrently with an
+    // active video-edge drag; the resize gesture owns subtitle timing until mouseup.
     videoResizeSubtitleOriginRef.current = {
       subtitles: subtitles.map((subtitle) => ({ ...subtitle })),
       clipIds: new Set(group ? group.videoIds : [id]),
@@ -1944,6 +1986,7 @@ function App() {
 
     const rightClipId = crypto.randomUUID();
     beginHistoryTransaction();
+    suppressNextVideoTopologySubtitleSyncRef.current = true;
     splitLinkedSubtitlesForVideoClip(
       selectedVideoClipId,
       rightClipId,
@@ -2099,13 +2142,14 @@ function App() {
       return false;
     }
 
-    markNextChangeImmediate();
+    beginHistoryTransaction();
     clearSubtitleSelection();
     insertVideoClipCopies(
       clipboard.clips,
       target.time,
       sourceTrackIds.length === 1 ? target.trackId : undefined,
     );
+    window.requestAnimationFrame(() => endHistoryTransaction());
     return true;
   };
 
@@ -2182,9 +2226,10 @@ function App() {
       ...selectedVideoClips.map((clip) => clip.timelineEnd),
     );
 
-    markNextChangeImmediate();
+    beginHistoryTransaction();
     clearSubtitleSelection();
     insertVideoClipCopies(selectedVideoClips, groupEnd);
+    window.requestAnimationFrame(() => endHistoryTransaction());
     return true;
   };
 
@@ -2369,6 +2414,15 @@ function App() {
     videoMoveSubtitleSyncActiveRef.current = true;
     beginHistoryTransaction();
 
+    // Every video move, not only Ripple, owns one immutable subtitle snapshot.
+    // Each pointer frame remaps from this same source so subtitles move in the
+    // exact render as the video and a fast drag can never progressively trim or
+    // delete captions based on an intermediate frame.
+    videoMoveSubtitleOriginRef.current = {
+      videoClips: videoClips.map((clip) => ({ ...clip })),
+      subtitles: subtitles.map((subtitle) => ({ ...subtitle })),
+    };
+
     // Ripple mode needs an immutable drag-origin snapshot even for a single
     // clip. Freeform mode still only captures multi-clip moves.
     if (rippleMode || hasMultiSelection) {
@@ -2383,6 +2437,11 @@ function App() {
   const handleVideoClipMoveEnd = () => {
     endVideoClipMove();
     window.requestAnimationFrame(() => {
+      // The final mouse position is flushed by VideoTrack before this callback,
+      // so its video/subtitle pair is already committed in one batch. Do not
+      // remap again from latestVideoClipsRef here; that ref can still represent
+      // the previous render when mouseup happens in the same native event.
+      videoMoveSubtitleOriginRef.current = null;
       videoMoveSubtitleSyncActiveRef.current = false;
       endHistoryTransaction();
     });
@@ -2848,8 +2907,9 @@ function App() {
       }
     }
 
-    markNextChangeImmediate();
+    beginHistoryTransaction();
     updateVideoClipPlaybackRate(id, effectiveRate);
+    window.requestAnimationFrame(() => endHistoryTransaction());
   };
 
   const handleToggleVideoReverse = (id: string) => {
@@ -2861,8 +2921,9 @@ function App() {
     ) {
       return;
     }
-    markNextChangeImmediate();
+    beginHistoryTransaction();
     toggleVideoClipReverse(id);
+    window.requestAnimationFrame(() => endHistoryTransaction());
   };
 
   const handleInsertFreezeFrame = (id: string) => {
@@ -2881,8 +2942,25 @@ function App() {
       );
       return;
     }
-    markNextChangeImmediate();
-    insertVideoFreezeFrame(id, currentTimeRef.current, 2);
+    beginHistoryTransaction();
+    suppressNextVideoTopologySubtitleSyncRef.current = true;
+    const freezeResult = insertVideoFreezeFrame(
+      id,
+      currentTimeRef.current,
+      2,
+    );
+    if (freezeResult) {
+      syncLinkedSubtitlesToVideoTopologyFromSnapshot(
+        videoClips,
+        freezeResult.clips,
+        subtitles,
+      );
+    } else {
+      // No topology change occurred, so there is no effect pass that could
+      // consume this one-shot suppression flag.
+      suppressNextVideoTopologySubtitleSyncRef.current = false;
+    }
+    window.requestAnimationFrame(() => endHistoryTransaction());
   };
 
   const handleVideoTransformChange = (
@@ -3425,13 +3503,15 @@ function App() {
           state.trackSettings,
         );
 
-        lastSavedSnapshotRef.current = fingerprint;
-
         const latest = latestSaveStateRef.current;
         if (
           latest.activeProjectId === state.activeProjectId &&
           latest.videoPath === state.videoPath
         ) {
+          // A queued save may finish after the user has already switched to a
+          // different project. Never let that old save replace the current
+          // project's dirty-state baseline.
+          lastSavedSnapshotRef.current = fingerprint;
           const latestFingerprint = createSaveFingerprint(latest);
           setHasUnsavedChanges(latestFingerprint !== fingerprint);
         }
@@ -3726,6 +3806,23 @@ function App() {
     projectLoadGenerationRef.current = loadGeneration;
     isLoadingVideoRef.current = true;
 
+    // Cancel any gesture-owned topology state from the editor we just left and
+    // establish a neutral hydration baseline. App stays mounted on the Home
+    // screen, so these refs otherwise survive a Home -> project round-trip and
+    // can make the load look like a real ripple/trim/move edit.
+    suppressNextVideoTopologySubtitleSyncRef.current = false;
+    videoResizeSubtitleOriginRef.current = null;
+    lastVideoResizeSubtitleSyncKeyRef.current = null;
+    videoMoveSubtitleOriginRef.current = null;
+    videoMoveSubtitleSyncActiveRef.current = false;
+    compoundMoveOriginRef.current = null;
+    compoundResizeOriginRef.current = null;
+    previousVideoSubtitleTopologyRef.current = {
+      key: videoSubtitleTopologyKey([]),
+      videoClips: [],
+      subtitles: [],
+    };
+
     for (const [generation, resolve] of projectLoadWaitersRef.current) {
       if (generation === loadGeneration) continue;
       projectLoadWaitersRef.current.delete(generation);
@@ -3838,6 +3935,16 @@ function App() {
               : fallbackMetadata.languages,
         };
 
+        // Seed the topology synchronizer BEFORE React commits the hydrated
+        // project. This makes persisted state the baseline rather than treating
+        // the old project (or the deliberate empty reset above) as an edit that
+        // needs caption reconciliation.
+        previousVideoSubtitleTopologyRef.current = {
+          key: videoSubtitleTopologyKey(loadedVideoClips),
+          videoClips: loadedVideoClips,
+          subtitles: loadedSubtitles,
+        };
+
         replaceSubtitles(loadedSubtitles);
         replaceVideoClips(loadedVideoClips, {
           markSourceInitializedFor: path,
@@ -3889,6 +3996,11 @@ function App() {
         if (projectLoadGenerationRef.current !== loadGeneration) return;
 
         if (matchingSubtitles) {
+          previousVideoSubtitleTopologyRef.current = {
+            key: videoSubtitleTopologyKey([]),
+            videoClips: [],
+            subtitles: matchingSubtitles,
+          };
           replaceSubtitles(matchingSubtitles);
 
           loadedHistorySnapshot = {
@@ -3911,6 +4023,11 @@ function App() {
             trackSettings: DEFAULT_TIMELINE_TRACK_SETTINGS,
           });
         } else {
+          previousVideoSubtitleTopologyRef.current = {
+            key: videoSubtitleTopologyKey([]),
+            videoClips: [],
+            subtitles: [],
+          };
           lastSavedSnapshotRef.current = JSON.stringify({
             subtitles: [],
             markers: [],
@@ -4018,19 +4135,25 @@ function App() {
         issue.kind,
       );
 
+      if (issue.requiredDuration > 0 && replacementDuration <= 0) {
+        window.alert(
+          `Cut The Crab could not determine the duration of ${replacementName}. ` +
+            "Choose a readable replacement before relinking so existing clip ranges stay valid.",
+        );
+        return;
+      }
+
       if (
         issue.requiredDuration > 0 &&
-        replacementDuration > 0 &&
         replacementDuration + 0.05 < issue.requiredDuration
       ) {
-        const proceed = window.confirm(
-          `${replacementName} is shorter than the media used by this project.\n\n` +
+        window.alert(
+          `${replacementName} is too short for the media ranges used by this project.\n\n` +
             `Replacement duration: ${replacementDuration.toFixed(2)} s\n` +
             `Required source range: ${issue.requiredDuration.toFixed(2)} s\n\n` +
-            "Continuing may leave later portions of clips unavailable. Relink anyway?",
+            "Choose a replacement that covers the full source range. This prevents out-of-range playback and export after relinking.",
         );
-
-        if (!proceed) return;
+        return;
       }
 
       const relinked = relinkProjectMediaPath({
@@ -4290,10 +4413,11 @@ function App() {
 
     if (trackKind === "video") {
       if (asset.kind !== "video" || trackSettings[trackId]?.locked) return;
-      markNextChangeImmediate();
+      beginHistoryTransaction();
       clearSubtitleSelection();
       clearAudioClipSelection();
       insertVideoClipFromMedia(asset, timelineTime, trackId);
+      window.requestAnimationFrame(() => endHistoryTransaction());
       return;
     }
 
@@ -4405,6 +4529,11 @@ function App() {
       return;
     }
 
+    // Guard against a double-click starting two UUID-backed projects before
+    // the first save/registry refresh has completed.
+    if (creatingProjectRef.current) return;
+    creatingProjectRef.current = true;
+
     // Project identity is intentionally independent from the selected media.
     // Two projects may use the same source video, but every project receives a
     // fresh UUID and therefore its own save/autosave/subtitle/timeline state.
@@ -4440,6 +4569,8 @@ function App() {
       setHomeError(
         error instanceof Error ? error.message : "Failed to create project.",
       );
+    } finally {
+      creatingProjectRef.current = false;
     }
   };
 
@@ -4547,17 +4678,27 @@ function App() {
         if (
           primaryReference &&
           primaryReference.requiredDuration > 0 &&
-          replacementDuration > 0 &&
+          replacementDuration <= 0
+        ) {
+          window.alert(
+            `Cut The Crab could not determine the duration of ${replacementName}. ` +
+              "Choose a readable replacement before relinking so existing clip ranges stay valid.",
+          );
+          return;
+        }
+
+        if (
+          primaryReference &&
+          primaryReference.requiredDuration > 0 &&
           replacementDuration + 0.05 < primaryReference.requiredDuration
         ) {
-          const proceed = window.confirm(
-            `${replacementName} is shorter than the source range used by this project.\n\n` +
+          window.alert(
+            `${replacementName} is too short for the source range used by this project.\n\n` +
               `Replacement duration: ${replacementDuration.toFixed(2)} s\n` +
               `Required source range: ${primaryReference.requiredDuration.toFixed(2)} s\n\n` +
-              "Continuing may leave later portions of clips unavailable. Relink anyway?",
+              "Choose a replacement that covers the full source range. This prevents out-of-range playback and export after relinking.",
           );
-
-          if (!proceed) return;
+          return;
         }
 
         const relinked = relinkProjectMediaPath({
@@ -4630,6 +4771,11 @@ function App() {
   };
 
   const handleOpenRecentProject = async (project: RecentProject) => {
+    // A browser double-click dispatches two click events. Ignore a duplicate
+    // open of the same project while its first load is still in flight.
+    if (openingRecentProjectIdRef.current === project.projectId) return;
+    openingRecentProjectIdRef.current = project.projectId;
+
     try {
       const exists = await videoPathExists(project.videoPath);
 
@@ -4649,6 +4795,10 @@ function App() {
     } catch (error) {
       console.error("Failed to open recent project:", error);
       setHomeError("Failed to open the selected recent project.");
+    } finally {
+      if (openingRecentProjectIdRef.current === project.projectId) {
+        openingRecentProjectIdRef.current = null;
+      }
     }
   };
 
@@ -4814,9 +4964,12 @@ function App() {
     range: TimelineRange | null,
     frameSize: ExportFrameSize,
   ) => {
-    if (!videoPath || isExporting) {
+    // isExporting only becomes true after the save dialog/probe phase. This
+    // synchronous ref closes the double-click window before the first await.
+    if (!videoPath || isExporting || exportStartingRef.current) {
       return;
     }
+    exportStartingRef.current = true;
 
     const isRangeExport = range !== null;
     setExportError(null);
@@ -4887,6 +5040,7 @@ function App() {
         setExportError(message || "The export could not be completed.");
       }
     } finally {
+      exportStartingRef.current = false;
       setIsExporting(false);
       setIsCancellingExport(false);
       setActiveExportJobId(null);

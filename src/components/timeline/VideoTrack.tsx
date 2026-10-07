@@ -254,6 +254,33 @@ function VideoTrack({
     const snapThresholdSeconds =
       (VIDEO_MOVE_SNAP_THRESHOLD_PX / Math.max(1, width)) * duration;
     let latestTimelineStart = originalStart;
+    let moveFrameId: number | null = null;
+    let pendingMoveStart = originalStart;
+    let lastCommittedMoveStart = originalStart;
+
+    const flushPendingMove = () => {
+      if (moveFrameId !== null) {
+        window.cancelAnimationFrame(moveFrameId);
+        moveFrameId = null;
+      }
+      if (Math.abs(pendingMoveStart - lastCommittedMoveStart) <= 0.000001) {
+        return;
+      }
+      lastCommittedMoveStart = pendingMoveStart;
+      onMove?.(clip.id, pendingMoveStart);
+    };
+
+    const scheduleMove = () => {
+      if (moveFrameId !== null) return;
+      moveFrameId = window.requestAnimationFrame(() => {
+        moveFrameId = null;
+        if (Math.abs(pendingMoveStart - lastCommittedMoveStart) <= 0.000001) {
+          return;
+        }
+        lastCommittedMoveStart = pendingMoveStart;
+        onMove?.(clip.id, pendingMoveStart);
+      });
+    };
 
     const resolveSnappedStart = (rawStart: number) => {
       const rawEnd = rawStart + clipDuration;
@@ -306,8 +333,13 @@ function VideoTrack({
       const rawStart = Math.max(0, originalStart + deltaTime);
       const snapped = resolveSnappedStart(rawStart);
       latestTimelineStart = snapped.start;
+      pendingMoveStart = latestTimelineStart;
       onSnapGuideChange?.(snapped.targetTime);
-      onMove?.(clip.id, latestTimelineStart);
+      // Native mousemove can outrun React/WebKit while Ripple is rebuilding
+      // topology. One preview commit per animation frame keeps the clip and its
+      // linked subtitles visually locked without queuing dozens of stale state
+      // updates. Mouseup flushes the final pointer position synchronously.
+      scheduleMove();
 
       const elements = document.elementsFromPoint(
         moveEvent.clientX,
@@ -339,6 +371,7 @@ function VideoTrack({
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
+      flushPendingMove();
       setDraggingClipId(null);
 
       const elements = document.elementsFromPoint(

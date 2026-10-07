@@ -4,6 +4,7 @@ import { traceCut } from "../utils/cutTrace";
 
 const WAVEFORM_POINTS = 1200;
 const WAVEFORM_START_DELAY_MS = 350;
+const WAVEFORM_RETRY_BACKOFF_MS = [500, 1200, 2500];
 
 type WaveformMap = Record<string, number[]>;
 
@@ -62,31 +63,65 @@ export function useWaveform() {
           ...current,
           [nextPath]: "generating",
         }));
-        try {
-          traceCut("waveform-task-start", { sourcePath: nextPath });
-          const data = await invoke<number[]>("extract_waveform", {
-            videoPath: nextPath,
-            points: WAVEFORM_POINTS,
-          });
 
-          cacheRef.current = {
-            ...cacheRef.current,
-            [nextPath]: data,
-          };
-          setWaveformsBySource(cacheRef.current);
-          setWaveformStatesBySource((current) => ({
-            ...current,
-            [nextPath]: "ready",
-          }));
-        } catch (error) {
-          const message =
-            typeof error === "string" ? error : "Failed to extract waveform.";
-          setWaveformError(message);
-          setWaveformStatesBySource((current) => ({
-            ...current,
-            [nextPath]: "error",
-          }));
-          console.error("Waveform extraction failed:", error);
+        try {
+          for (
+            let attempt = 0;
+            attempt <= WAVEFORM_RETRY_BACKOFF_MS.length;
+            attempt += 1
+          ) {
+            try {
+              traceCut("waveform-task-start", {
+                sourcePath: nextPath,
+                attempt: attempt + 1,
+              });
+              const data = await invoke<number[]>("extract_waveform", {
+                videoPath: nextPath,
+                points: WAVEFORM_POINTS,
+              });
+
+              cacheRef.current = {
+                ...cacheRef.current,
+                [nextPath]: data,
+              };
+              setWaveformsBySource(cacheRef.current);
+              setWaveformStatesBySource((current) => ({
+                ...current,
+                [nextPath]: "ready",
+              }));
+              break;
+            } catch (error) {
+              const retryDelay = WAVEFORM_RETRY_BACKOFF_MS[attempt];
+              if (retryDelay !== undefined) {
+                setWaveformStatesBySource((current) => ({
+                  ...current,
+                  [nextPath]: "queued",
+                }));
+                await new Promise<void>((resolve) => {
+                  window.setTimeout(resolve, retryDelay);
+                });
+                setWaveformStatesBySource((current) => ({
+                  ...current,
+                  [nextPath]: "generating",
+                }));
+                continue;
+              }
+
+              const message =
+                typeof error === "string"
+                  ? error
+                  : "Failed to extract waveform.";
+              setWaveformError(message);
+              setWaveformStatesBySource((current) => ({
+                ...current,
+                [nextPath]: "error",
+              }));
+              console.error(
+                `Waveform extraction failed after ${attempt + 1} attempts:`,
+                error,
+              );
+            }
+          }
         } finally {
           inFlightRef.current.delete(nextPath);
         }

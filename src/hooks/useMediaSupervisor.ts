@@ -70,6 +70,8 @@ export type MediaHealthSnapshot = {
 };
 
 export type MediaHealthContext = {
+  /** Whether this clip is the active Program clip at the current timeline time. */
+  active: boolean;
   /** ms since this element was first seen / started loading. */
   mountedForMs: number;
   /** ms the element has been continuously seeking (0 if it is not). */
@@ -88,9 +90,28 @@ export function diagnoseMedia(
   context: MediaHealthContext,
 ): string | null {
   if (snapshot.hasError) return "media error";
-  if (snapshot.networkState === NETWORK_NO_SOURCE) return "no usable source";
 
-  if (snapshot.seeking && context.seekingForMs > SEEK_STUCK_MS) {
+  // WebKit transiently reports NETWORK_NO_SOURCE while a <video> is swapping
+  // from the original to an edit proxy (and while the editor is mounting after
+  // project load). Treat it as fatal only if it persists beyond the normal
+  // loading grace period; rebuilding immediately on the accompanying `abort`
+  // event just tears down a decoder that was already recovering correctly.
+  if (
+    snapshot.networkState === NETWORK_NO_SOURCE &&
+    context.mountedForMs > IDLE_WITHOUT_DATA_GRACE_MS
+  ) {
+    return "no usable source";
+  }
+
+  // Hidden/prewarmed decks are deliberately paused and can sit in WebKit's
+  // `seeking` state longer than the visible Program clip. Rebuilding those
+  // decks repeatedly churns decoder memory and can produce large transient
+  // allocations. Only treat a seek as fatal when the clip is actually active.
+  if (
+    context.active &&
+    snapshot.seeking &&
+    context.seekingForMs > SEEK_STUCK_MS
+  ) {
     return "seek stuck";
   }
 
@@ -248,18 +269,23 @@ export function useMediaSupervisor(options: MediaSupervisorOptions) {
         lastProgressRef.current[id] = { mediaTime: observedMediaTime, observedAt: now };
         break;
       case "error":
-        // The DOM `error` event always has media.error set; trust the element.
-        if (element?.error || element?.networkState === NETWORK_NO_SOURCE) {
+        // A real media error is actionable immediately. NETWORK_NO_SOURCE by
+        // itself is handled by the watchdog after a grace period because it is
+        // also a normal transient state during source/proxy swaps.
+        if (element?.error) {
           rebuild(id, "error");
         }
         break;
       case "emptied":
       case "abort":
-        // Both fire during ordinary loads/source swaps. Only act when the
-        // element is genuinely dead.
-        if (element?.error || element?.networkState === NETWORK_NO_SOURCE) {
-          rebuild(id, event);
-        }
+        // Both events are expected during project mount, proxy promotion and
+        // source replacement. Restart the health grace window instead of
+        // remounting immediately; a genuinely unusable source will still be
+        // caught by the watchdog once NETWORK_NO_SOURCE persists.
+        firstSeenRef.current[id] = now;
+        delete seekingSinceRef.current[id];
+        delete lastProgressRef.current[id];
+        delete pausedSinceRef.current[id];
         break;
     }
   };
@@ -284,6 +310,7 @@ export function useMediaSupervisor(options: MediaSupervisorOptions) {
         const seekingSince = seekingSinceRef.current[item.id];
 
         const reason = diagnoseMedia(snapshotOf(media), {
+          active: item.active,
           mountedForMs: now - firstSeenRef.current[item.id],
           seekingForMs: media.seeking && seekingSince ? now - seekingSince : 0,
           stalledForMs: 0,
@@ -369,6 +396,7 @@ export function useMediaSupervisor(options: MediaSupervisorOptions) {
         }
 
         const reason = diagnoseMedia(snapshotOf(media), {
+          active: item.active,
           mountedForMs: now - firstSeenRef.current[item.id],
           seekingForMs: media.seeking && seekingSince ? now - seekingSince : 0,
           stalledForMs,

@@ -67,3 +67,4 @@ if [[ -d "$BINARIES" ]]; then
 fi
 
 echo "Bundled FFmpeg/Whisper/SenseVoice Mach-O files signed. Tauri will sign the outer app bundle during tauri build."
+echo "After the distributable is built, run scripts/notarize-macos.sh before release verification."

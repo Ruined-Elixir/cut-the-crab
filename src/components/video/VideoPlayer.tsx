@@ -2,6 +2,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -371,6 +372,26 @@ function pointerAngleDegrees(
   return (Math.atan2(clientY - centerY, clientX - centerX) * 180) / Math.PI;
 }
 
+function findActiveVideoClips(
+  videoClips: VideoTimelineClip[],
+  timelineTime: number,
+  trackId: VideoTrackId,
+) {
+  return videoClips
+    .filter(
+      (clip) =>
+        clip.trackId === trackId &&
+        timelineTime >= clip.timelineStart &&
+        timelineTime < clip.timelineEnd,
+    )
+    .sort(
+      (a, b) =>
+        effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+        a.timelineStart - b.timelineStart ||
+        a.id.localeCompare(b.id),
+    );
+}
+
 function findActiveVideoClip(
   videoClips: VideoTimelineClip[],
   timelineTime: number,
@@ -379,11 +400,8 @@ function findActiveVideoClip(
   const trackClips = videoClips
     .filter((clip) => clip.trackId === trackId)
     .sort((a, b) => a.timelineStart - b.timelineStart);
-  const exact = trackClips.find(
-    (clip) =>
-      timelineTime >= clip.timelineStart && timelineTime < clip.timelineEnd,
-  );
-  if (exact) return exact;
+  const exact = findActiveVideoClips(videoClips, timelineTime, trackId);
+  if (exact.length > 0) return exact[exact.length - 1];
 
   // Edit operations are quantized to 30 fps, but legacy projects and floating
   // point retimes can still contain a sub-frame gap. Treat a gap shorter than
@@ -844,7 +862,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return () => setPlaybackClockPlaying(false);
     }, []);
     const [presentedFrameTimelineTime, setPresentedFrameTimelineTime] =
-      useState<number | null>(null);
+      useState<{ clipId: string; time: number } | null>(null);
+    // Keep the concrete media element used by libass in React state. Refs are
+    // assigned after render, so reading videoRefsByClipId.current during render
+    // can briefly return null for a newly-created Ripple/Freeze fragment and
+    // leave the subtitle renderer unbound until some unrelated state change
+    // (often pause/play) causes another render. A layout-effect handoff makes
+    // the binding deterministic immediately after the <video> ref commits.
+    const [subtitleClockVideo, setSubtitleClockVideo] =
+      useState<HTMLVideoElement | null>(null);
+    const subtitleClockVideoRef = useRef<HTMLVideoElement | null>(null);
+    const subtitleClockClipIdRef = useRef<string | null>(null);
     const lastSubtitleClockRenderAtRef = useRef(0);
     const [skimPreviewTime, setSkimPreviewTime] = useState<number | null>(null);
     const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
@@ -907,6 +935,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       Record<VideoTrackId, string | null>
     >({});
     const videoReadyByClipIdRef = useRef<Record<string, boolean>>({});
+    // When multiple clips from the same V-track overlap, the top-most clip owns
+    // normal track transport/audio while lower visual layers are kept in sync
+    // as muted supplemental video decks. Track only those decks so leaving an
+    // overlap pauses them without interfering with ordinary near-cut prewarm.
+    const supplementalPlayingClipIdsRef = useRef(new Set<string>());
     const videoWarmStateByClipIdRef = useRef<
       Record<string, "warming" | "warmed" | undefined>
     >({});
@@ -963,33 +996,47 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       [adjustmentLayers],
     );
 
+    const clearSkimPreview = (restorePlayheadFrame: boolean) => {
+      if (skimPreviewTimeRef.current === null) return;
+
+      skimPreviewTimeRef.current = null;
+      setSkimPreviewTime(null);
+      displayTimeRef.current = currentTimeRef.current;
+
+      if (restorePlayheadFrame && !isPlayingRef.current) {
+        syncAllMediaToTimelineRef.current(
+          currentTimeRef.current,
+          false,
+          true,
+        );
+      }
+    };
+
     useImperativeHandle(
       ref,
       () => ({
         setSkimPreviewTime: (time: number | null) => {
           if (isPlayingRef.current) {
-            skimPreviewTimeRef.current = null;
-            setSkimPreviewTime(null);
+            clearSkimPreview(false);
             return;
           }
 
           if (time === null || !Number.isFinite(time)) {
-            skimPreviewTimeRef.current = null;
-            setSkimPreviewTime(null);
-            displayTimeRef.current = currentTimeRef.current;
-
-            // Leaving the timeline should immediately restore the actual
-            // paused playhead frame, not leave the last skimmed frame visible.
-            syncAllMediaToTimelineRef.current(
-              currentTimeRef.current,
-              false,
-              true,
-            );
+            // Timeline pointer edits used to send this on every pointermove.
+            // If there is no active skim, a repeated null is a complete no-op.
+            clearSkimPreview(true);
             return;
           }
 
           const maxDuration = Math.max(0, timelineDurationRef.current || 0);
           const nextTime = Math.max(0, Math.min(maxDuration, time));
+
+          if (
+            skimPreviewTimeRef.current !== null &&
+            Math.abs(skimPreviewTimeRef.current - nextTime) < 0.0005
+          ) {
+            return;
+          }
 
           skimPreviewTimeRef.current = nextTime;
           displayTimeRef.current = nextTime;
@@ -1094,6 +1141,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return result;
     }, [displayTime, videoClips, videoTrackIds]);
 
+    // Transport still has one primary clip per V-track, but Program compositing
+    // can legitimately contain more than one clip from the same track when the
+    // independent layer order places overlapping clips above/below each other.
+    // Keep the full active visual set separate from the transport owner so hit
+    // testing and Program layering do not collapse to a single clip per track.
+    const activeVisualClipsByTrack = useMemo(() => {
+      const result: Record<string, VideoTimelineClip[]> = {};
+      for (const trackId of videoTrackIds) {
+        result[trackId] = findActiveVideoClips(
+          videoClips,
+          displayTime,
+          trackId,
+        );
+      }
+      return result;
+    }, [displayTime, videoClips, videoTrackIds]);
+
     const bufferedClipsByTrack = useMemo(() => {
       const result: Record<string, VideoTimelineClip[]> = {};
 
@@ -1114,6 +1178,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         const clips = [
           presentedClip,
+          ...(activeVisualClipsByTrack[trackId] ?? []),
           activeClip,
           dissolve?.outgoing ?? null,
           dissolve?.incoming ?? null,
@@ -1129,6 +1194,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return result;
     }, [
       activeClipsByTrack,
+      activeVisualClipsByTrack,
       displayTime,
       presentedVideoClipIds,
       videoClips,
@@ -1691,12 +1757,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         return;
       }
 
-      const activeClip = findActiveVideoClip(
+      const activeVisualClips = findActiveVideoClips(
         videoClipsRef.current,
         displayTimeRef.current,
         trackId,
       );
-      if (activeClip?.id === clipId) return;
+      if (activeVisualClips.some((candidate) => candidate.id === clipId)) return;
 
       video.pause();
       video.muted = true;
@@ -1754,12 +1820,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const timelineTime = isPlayingRef.current
         ? currentTimeRef.current
         : displayTimeRef.current;
-      const activeClip = findActiveVideoClip(
+      const activeVisualClips = findActiveVideoClips(
         videoClipsRef.current,
         timelineTime,
         trackId,
       );
-      if (activeClip?.id === clipId) {
+      if (activeVisualClips.some((candidate) => candidate.id === clipId)) {
         delete videoNearCutRefreshedByClipIdRef.current[clipId];
         return;
       }
@@ -1850,15 +1916,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const nowTimeline = isPlayingRef.current
           ? currentTimeRef.current
           : displayTimeRef.current;
-        const nowActive = findActiveVideoClip(
+        const nowActiveVisuals = findActiveVideoClips(
           videoClipsRef.current,
           nowTimeline,
           trackId,
         );
-        if (nowActive?.id === clipId) {
+        if (nowActiveVisuals.some((candidate) => candidate.id === clipId)) {
           videoWarmStateByClipIdRef.current[clipId] = "warmed";
           videoWarmPaintedByClipIdRef.current[clipId] = painted;
           syncVideoTrackToTimeline(
+            trackId,
+            nowTimeline,
+            isPlayingRef.current,
+            false,
+          );
+          syncSupplementalVideoLayers(
             trackId,
             nowTimeline,
             isPlayingRef.current,
@@ -1962,9 +2034,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         timelineTime,
         trackId,
       );
+      const activeVisualClips = findActiveVideoClips(
+        videoClipsRef.current,
+        timelineTime,
+        trackId,
+      );
 
-      if (activeClip?.id === clipId) {
+      if (activeVisualClips.some((candidate) => candidate.id === clipId)) {
         syncVideoTrackToTimeline(
+          trackId,
+          timelineTime,
+          isPlayingRef.current,
+          false,
+        );
+        syncSupplementalVideoLayers(
           trackId,
           timelineTime,
           isPlayingRef.current,
@@ -2391,6 +2474,95 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     };
 
+    const syncSupplementalVideoLayers = (
+      trackId: VideoTrackId,
+      timelineTime: number,
+      shouldPlay: boolean,
+      forceSeek = false,
+    ) => {
+      const activeVisuals = findActiveVideoClips(
+        videoClipsRef.current,
+        timelineTime,
+        trackId,
+      );
+      const primary = activeVisuals[activeVisuals.length - 1] ?? null;
+      const nextSupplementalIds = new Set<string>();
+
+      for (const clip of activeVisuals) {
+        if (clip.id === primary?.id) continue;
+
+        const video = videoRefsByClipId.current[clip.id] ?? null;
+        if (
+          !video ||
+          video.dataset.sourcePath !== clip.sourcePath ||
+          video.readyState < HTMLMediaElement.HAVE_METADATA ||
+          isTrackHidden(trackSettingsRef.current, trackId)
+        ) {
+          continue;
+        }
+
+        nextSupplementalIds.add(clip.id);
+        video.muted = true;
+        video.volume = 0;
+        video.preservesPitch = true;
+
+        const expectedSourceTime = timelineTimeToSourceTime(clip, timelineTime);
+        const mediaMax = Number.isFinite(video.duration)
+          ? video.duration
+          : (clip.sourceDuration ?? Math.max(clip.sourceIn, clip.sourceOut));
+        const sourceMin = Math.max(0, Math.min(clip.sourceIn, clip.sourceOut));
+        const sourceMax = Math.min(
+          mediaMax || Math.max(clip.sourceIn, clip.sourceOut),
+          Math.max(clip.sourceIn, clip.sourceOut),
+        );
+        const safeSourceTime = Math.max(
+          sourceMin,
+          Math.min(sourceMax, expectedSourceTime),
+        );
+        const seekDriven =
+          isFreezeFrameClip(clip) || isReverseVideoClip(clip);
+        const drift = Math.abs(video.currentTime - safeSourceTime);
+        const shouldSeek =
+          seekDriven || forceSeek || drift > (shouldPlay ? 0.12 : 0.025);
+
+        if (shouldSeek && !video.seeking) {
+          try {
+            video.currentTime = safeSourceTime;
+          } catch (error) {
+            console.error(`${trackId} supplemental seek failed:`, error);
+          }
+        }
+
+        if (seekDriven) {
+          if (!video.paused) video.pause();
+          continue;
+        }
+
+        video.playbackRate = videoPreviewPlaybackRate(
+          clip,
+          video.dataset.previewProxy === "true",
+        );
+
+        if (shouldPlay) {
+          if (video.paused && !video.seeking) {
+            void video.play().catch((error) => {
+              console.error(`${trackId} supplemental playback failed:`, error);
+            });
+          }
+        } else if (!video.paused) {
+          video.pause();
+        }
+      }
+
+      for (const clipId of supplementalPlayingClipIdsRef.current) {
+        if (nextSupplementalIds.has(clipId)) continue;
+        const video = videoRefsByClipId.current[clipId] ?? null;
+        if (video && !video.paused) video.pause();
+      }
+
+      supplementalPlayingClipIdsRef.current = nextSupplementalIds;
+    };
+
     const syncAudioTrackToTimeline = (
       audioTrackId: AudioTrackId,
       timelineTime: number,
@@ -2612,6 +2784,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     ) => {
       for (const trackId of videoTrackIdsRef.current) {
         syncVideoTrackToTimeline(trackId, timelineTime, shouldPlay, forceSeek);
+        syncSupplementalVideoLayers(
+          trackId,
+          timelineTime,
+          shouldPlay,
+          forceSeek,
+        );
         syncSameTrackDissolve(trackId, timelineTime, shouldPlay, forceSeek);
       }
       for (const audioTrackId of audioTrackIdsRef.current) {
@@ -2741,6 +2919,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       highSpeedPreviewSeekAtRef.current = {};
       presentedVideoClipIdsRef.current = {};
       videoReadyByClipIdRef.current = {};
+      supplementalPlayingClipIdsRef.current.clear();
       videoWarmStateByClipIdRef.current = {};
       videoWarmPaintedByClipIdRef.current = {};
       videoNearCutRefreshedByClipIdRef.current = {};
@@ -2992,12 +3171,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     const monitorDuration = Math.max(0, timelineDuration || 0);
     const visibleActiveClips = videoTrackIds
-      .map((trackId) => activeClipsByTrack[trackId])
-      .filter(
-        (clip): clip is VideoTimelineClip =>
-          !!clip && !isTrackHidden(trackSettings, clip.trackId),
-      )
-      .sort((a, b) => effectiveVideoLayer(a) - effectiveVideoLayer(b));
+      .flatMap((trackId) => activeVisualClipsByTrack[trackId] ?? [])
+      .filter((clip) => !isTrackHidden(trackSettings, clip.trackId))
+      .sort(
+        (a, b) =>
+          effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+          a.timelineStart - b.timelineStart ||
+          a.id.localeCompare(b.id),
+      );
     const programLayerItems = visibleActiveClips
       .filter((clip) => isProgramVideoClipInteractive(clip))
       .slice()
@@ -3008,23 +3189,47 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         locked: trackSettings[clip.trackId]?.locked ?? false,
       }));
     const visiblePresentedClips = videoTrackIds
-      .map((trackId) => {
-        const presentedClipId = presentedVideoClipIds[trackId] ?? null;
-        if (presentedClipId) {
-          const presentedClip =
-            videoClips.find((clip) => clip.id === presentedClipId) ?? null;
-          if (presentedClip && !isTrackHidden(trackSettings, trackId)) {
-            return presentedClip;
-          }
+      .flatMap((trackId) => {
+        if (isTrackHidden(trackSettings, trackId)) return [];
+
+        const activeVisuals = activeVisualClipsByTrack[trackId] ?? [];
+        if (activeVisuals.length === 0) {
+          // A stale presented ID can survive for a render while a track becomes
+          // empty. Never let an ended clip remain the subtitle clock.
+          return [];
         }
 
-        const activeClip = activeClipsByTrack[trackId] ?? null;
-        return activeClip && !isTrackHidden(trackSettings, trackId)
-          ? activeClip
+        if (activeVisuals.length > 1) {
+          return activeVisuals;
+        }
+
+        const onlyActive = activeVisuals[0];
+        const presentedClipId = presentedVideoClipIds[trackId] ?? null;
+        const presentedClip = presentedClipId
+          ? (videoClips.find((clip) => clip.id === presentedClipId) ?? null)
           : null;
+        const handoffIncomingId =
+          handoffPendingByTrackRef.current[trackId] ?? null;
+
+        // During a hard-cut handoff the outgoing decoded frame intentionally
+        // stays visible for a few milliseconds. Follow it until promotion, but
+        // otherwise prefer the clip that is actually active at displayTime.
+        if (
+          presentedClip &&
+          presentedClip.id !== onlyActive.id &&
+          handoffIncomingId === onlyActive.id
+        ) {
+          return [presentedClip];
+        }
+
+        return [onlyActive];
       })
-      .filter((clip): clip is VideoTimelineClip => !!clip)
-      .sort((a, b) => effectiveVideoLayer(a) - effectiveVideoLayer(b));
+      .sort(
+        (a, b) =>
+          effectiveVideoLayer(a) - effectiveVideoLayer(b) ||
+          a.timelineStart - b.timelineStart ||
+          a.id.localeCompare(b.id),
+      );
 
     // Subtitles must follow the frame the Program Monitor is actually showing,
     // not merely the logical clip under the playhead. During a buffered handoff
@@ -3037,10 +3242,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const topVisualTrackHasDissolve = topVisualClip
       ? dissolvesByTrack[topVisualClip.trackId] !== null
       : false;
-    const subtitleVideoSourceKey = topVisualClip?.sourcePath ?? videoPath ?? "";
+    const subtitleVideoSourceKey = topVisualClip
+      ? `${topVisualClip.id}:${topVisualClip.sourcePath}`
+      : (videoPath ?? "");
 
     let subtitleClockClip: VideoTimelineClip | null = topVisualClip;
-    let subtitleClockVideo: HTMLVideoElement | null = null;
 
     if (topVisualClip) {
       const dissolve = dissolvesByTrack[topVisualClip.trackId];
@@ -3050,17 +3256,29 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const outgoing = videoRefsByClipId.current[dissolve.outgoing.id] ?? null;
 
         if (incoming && incoming.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-          subtitleClockVideo = incoming;
           subtitleClockClip = dissolve.incoming;
         } else if (outgoing) {
-          subtitleClockVideo = outgoing;
           subtitleClockClip = dissolve.outgoing;
         }
-      } else {
-        subtitleClockVideo =
-          videoRefsByClipId.current[topVisualClip.id] ?? null;
       }
     }
+
+    const subtitleClockMediaEpoch = subtitleClockClip
+      ? (mediaEpochByClipId[subtitleClockClip.id] ?? 0)
+      : 0;
+
+    subtitleClockClipIdRef.current = subtitleClockClip?.id ?? null;
+
+    useLayoutEffect(() => {
+      const nextVideo = subtitleClockClip
+        ? (videoRefsByClipId.current[subtitleClockClip.id] ?? null)
+        : null;
+
+      if (subtitleClockVideoRef.current !== nextVideo) {
+        subtitleClockVideoRef.current = nextVideo;
+        setSubtitleClockVideo(nextVideo);
+      }
+    }, [subtitleClockClip?.id, subtitleClockMediaEpoch]);
 
     /*
      * Subtitle preview clock
@@ -3136,9 +3354,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         if (now - lastSubtitleClockRenderAtRef.current < 32) return;
         lastSubtitleClockRenderAtRef.current = now;
         setPresentedFrameTimelineTime((previous) =>
-          previous !== null && Math.abs(previous - clampedTime) < 0.001
+          previous?.clipId === clockClip.id &&
+          Math.abs(previous.time - clampedTime) < 0.001
             ? previous
-            : clampedTime,
+            : { clipId: clockClip.id, time: clampedTime },
         );
       };
 
@@ -3213,16 +3432,19 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     ]);
 
     const subtitlePreviewTime =
-      isPlaying && presentedFrameTimelineTime !== null
-        ? presentedFrameTimelineTime
+      isPlaying &&
+      presentedFrameTimelineTime !== null &&
+      subtitleClockClip !== null &&
+      presentedFrameTimelineTime.clipId === subtitleClockClip.id
+        ? presentedFrameTimelineTime.time
         : displayTime;
-    const subtitleExpectedSourceTime = subtitleClockClip
-      ? timelineTimeToSourceTime(subtitleClockClip, subtitlePreviewTime)
-      : subtitlePreviewTime;
-    const subtitleVideoTimeOffset =
-      subtitlePreviewTime - subtitleExpectedSourceTime;
-    const visibleSubtitles = subtitles.filter(
-      (subtitle) => !isTrackHidden(trackSettings, getSubtitleTrackId(subtitle)),
+    const visibleSubtitles = useMemo(
+      () =>
+        subtitles.filter(
+          (subtitle) =>
+            !isTrackHidden(trackSettings, getSubtitleTrackId(subtitle)),
+        ),
+      [subtitles, trackSettings],
     );
 
     const selectedActiveClip = selectedVideoClipId
@@ -3230,8 +3452,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         videoClips.find(
           (clip) =>
             clip.id === selectedVideoClipId &&
-            currentTime >= clip.timelineStart &&
-            currentTime < clip.timelineEnd,
+            displayTime >= clip.timelineStart &&
+            displayTime < clip.timelineEnd,
         ) ??
         null)
       : null;
@@ -3284,7 +3506,28 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       selectedVideoSize.height,
     ]);
 
-    const beginMoveTransform = (event: ReactPointerEvent<HTMLDivElement>) => {
+    /**
+     * Begin a Program Monitor move for an explicit clip.
+     *
+     * Takes the clip as a parameter instead of reading render-time selection
+     * state, so a press directly on the video can select AND start dragging
+     * in the same gesture (the selection only becomes visible, as an overlay,
+     * on the NEXT render -- a separate click-then-drag was required without
+     * this, which is exactly the "sometimes can't move/resize" symptom).
+     */
+    const startProgramMove = (
+      clip: VideoTimelineClip,
+      event: {
+        button: number;
+        isPrimary: boolean;
+        pointerId: number;
+        clientX: number;
+        clientY: number;
+        metaKey: boolean;
+        preventDefault: () => void;
+        stopPropagation: () => void;
+      },
+    ) => {
       // Transform gestures are primary-button only. A right-click fires
       // pointerdown before contextmenu, so without this guard the native
       // Opacity menu can leave a move gesture armed until the next click.
@@ -3292,9 +3535,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         return;
       }
 
+      const clipTrackLocked = trackSettings[clip.trackId]?.locked ?? false;
+
       if (
-        !selectedActiveClip ||
-        selectedTrackLocked ||
+        clipTrackLocked ||
         !onVideoTransformChange ||
         shellDimensions.width <= 0 ||
         shellDimensions.height <= 0
@@ -3305,21 +3549,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       event.preventDefault();
       event.stopPropagation();
 
-      setProgramMoveSnappingActive(true);
+      const displayClip = withEvaluatedVideoTransform(clip, displayTime);
+      const clipVideoSize = videoDimensions[clip.id] ?? { width: 16, height: 9 };
+      // Ignore sub-threshold jitter so a plain click that only selects does
+      // not also nudge the clip or create a spurious undo step.
+      const DRAG_START_THRESHOLD_PX = 3;
+      let dragStarted = false;
+
       setProgramSnapGuides([]);
 
       const startX = event.clientX;
       const startY = event.clientY;
-      const startPositionX =
-        (selectedDisplayClip ?? selectedActiveClip).positionX ?? 0;
-      const startPositionY =
-        (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
+      const startPositionX = displayClip.positionX ?? 0;
+      const startPositionY = displayClip.positionY ?? 0;
       // Masks v1.1: a normal Program move carries the clip mask by the exact
       // same snapped translation, preserving its placement relative to the
       // footage. Hold Command when the drag begins to move only the video.
       const startFollowingMask =
-        selectedActiveClip.mask && !event.metaKey && onVideoMaskChange
-          ? { ...selectedActiveClip.mask }
+        clip.mask && !event.metaKey && onVideoMaskChange
+          ? { ...clip.mask }
           : null;
 
       const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -3337,13 +3585,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const deltaX = moveEvent.clientX - startX;
         const deltaY = moveEvent.clientY - startY;
 
+        if (!dragStarted) {
+          if (Math.hypot(deltaX, deltaY) < DRAG_START_THRESHOLD_PX) {
+            return;
+          }
+          dragStarted = true;
+          setProgramMoveSnappingActive(true);
+        }
+
         const rawPositionX =
           startPositionX + (deltaX / shellDimensions.width) * 100;
         const rawPositionY =
           startPositionY + (deltaY / shellDimensions.height) * 100;
 
         const movingClip = {
-          ...(selectedDisplayClip ?? selectedActiveClip),
+          ...displayClip,
           positionX: rawPositionX,
           positionY: rawPositionY,
           // Snap geometry must use the in-progress pointer values, not re-evaluate
@@ -3353,7 +3609,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         const movingBounds = programBoundsForClip(
           movingClip,
-          selectedVideoSize,
+          clipVideoSize,
           shellDimensions,
           displayTime,
         );
@@ -3362,7 +3618,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         for (const otherClip of visibleActiveClips) {
           if (
-            otherClip.id === selectedActiveClip.id ||
+            otherClip.id === clip.id ||
             !videoVisibility[otherClip.trackId] ||
             isTrackHidden(trackSettings, otherClip.trackId)
           ) {
@@ -3456,13 +3712,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           ),
         );
 
-        onVideoTransformChange(selectedActiveClip.id, {
+        onVideoTransformChange(clip.id, {
           positionX: nextPositionX,
           positionY: nextPositionY,
         });
 
         if (startFollowingMask && onVideoMaskChange) {
-          onVideoMaskChange(selectedActiveClip.id, {
+          onVideoMaskChange(clip.id, {
             ...startFollowingMask,
             positionX: Math.max(
               -100,
@@ -3493,6 +3749,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp);
       window.addEventListener("pointercancel", handlePointerUp);
+    };
+
+    const beginMoveTransform = (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (selectedActiveClip) {
+        startProgramMove(selectedActiveClip, event);
+      }
     };
 
     const beginScaleTransform = (
@@ -3913,6 +4175,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         finishCropMode();
       }
       setProgramTransformClipId(clip.id);
+
+      // Press-and-drag directly on the picture: select the clip and start
+      // moving it in the same gesture. (Crop mode owns the pointer itself.)
+      if (cropModeClipId !== clip.id) {
+        startProgramMove(clip, event);
+      }
     };
 
     const openOpacityEditor = (
@@ -4279,6 +4547,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             <div
               ref={shellRef}
               className="video-shell"
+              onPointerEnter={() => {
+                // A fast exit from the timeline can miss its pointerleave and
+                // leave skimPreviewTime latched. Transform controls are hidden
+                // while a skim is active, so always terminate a real skim when
+                // the pointer returns to the Program Monitor.
+                clearSkimPreview(true);
+              }}
+              onPointerDownCapture={() => {
+                // Pointer-enter is the normal path; capture is a fallback for
+                // WebKit edge cases where enter/leave delivery is skipped.
+                clearSkimPreview(true);
+              }}
               onPointerDown={(event) => {
                 if (event.target === event.currentTarget) {
                   if (cropModeClipId) {
@@ -4315,10 +4595,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 {flatBufferedVideoClips.map((clip) => {
                   const trackId = clip.trackId as VideoTrackId;
                   const activeClip = activeClipsByTrack[trackId] ?? null;
+                  const activeVisualClips =
+                    activeVisualClipsByTrack[trackId] ?? [];
                   const presentedClipId =
                     presentedVideoClipIds[trackId] ?? activeClip?.id ?? null;
                   const isActive = activeClip?.id === clip.id;
                   const isPresented = presentedClipId === clip.id;
+                  const isTimelineActive = activeVisualClips.some(
+                    (candidate) => candidate.id === clip.id,
+                  );
+                  const hasSameTrackOverlap = activeVisualClips.length > 1;
+                  // Program hit-testing belongs to the actual visual layer, not
+                  // to the track's single transport owner. This is what lets a
+                  // front/back layer remain selectable after layer reordering,
+                  // including when two clips happen to overlap on one V-track.
+                  const programInteractionClip = isTimelineActive ? clip : null;
                   const dissolve = dissolvesByTrack[trackId] ?? null;
                   const isDissolveOutgoing = dissolve?.outgoing.id === clip.id;
                   const isDissolveIncoming = dissolve?.incoming.id === clip.id;
@@ -4327,9 +4618,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   const trackEnabled =
                     !isTrackHidden(trackSettings, trackId) &&
                     videoVisibility[trackId] !== false;
+                  const canProgramInteract =
+                    trackEnabled &&
+                    !!programInteractionClip &&
+                    isProgramVideoClipInteractive(programInteractionClip);
                   const trackVisible =
                     trackEnabled &&
-                    (isDissolveParticipant || (!dissolve && isPresented));
+                    (isDissolveParticipant ||
+                      (hasSameTrackOverlap && isTimelineActive) ||
+                      (!dissolve && isPresented));
                   const renderTime = isDissolveParticipant
                     ? displayTime
                     : isActive
@@ -4353,6 +4650,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                     trackSettings[linkedAudioTrackIdForRender]?.solo !== true;
                   const renderVideoMuted =
                     !trackVisible ||
+                    (hasSameTrackOverlap && isTimelineActive && !isActive) ||
                     linkedAudioTrackIdForRender === null ||
                     isFreezeFrameClip(clip) ||
                     isReverseVideoClip(clip) ||
@@ -4430,7 +4728,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                         zIndex: programStackRanks.get(`video:${clip.id}`) ?? 10,
                         visibility: "visible",
                         opacity: visualOpacity,
-                        pointerEvents: isActive ? undefined : "none",
+                        pointerEvents: canProgramInteract ? "auto" : "none",
                         mixBlendMode: cssBlendMode(clip.blendMode),
                       }}
                     >
@@ -4448,6 +4746,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                           <video
                             ref={(element) => {
                               videoRefsByClipId.current[clip.id] = element;
+
+                              // Ref attachment itself is not a React state
+                              // change. If the subtitle-clock clip mounted after
+                              // the render that selected it, bind libass here so
+                              // we do not wait for pause/play or another random
+                              // render to discover the new media element.
+                              if (
+                                element &&
+                                subtitleClockClipIdRef.current === clip.id &&
+                                subtitleClockVideoRef.current !== element
+                              ) {
+                                subtitleClockVideoRef.current = element;
+                                setSubtitleClockVideo(element);
+                              }
                             }}
                             src={sourceUrl}
                             data-source-path={clip.sourcePath}
@@ -4518,10 +4830,35 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                               )
                             }
                             onPointerDown={(event) => {
-                              if (isActive) handleProgramClipPointerDown(event, clip);
+                              if (programInteractionClip) {
+                                handleProgramClipPointerDown(
+                                  event,
+                                  programInteractionClip,
+                                );
+                              }
+                            }}
+                            onDoubleClick={(event) => {
+                              if (!programInteractionClip) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onVideoClipSelect?.(programInteractionClip.id);
+                              if (
+                                isProgramVideoClipInteractive(
+                                  programInteractionClip,
+                                )
+                              ) {
+                                setProgramTransformClipId(
+                                  programInteractionClip.id,
+                                );
+                              }
                             }}
                             onContextMenu={(event) => {
-                              if (isActive) handleProgramClipContextMenu(event, clip);
+                              if (programInteractionClip) {
+                                handleProgramClipContextMenu(
+                                  event,
+                                  programInteractionClip,
+                                );
+                              }
                             }}
                           />
                         </div>
@@ -4842,9 +5179,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               <VideoSubtitleOverlay
                 subtitles={visibleSubtitles}
                 currentTime={subtitlePreviewTime}
+                isPlaying={isPlaying}
                 videoSourceKey={subtitleVideoSourceKey}
                 clockVideo={subtitleClockVideo}
-                videoTimeOffset={subtitleVideoTimeOffset}
                 selectedSubtitleId={selectedSubtitleId}
                 interactiveSubtitleIds={interactiveSubtitleIds}
                 shellRef={shellRef}

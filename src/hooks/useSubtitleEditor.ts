@@ -6,7 +6,9 @@ import {
   type Subtitle,
   type SubtitleStyle,
 } from "../types/subtitle";
+import type { VideoTimelineClip } from "../types/timelineModel";
 import {
+  reconcileLinkedSubtitlesToVideoTopology,
   removeLinkedSubtitlesForVideoClips as removeLinkedSubtitlesForVideoClipsPure,
   splitLinkedSubtitlesAtVideoCut,
   trimLinkedSubtitlesToVideoWindow,
@@ -636,7 +638,7 @@ export function useSubtitleEditor(videoDuration: number) {
     });
   };
 
-  const bindPendingGeneratedSubtitlesToVideoClips = (
+  const bindPendingGeneratedSubtitlesToVideoClips = useCallback((
     clips: { id: string; sourcePath: string }[],
   ) => {
     if (clips.length === 0) return;
@@ -659,8 +661,53 @@ export function useSubtitleEditor(videoDuration: number) {
 
       return changed ? next : current;
     });
-  };
+  }, []);
 
+
+  const syncLinkedSubtitlesToVideoTopology = useCallback((
+    previousClips: VideoTimelineClip[],
+    nextClips: VideoTimelineClip[],
+    previousSubtitles: Subtitle[],
+  ) => {
+    setSubtitles((current) => {
+      const next = sortSubtitles(
+        reconcileLinkedSubtitlesToVideoTopology(
+          previousSubtitles,
+          current,
+          previousClips,
+          nextClips,
+        ),
+      );
+      return sameSubtitleList(current, next) ? current : next;
+    });
+  }, []);
+
+  // Ripple dragging recomputes video topology from one immutable drag-origin
+  // snapshot on every mousemove. Subtitle reconciliation must do the same. If
+  // each intermediate subtitle result becomes the next input, captions that
+  // temporarily fall outside one transient split can be permanently lost while
+  // the user continues dragging left/right. This path always derives the whole
+  // linked-subtitle result from the gesture-start snapshot, so every mousemove
+  // is reversible until the drag is committed.
+  const syncLinkedSubtitlesToVideoTopologyFromSnapshot = useCallback((
+    originClips: VideoTimelineClip[],
+    nextClips: VideoTimelineClip[],
+    originSubtitles: Subtitle[],
+  ) => {
+    setSubtitles((current) => {
+      const next = sortSubtitles(
+        reconcileLinkedSubtitlesToVideoTopology(
+          originSubtitles,
+          originSubtitles,
+          originClips,
+          nextClips,
+          undefined,
+          { allowRippleSourceOverlapFallback: true },
+        ),
+      );
+      return sameSubtitleList(current, next) ? current : next;
+    });
+  }, []);
 
   const splitLinkedSubtitlesForVideoClip = useCallback((
     clipId: string,
@@ -783,6 +830,8 @@ export function useSubtitleEditor(videoDuration: number) {
     replaceSubtitles,
     replaceWithGeneratedSubtitles,
     shiftLinkedSubtitlesByVideoClipDeltas,
+    syncLinkedSubtitlesToVideoTopology,
+    syncLinkedSubtitlesToVideoTopologyFromSnapshot,
     bindPendingGeneratedSubtitlesToVideoClips,
     splitLinkedSubtitlesForVideoClip,
     syncLinkedSubtitlesToVideoWindows,

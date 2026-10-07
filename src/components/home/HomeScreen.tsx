@@ -386,7 +386,6 @@ function HomeScreen({
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    onDoubleClick={() => void onOpenProject(project)}
                     onContextMenu={(event) =>
                       openProjectContextMenu(event, project)
                     }

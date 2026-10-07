@@ -20,7 +20,11 @@ export type VideoClipFrame = {
 export type VideoClipFrames = Record<string, VideoClipFrame[]>;
 
 type SampledFrame = { time: number; url: string };
-type SourceFrameCacheEntry = { duration: number; frames: SampledFrame[] };
+type SourceFrameCacheEntry = {
+  duration: number;
+  frames: SampledFrame[];
+  lastUsedAt: number;
+};
 type SourcePlan = {
   sourcePath: string;
   decodePath: string;
@@ -33,6 +37,7 @@ const SOURCE_CACHE = new Map<string, SourceFrameCacheEntry>();
 const FRAME_TILE_WIDTH_PX = 82;
 const MAX_DISPLAY_SLOTS_PER_CLIP = 320;
 const MAX_SOURCE_CACHE_FRAMES = 480;
+const MAX_RETAINED_SOURCE_CACHES = 12;
 const COARSE_SOURCE_FRAMES = 24;
 const THUMB_WIDTH = 160;
 const THUMB_HEIGHT = 90;
@@ -570,11 +575,8 @@ function buildClipFrameMap(
 ) {
   const result: VideoClipFrames = {};
   for (const clip of videoClips) {
-    result[clip.id] = displayFramesForClip(
-      clip,
-      pixelsPerSecond,
-      SOURCE_CACHE.get(clip.sourcePath),
-    );
+    const cache = SOURCE_CACHE.get(clip.sourcePath);
+    result[clip.id] = displayFramesForClip(clip, pixelsPerSecond, cache);
   }
   return result;
 }
@@ -729,6 +731,36 @@ const retryAttemptsBySource = new Map<string, number>();
 const retryDecodePathBySource = new Map<string, string>();
 const exhaustedRetrySources = new Set<string>();
 
+function clearSourceRetryState(sourcePath: string) {
+  const timer = retryTimersBySource.get(sourcePath);
+  if (timer !== undefined) window.clearTimeout(timer);
+  retryTimersBySource.delete(sourcePath);
+  retryAttemptsBySource.delete(sourcePath);
+  retryDecodePathBySource.delete(sourcePath);
+  exhaustedRetrySources.delete(sourcePath);
+}
+
+function pruneSourceCaches(activeSourcePaths: string[]) {
+  if (SOURCE_CACHE.size <= MAX_RETAINED_SOURCE_CACHES) return;
+
+  const active = new Set(activeSourcePaths);
+  const now = Date.now();
+  for (const sourcePath of active) {
+    const cache = SOURCE_CACHE.get(sourcePath);
+    if (cache) cache.lastUsedAt = now;
+  }
+
+  const candidates = [...SOURCE_CACHE.entries()]
+    .filter(([sourcePath]) => !active.has(sourcePath))
+    .sort(([, a], [, b]) => a.lastUsedAt - b.lastUsedAt);
+
+  for (const [sourcePath] of candidates) {
+    if (SOURCE_CACHE.size <= MAX_RETAINED_SOURCE_CACHES) break;
+    SOURCE_CACHE.delete(sourcePath);
+    clearSourceRetryState(sourcePath);
+  }
+}
+
 function scheduleRetry(
   plan: SourcePlan,
   onProgress: () => void,
@@ -796,10 +828,15 @@ async function generateSourceFrames(
 
   let cache = SOURCE_CACHE.get(plan.sourcePath);
   if (!cache) {
-    cache = { duration: plan.expectedDuration, frames: [] };
+    cache = {
+      duration: plan.expectedDuration,
+      frames: [],
+      lastUsedAt: Date.now(),
+    };
     SOURCE_CACHE.set(plan.sourcePath, cache);
   }
   cache.duration = Math.max(cache.duration, plan.expectedDuration);
+  cache.lastUsedAt = Date.now();
 
   const priorityMissing = missingTimes(
     cache,
@@ -884,6 +921,20 @@ export function useVideoClipFrames(
         .join("||"),
     [sourcePlans],
   );
+
+  const activeSourcePathSignature = useMemo(
+    () =>
+      [...new Set(sourcePlans.map((plan) => plan.sourcePath))]
+        .sort()
+        .join("\u0000"),
+    [sourcePlans],
+  );
+
+  useEffect(() => {
+    pruneSourceCaches(
+      activeSourcePathSignature ? activeSourcePathSignature.split("\u0000") : [],
+    );
+  }, [activeSourcePathSignature]);
 
   const framesByClipId = useMemo(
     () => buildClipFrameMap(videoClips, pixelsPerSecond),

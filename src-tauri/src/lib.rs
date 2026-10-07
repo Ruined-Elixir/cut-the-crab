@@ -9,7 +9,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -334,24 +334,30 @@ fn read_recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, Str
 }
 
 #[tauri::command]
-fn upsert_recent_project(app: tauri::AppHandle, project: RecentProject) -> Result<(), String> {
-    let mut projects = read_recent_projects_file(&app)?;
+async fn upsert_recent_project(app: tauri::AppHandle, project: RecentProject) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut projects = read_recent_projects_file(&app)?;
 
-    projects.retain(|existing| existing.project_id != project.project_id);
-    projects.push(project);
-    projects.sort_by(|a, b| b.last_opened_at.cmp(&a.last_opened_at));
-    projects.truncate(50);
+        projects.retain(|existing| existing.project_id != project.project_id);
+        projects.push(project);
+        projects.sort_by(|a, b| b.last_opened_at.cmp(&a.last_opened_at));
+        projects.truncate(50);
 
-    write_recent_projects_file(&app, &projects)
+        write_recent_projects_file(&app, &projects)
+    })
+    .await
+    .map_err(|error| format!("Recent-project update task failed: {error}"))?
 }
 
 #[tauri::command]
-fn remove_recent_project(app: tauri::AppHandle, project_id: String) -> Result<(), String> {
-    let mut projects = read_recent_projects_file(&app)?;
-
-    projects.retain(|project| project.project_id != project_id);
-
-    write_recent_projects_file(&app, &projects)
+async fn remove_recent_project(app: tauri::AppHandle, project_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut projects = read_recent_projects_file(&app)?;
+        projects.retain(|project| project.project_id != project_id);
+        write_recent_projects_file(&app, &projects)
+    })
+    .await
+    .map_err(|error| format!("Recent-project removal task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -826,6 +832,60 @@ struct MediaStreams {
     has_audio: bool,
 }
 
+const MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn probe_media_stream(ffmpeg: &Path, path: String) -> Result<MediaStreams, String> {
+    let stderr_path = std::env::temp_dir().join(format!(
+        "cut-the-crab-probe-{}-{}-{:016x}.log",
+        std::process::id(),
+        timestamp_ms(),
+        stable_path_hash(&path),
+    ));
+    let _stderr_cleanup = RemoveFileOnDrop(stderr_path.clone());
+    let stderr_file = fs::File::create(&stderr_path)
+        .map_err(|error| format!("Failed to create probe log for {path}: {error}"))?;
+
+    // `ffmpeg -i file` exits non-zero when no output is requested, but its
+    // stderr still contains the authoritative stream list. Write stderr to a
+    // file instead of a pipe so a verbose/corrupt input cannot fill a pipe and
+    // deadlock the child while we enforce the timeout below.
+    let mut child = Command::new(ffmpeg)
+        .args(["-hide_banner", "-nostdin", "-i", &path])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .map_err(|error| format!("Failed to probe {path}: {error}"))?;
+
+    let started = Instant::now();
+    loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("Failed while probing {path}: {error}"))?
+        {
+            Some(_) => break,
+            None if started.elapsed() >= MEDIA_PROBE_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Timed out probing {path} after {} seconds.",
+                    MEDIA_PROBE_TIMEOUT.as_secs()
+                ));
+            }
+            None => thread::sleep(Duration::from_millis(50)),
+        }
+    }
+
+    let text = fs::read_to_string(&stderr_path)
+        .map_err(|error| format!("Failed to read probe result for {path}: {error}"))?;
+
+    Ok(MediaStreams {
+        path,
+        has_video: text.contains(": Video:"),
+        has_audio: text.contains(": Audio:"),
+    })
+}
+
 #[tauri::command]
 async fn probe_media_streams(
     app: tauri::AppHandle,
@@ -836,22 +896,7 @@ async fn probe_media_streams(
     tauri::async_runtime::spawn_blocking(move || {
         paths
             .into_iter()
-            .map(|path| {
-                // `ffmpeg -i file` exits non-zero when no output is requested,
-                // but its stderr still contains the authoritative stream list.
-                let output = Command::new(&ffmpeg)
-                    .args(["-hide_banner", "-nostdin", "-i", &path])
-                    .stdin(Stdio::null())
-                    .output()
-                    .map_err(|error| format!("Failed to probe {path}: {error}"))?;
-                let text = String::from_utf8_lossy(&output.stderr);
-
-                Ok(MediaStreams {
-                    path,
-                    has_video: text.contains(": Video:"),
-                    has_audio: text.contains(": Audio:"),
-                })
-            })
+            .map(|path| probe_media_stream(&ffmpeg, path))
             .collect()
     })
     .await
@@ -1340,6 +1385,10 @@ fn legacy_matching_project_path(video_path: &Path) -> PathBuf {
     video_path.with_extension("subtitle-project.json")
 }
 
+// Security boundary for restoring asset-protocol access after a project reload.
+// Keep this list in sync with media formats exposed by the frontend import/relink
+// dialogs whenever support for a new container is added. Do not replace it with
+// a blanket path grant: saved projects should only re-authorize media files.
 const ALLOWED_MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "mov", "m4v", "webm", "mkv", "avi", "mp3", "wav", "m4a", "aac", "flac",
     "ogg", "opus",
@@ -1564,6 +1613,59 @@ fn read_project_backup(
     Ok(Some(text))
 }
 
+const LEGACY_BUNDLE_IDENTIFIER: &str = "com.ruinedelixir.subtitle-editor";
+
+fn migrate_legacy_app_data_if_needed(app: &tauri::AppHandle) {
+    let Ok(current_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let Some(parent) = current_dir.parent() else {
+        return;
+    };
+    let legacy_dir = parent.join(LEGACY_BUNDLE_IDENTIFIER);
+
+    if legacy_dir == current_dir || !legacy_dir.is_dir() {
+        return;
+    }
+
+    if let Err(error) = fs::create_dir_all(&current_dir) {
+        eprintln!(
+            "Could not prepare Cut The Crab app-data migration destination {}: {error}",
+            current_dir.display()
+        );
+        return;
+    }
+
+    let Ok(entries) = fs::read_dir(&legacy_dir) else {
+        return;
+    };
+    let mut moved_any = false;
+
+    for entry in entries.flatten() {
+        let source = entry.path();
+        let destination = current_dir.join(entry.file_name());
+        if destination.exists() {
+            continue;
+        }
+        match fs::rename(&source, &destination) {
+            Ok(()) => moved_any = true,
+            Err(error) => eprintln!(
+                "Could not migrate pre-release app-data entry {}: {error}",
+                source.display()
+            ),
+        }
+    }
+
+    let _ = fs::remove_dir(&legacy_dir);
+    if moved_any {
+        eprintln!(
+            "Migrated pre-release Cut The Crab app data from {} to {}",
+            legacy_dir.display(),
+            current_dir.display()
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1571,7 +1673,9 @@ pub fn run() {
         .manage(proxy_media::ProxyRegistry::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            migrate_legacy_app_data_if_needed(app.handle());
             install_app_menu(app)?;
             Ok(())
         })

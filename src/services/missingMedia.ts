@@ -38,6 +38,9 @@ type RelinkProjectMediaState = ProjectMediaState & {
   missingPath: string;
 };
 
+const MISSING_MEDIA_CHECK_CONCURRENCY = 6;
+const RELINK_DURATION_TOLERANCE_SECONDS = 0.05;
+
 const AUDIO_MEDIA_EXTENSIONS = new Set([
   "mp3",
   "wav",
@@ -145,16 +148,27 @@ export async function findMissingProjectMedia(
   state: ProjectMediaState,
 ): Promise<MissingMediaIssue[]> {
   const references = collectProjectMediaReferences(state);
-  const availability = await Promise.all(
-    references.map(async (reference) => ({
-      reference,
-      exists: await videoPathExists(reference.path),
-    })),
-  );
+  if (references.length === 0) return [];
 
-  return availability
-    .filter(({ exists }) => !exists)
-    .map(({ reference }) => reference);
+  const availability = new Array<boolean>(references.length).fill(false);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= references.length) return;
+      availability[index] = await videoPathExists(references[index].path);
+    }
+  };
+
+  const workerCount = Math.min(
+    MISSING_MEDIA_CHECK_CONCURRENCY,
+    references.length,
+  );
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return references.filter((_, index) => !availability[index]);
 }
 
 export function relinkProjectMediaPath({
@@ -167,6 +181,39 @@ export function relinkProjectMediaPath({
   replacementDuration,
   missingPath,
 }: RelinkProjectMediaState) {
+  const requiredDuration = Math.max(
+    0,
+    ...videoClips
+      .filter((clip) => clip.sourcePath === missingPath)
+      .map((clip) =>
+        Math.max(clip.sourceOut, clip.freezeFrameSourceTime ?? 0),
+      ),
+    ...audioClips
+      .filter((clip) => clip.sourcePath === missingPath)
+      .map((clip) => clip.sourceOut),
+  );
+
+  if (
+    requiredDuration > 0 &&
+    (!Number.isFinite(replacementDuration) || replacementDuration <= 0)
+  ) {
+    throw new Error(
+      `Could not determine the duration of ${replacementName}; the existing project uses ` +
+        `source ranges up to ${requiredDuration.toFixed(2)} s.`,
+    );
+  }
+
+  if (
+    replacementDuration > 0 &&
+    replacementDuration + RELINK_DURATION_TOLERANCE_SECONDS < requiredDuration
+  ) {
+    throw new Error(
+      `${replacementName} is too short for the source ranges used by this project. ` +
+        `The replacement is ${replacementDuration.toFixed(2)} s, but at least ` +
+        `${requiredDuration.toFixed(2)} s is required.`,
+    );
+  }
+
   const updateSourceId = (sourceId: string) =>
     sourceId === missingPath ? replacementPath : sourceId;
   const sourceDuration =

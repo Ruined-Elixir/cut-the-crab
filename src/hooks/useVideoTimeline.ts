@@ -454,84 +454,92 @@ export function useVideoTimeline({
 
   const moveVideoClip = (id: string, requestedTimelineStart: number) => {
     requestedTimelineStart = snapTimelineTimeToFrame(requestedTimelineStart);
-    setVideoClips((current) => {
-      const groupOrigin = groupMoveOriginRef.current;
+    const groupOrigin = groupMoveOriginRef.current;
+    let nextClips: VideoTimelineClip[];
 
-      if (rippleMode && groupOrigin?.anchorId === id) {
-        return healRippleSplitsAndRemapSelection(
-          rippleMoveVideoClipGroup(
-            groupOrigin.allClips,
-            groupOrigin.selectedClips.map((clip) => clip.id),
-            id,
-            requestedTimelineStart,
-            {
-              createSplitId: (clip) =>
-                `${clip.id}-ripple-${groupOrigin.rippleToken}`,
-            },
-          ),
-        );
-      }
-
-      if (
-        groupOrigin?.anchorId === id &&
-        groupOrigin.selectedClips.length > 1
-      ) {
-        const anchor = groupOrigin.selectedClips.find((clip) => clip.id === id);
-
-        if (!anchor) {
-          return current;
-        }
-
-        const selectedSet = new Set(
+    if (rippleMode && groupOrigin?.anchorId === id) {
+      // Ripple drag previews are rebuilt from the immutable gesture-start
+      // snapshot. Auto-heal can remove temporary right-hand fragment IDs on
+      // every pointer frame, but those fragments are never the moving
+      // selection, so remapping React selection state here only creates a
+      // flood of nested updates. Keep the preview topology side-effect free.
+      nextClips = autoHealRippleSplits(
+        rippleMoveVideoClipGroup(
+          groupOrigin.allClips,
           groupOrigin.selectedClips.map((clip) => clip.id),
-        );
-        const unselected = current.filter((clip) => !selectedSet.has(clip.id));
-        const requestedDelta = requestedTimelineStart - anchor.timelineStart;
-        const delta = clampVideoClipGroupMoveDelta(
-          groupOrigin.selectedClips,
-          unselected,
-          requestedDelta,
-        );
-        const originsById = new Map(
-          groupOrigin.selectedClips.map((clip) => [clip.id, clip]),
-        );
+          id,
+          requestedTimelineStart,
+          {
+            createSplitId: (clip) =>
+              `${clip.id}-ripple-${groupOrigin.rippleToken}`,
+          },
+        ),
+      ).clips;
+    } else if (
+      groupOrigin?.anchorId === id &&
+      groupOrigin.selectedClips.length > 1
+    ) {
+      const anchor = groupOrigin.selectedClips.find((clip) => clip.id === id);
 
-        return healRippleSplitsAndRemapSelection(
-          sortVideoClips(
-            current.map((clip) => {
-              const origin = originsById.get(clip.id);
-
-              return origin
-                ? {
-                    ...clip,
-                    timelineStart: origin.timelineStart + delta,
-                    timelineEnd: origin.timelineEnd + delta,
-                  }
-                : clip;
-            }),
-          ),
-        );
+      if (!anchor) {
+        return videoClips;
       }
 
-      const target = current.find((clip) => clip.id === id);
+      const selectedSet = new Set(
+        groupOrigin.selectedClips.map((clip) => clip.id),
+      );
+      const baseClips = groupOrigin.allClips;
+      const unselected = baseClips.filter((clip) => !selectedSet.has(clip.id));
+      const requestedDelta = requestedTimelineStart - anchor.timelineStart;
+      const delta = clampVideoClipGroupMoveDelta(
+        groupOrigin.selectedClips,
+        unselected,
+        requestedDelta,
+      );
+      const originsById = new Map(
+        groupOrigin.selectedClips.map((clip) => [clip.id, clip]),
+      );
+
+      nextClips = autoHealRippleSplits(
+        sortVideoClips(
+          baseClips.map((clip) => {
+            const origin = originsById.get(clip.id);
+
+            return origin
+              ? {
+                  ...clip,
+                  timelineStart: origin.timelineStart + delta,
+                  timelineEnd: origin.timelineEnd + delta,
+                }
+              : clip;
+          }),
+        ),
+      ).clips;
+    } else {
+      // The window mousemove handler intentionally keeps the callback from the
+      // drag-start render. Rebuilding every preview from that render's clip
+      // list prevents pointer events that arrive faster than React commits from
+      // accumulating movement or topology changes.
+      const baseClips = videoClips;
+      const target = baseClips.find((clip) => clip.id === id);
 
       if (!target) {
-        return current;
+        return baseClips;
       }
 
       const clipDuration = target.timelineEnd - target.timelineStart;
       const trackId = normalizeVideoTrackId(target.trackId);
       const newStart = findNearestAvailableTimelineStart(
-        current,
+        baseClips,
         trackId,
         requestedTimelineStart,
         clipDuration,
         id,
       );
 
-      return healRippleSplitsAndRemapSelection(
+      nextClips = autoHealRippleSplits(
         sortVideoClips(
-          current.map((clip) =>
+          baseClips.map((clip) =>
             clip.id === id
               ? {
                   ...clip,
@@ -542,8 +550,12 @@ export function useVideoTimeline({
               : clip,
           ),
         ),
-      );
-    });
+      ).clips;
+    }
+
+    const committed = nextClips.map(quantizeVideoClipTimeline);
+    setVideoClips(committed);
+    return committed;
   };
 
   const moveVideoClipToTrack = (
@@ -1234,120 +1246,117 @@ export function useVideoTimeline({
     const freezeId = crypto.randomUUID();
     const rightId = crypto.randomUUID();
     const safeHoldDuration = Math.max(MIN_VIDEO_CLIP_DURATION, holdDuration);
+    const current = videoClips;
+    const target = current.find((clip) => clip.id === id);
 
-    setVideoClips((current) => {
-      const target = current.find((clip) => clip.id === id);
+    if (
+      !target ||
+      isFreezeFrameClip(target) ||
+      timelineTime <= target.timelineStart + MIN_VIDEO_CLIP_DURATION ||
+      timelineTime >= target.timelineEnd - MIN_VIDEO_CLIP_DURATION
+    ) {
+      return null;
+    }
+
+    const sourceSplit = timelineTimeToSourceTime(target, timelineTime);
+    const reverse = isReverseVideoClip(target);
+    const sourceDurationForFrame = Math.max(
+      target.sourceDuration ?? target.sourceOut,
+      target.sourceOut,
+    );
+    const frameSpan = Math.min(
+      1 / 30,
+      Math.max(0.001, sourceDurationForFrame),
+    );
+    const frameIn = Math.max(
+      0,
+      Math.min(sourceSplit, Math.max(0, sourceDurationForFrame - frameSpan)),
+    );
+    const frameOut = Math.min(sourceDurationForFrame, frameIn + frameSpan);
+
+    const freezeHealBoundaryId = `freeze-heal:${freezeId}`;
+
+    const left: VideoTimelineClip = {
+      ...target,
+      timelineEnd: timelineTime,
+      sourceIn: reverse ? sourceSplit : target.sourceIn,
+      sourceOut: reverse ? target.sourceOut : sourceSplit,
+      transformKeyframes: sliceVideoTransformKeyframes(
+        target,
+        target.timelineStart,
+        timelineTime,
+      ),
+      transitionOutType: "none",
+      videoFadeOutDuration: 0,
+      audioFadeOutDuration: 0,
+      rippleAutoHealOutBoundaryId: freezeHealBoundaryId,
+    };
+
+    const evaluated = withEvaluatedVideoTransform(target, timelineTime);
+    const freezeClip: VideoTimelineClip = {
+      ...stripRippleAutoHealMetadata(evaluated),
+      id: freezeId,
+      timelineStart: timelineTime,
+      timelineEnd: timelineTime + safeHoldDuration,
+      sourceIn: frameIn,
+      sourceOut: Math.max(frameIn + 0.001, frameOut),
+      playbackRate: 1,
+      playbackDirection: "forward",
+      freezeFrameSourceTime: sourceSplit,
+      transformKeyframes: undefined,
+      transitionInType: "none",
+      transitionOutType: "none",
+      videoFadeInDuration: 0,
+      videoFadeOutDuration: 0,
+      audioMuted: true,
+      audioFadeInDuration: 0,
+      audioFadeOutDuration: 0,
+    };
+
+    const right: VideoTimelineClip = {
+      ...target,
+      id: rightId,
+      timelineStart: timelineTime + safeHoldDuration,
+      timelineEnd: target.timelineEnd + safeHoldDuration,
+      sourceIn: reverse ? target.sourceIn : sourceSplit,
+      sourceOut: reverse ? sourceSplit : target.sourceOut,
+      transformKeyframes: sliceVideoTransformKeyframes(
+        target,
+        timelineTime,
+        target.timelineEnd,
+      ),
+      transitionInType: "none",
+      videoFadeInDuration: 0,
+      audioFadeInDuration: 0,
+      rippleAutoHealInBoundaryId: freezeHealBoundaryId,
+    };
+
+    const shifted = current.flatMap((clip) => {
+      if (clip.id === id) return [left, freezeClip, right];
       if (
-        !target ||
-        isFreezeFrameClip(target) ||
-        timelineTime <= target.timelineStart + MIN_VIDEO_CLIP_DURATION ||
-        timelineTime >= target.timelineEnd - MIN_VIDEO_CLIP_DURATION
+        clip.trackId === target.trackId &&
+        clip.timelineStart >= target.timelineEnd - 0.000001
       ) {
-        return current;
+        return [
+          {
+            ...clip,
+            timelineStart: clip.timelineStart + safeHoldDuration,
+            timelineEnd: clip.timelineEnd + safeHoldDuration,
+          },
+        ];
       }
-
-      const sourceSplit = timelineTimeToSourceTime(target, timelineTime);
-      const reverse = isReverseVideoClip(target);
-      const sourceDurationForFrame = Math.max(
-        target.sourceDuration ?? target.sourceOut,
-        target.sourceOut,
-      );
-      const frameSpan = Math.min(
-        1 / 30,
-        Math.max(0.001, sourceDurationForFrame),
-      );
-      const frameIn = Math.max(
-        0,
-        Math.min(sourceSplit, Math.max(0, sourceDurationForFrame - frameSpan)),
-      );
-      const frameOut = Math.min(sourceDurationForFrame, frameIn + frameSpan);
-
-      // Reuse the existing auto-heal boundary metadata for Freeze insertion.
-      // The two source-contiguous fragments can then be restored if the HOLD
-      // clip is later deleted while the generated boundary is still untouched.
-      const freezeHealBoundaryId = `freeze-heal:${freezeId}`;
-
-      const left: VideoTimelineClip = {
-        ...target,
-        timelineEnd: timelineTime,
-        sourceIn: reverse ? sourceSplit : target.sourceIn,
-        sourceOut: reverse ? target.sourceOut : sourceSplit,
-        transformKeyframes: sliceVideoTransformKeyframes(
-          target,
-          target.timelineStart,
-          timelineTime,
-        ),
-        transitionOutType: "none",
-        videoFadeOutDuration: 0,
-        audioFadeOutDuration: 0,
-        rippleAutoHealOutBoundaryId: freezeHealBoundaryId,
-      };
-
-      const evaluated = withEvaluatedVideoTransform(target, timelineTime);
-      const freezeClip: VideoTimelineClip = {
-        ...stripRippleAutoHealMetadata(evaluated),
-        id: freezeId,
-        timelineStart: timelineTime,
-        timelineEnd: timelineTime + safeHoldDuration,
-        sourceIn: frameIn,
-        sourceOut: Math.max(frameIn + 0.001, frameOut),
-        playbackRate: 1,
-        playbackDirection: "forward",
-        freezeFrameSourceTime: sourceSplit,
-        transformKeyframes: undefined,
-        transitionInType: "none",
-        transitionOutType: "none",
-        videoFadeInDuration: 0,
-        videoFadeOutDuration: 0,
-        audioMuted: true,
-        audioFadeInDuration: 0,
-        audioFadeOutDuration: 0,
-      };
-
-      const right: VideoTimelineClip = {
-        ...target,
-        id: rightId,
-        timelineStart: timelineTime + safeHoldDuration,
-        timelineEnd: target.timelineEnd + safeHoldDuration,
-        sourceIn: reverse ? target.sourceIn : sourceSplit,
-        sourceOut: reverse ? sourceSplit : target.sourceOut,
-        transformKeyframes: sliceVideoTransformKeyframes(
-          target,
-          timelineTime,
-          target.timelineEnd,
-        ),
-        transitionInType: "none",
-        videoFadeInDuration: 0,
-        audioFadeInDuration: 0,
-        rippleAutoHealInBoundaryId: freezeHealBoundaryId,
-      };
-
-      const shifted = current.flatMap((clip) => {
-        if (clip.id === id) return [left, freezeClip, right];
-        if (
-          clip.trackId === target.trackId &&
-          clip.timelineStart >= target.timelineEnd - 0.000001
-        ) {
-          return [
-            {
-              ...clip,
-              timelineStart: clip.timelineStart + safeHoldDuration,
-              timelineEnd: clip.timelineEnd + safeHoldDuration,
-            },
-          ];
-        }
-        return [clip];
-      });
-
-      window.requestAnimationFrame(() => {
-        setSelectedVideoClipId(freezeId);
-        setSelectedVideoClipIds([freezeId]);
-      });
-
-      return sortVideoClips(shifted);
+      return [clip];
     });
 
-    return freezeId;
+    const committed = sortVideoClips(shifted).map(quantizeVideoClipTimeline);
+    setVideoClips(committed);
+
+    window.requestAnimationFrame(() => {
+      setSelectedVideoClipId(freezeId);
+      setSelectedVideoClipIds([freezeId]);
+    });
+
+    return { freezeId, clips: committed };
   };
 
   const updateVideoClipTransform = (

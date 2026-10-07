@@ -334,6 +334,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   const skimmerRef = useRef<HTMLDivElement | null>(null);
   const skimmerTimeRef = useRef<HTMLSpanElement | null>(null);
   const skimmerFrameRef = useRef<number | null>(null);
+  const skimmerActiveRef = useRef(false);
   const snapGuideRef = useRef<HTMLDivElement | null>(null);
   const rangeDragRef = useRef<{
     anchorTime: number;
@@ -1159,6 +1160,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
 
     timelinePointerEditCleanupRef.current?.();
     suppressSelectionRevealWhileDraggingRef.current = true;
+    // A drag owns the timeline pointer until mouseup. Clear a live skim once
+    // here instead of sending setSkimPreviewTime(null) on every pointermove.
+    hideSkimmer();
 
     const target = event.target as HTMLElement;
     const autoScrollEnabled = !target.closest(
@@ -1483,6 +1487,8 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
       skimmerRef.current.hidden = true;
     }
 
+    if (!skimmerActiveRef.current) return;
+    skimmerActiveRef.current = false;
     onSkimPreviewChange?.(null);
   };
 
@@ -1499,7 +1505,6 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
     // WKWebView/trackpad input and avoids disabling hover preview because of
     // auxiliary-button state.
     if ((event.buttons & 1) !== 0) {
-      hideSkimmer();
       return;
     }
 
@@ -1555,6 +1560,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
         label.style.transform = "translateX(-50%)";
       }
 
+      skimmerActiveRef.current = true;
       onSkimPreviewChange?.(time);
     });
   };
@@ -1568,7 +1574,10 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
       if (skimmerFrameRef.current !== null) {
         window.cancelAnimationFrame(skimmerFrameRef.current);
       }
-      onSkimPreviewChange?.(null);
+      if (skimmerActiveRef.current) {
+        skimmerActiveRef.current = false;
+        onSkimPreviewChange?.(null);
+      }
     };
   }, [onSkimPreviewChange]);
 
