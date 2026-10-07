@@ -1,8 +1,8 @@
 [package]
 name = "cut-the-crab"
-version = "1.0.0-rc.2"
+version = "1.0.0"
 description = "Cut The Crab desktop nonlinear video editor"
-authors = ["you"]
+authors = ["Ruined"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
