@@ -4,18 +4,16 @@
 
 **A fast, local-first nonlinear video editor with built-in AI subtitles.**
 
-Cut, caption, and export, all on your own machine. No uploads and no internet required.
+Cut, caption, and export locally. Your media never needs to be uploaded to a cloud service.
 
-[![Release](https://img.shields.io/github/v/release/YOUR_USERNAME/cut-the-crab?style=flat-square)](https://github.com/YOUR_USERNAME/cut-the-crab/releases)
+[![Release](https://img.shields.io/github/v/release/Ruined-Elixir/cut-the-crab?style=flat-square)](https://github.com/Ruined-Elixir/cut-the-crab/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)](#-platform)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB?style=flat-square)](https://tauri.app)
-[![License](https://img.shields.io/badge/license-TODO-blue?style=flat-square)](LICENSE)
 
-[Download](https://github.com/YOUR_USERNAME/cut-the-crab/releases) · [Features](#-features) · [Build from Source](#-build-from-source) · [Report a Bug](https://github.com/YOUR_USERNAME/cut-the-crab/issues)
+[Download](https://github.com/Ruined-Elixir/cut-the-crab/releases) · [Features](#-features) · [Build from Source](#-build-from-source) · [Report a Bug](https://github.com/Ruined-Elixir/cut-the-crab/issues)
 
-<!-- TODO: replace with a screenshot or demo GIF -->
-<img src="docs/screenshot.png" alt="Cut The Crab screenshot" width="860" />
-
+<div align="center">
+  <img src="src/assets/demo_Menu.jpg" alt="Cut The Crab main interface" width="860" />
 </div>
 
 ---
@@ -25,6 +23,7 @@ Cut, caption, and export, all on your own machine. No uploads and no internet re
 - [Why Cut The Crab?](#-why-cut-the-crab)
 - [Features](#-features)
 - [Quick Start](#-quick-start)
+- [macOS Installation](#-macos-installation)
 - [Local AI Transcription](#-local-ai-transcription)
 - [Architecture](#-architecture)
 - [Platform](#-platform)
@@ -32,7 +31,6 @@ Cut, caption, and export, all on your own machine. No uploads and no internet re
 - [Philosophy](#-philosophy)
 - [Status & Roadmap](#-status)
 - [Contributing](#-contributing)
-- [License](#-license)
 
 ---
 
@@ -58,7 +56,7 @@ Cutting videos, adding subtitles, and producing social or long-form content shou
 | 🔗 **Linked subtitles** | Captions auto-update when the source video is edited |
 | 🤖 **Local transcription** | Whisper and SenseVoice, with no cloud upload |
 | 🔊 **Audio** | Waveforms, volume, mute, multi-track mixing |
-| 📐 **Any format** | 16:9, vertical short-form, or custom resolutions |
+| 📐 **Flexible formats** | 16:9, vertical short-form, or custom resolutions |
 | 💾 **Projects** | Autosave, recent projects, missing-media relink, crash recovery |
 
 <details>
@@ -213,7 +211,7 @@ Deleted a caption by accident? There's no need to redo everything.
 
 ## 🚀 Quick Start
 
-1. **Download** the latest release from the [Releases page](https://github.com/YOUR_USERNAME/cut-the-crab/releases).
+1. **Download** the latest release from the [Releases page](https://github.com/Ruined-Elixir/cut-the-crab/releases).
 2. **Open** the app and create a new named project.
 3. **Import** a video onto the timeline.
 4. **Transcribe** to generate subtitles locally.
@@ -221,6 +219,38 @@ Deleted a caption by accident? There's no need to redo everything.
 6. **Export** the full timeline or a selected range.
 
 **Workflow:** `Import → Edit → Transcribe → Subtitle → Preview → Export`
+
+---
+
+## 🍎 macOS Installation
+
+Cut The Crab is currently distributed as an **ad-hoc signed, non-notarized macOS app**. Because it is not signed with an Apple Developer ID or notarized by Apple, macOS may block the app the first time you try to open it.
+
+### Install Cut The Crab
+
+1. Download the latest `.dmg` from the [Releases page](https://github.com/Ruined-Elixir/cut-the-crab/releases).
+2. Open the `.dmg`.
+3. Drag **Cut The Crab** into your **Applications** folder.
+4. Open **Cut The Crab** from Applications.
+
+### If macOS blocks the app
+
+If macOS says that the developer cannot be verified or prevents the app from opening:
+
+1. Try to open **Cut The Crab** once.
+2. Open **System Settings**.
+3. Go to **Privacy & Security**.
+4. Scroll down to the **Security** section.
+5. Find the message saying that **Cut The Crab** was blocked.
+6. Click **Open Anyway**.
+7. Confirm by clicking **Open** when macOS asks again.
+
+You should only need to do this the first time you open the app.
+
+> **Why does this happen?**  
+> Cut The Crab is currently distributed independently and has not yet been notarized by Apple. The app runs locally on your Mac, and your video files are not uploaded to a cloud service.
+
+> **Security note:** Do not disable Gatekeeper or change system-wide macOS security settings. Use the per-app **Open Anyway** option above.
 
 ---
 
@@ -269,7 +299,7 @@ Cut The Crab keeps the core editing workflow on your computer:
 
 ## 🍎 Platform
 
-Cut The Crab **v1.0 targets macOS.** The app bundles the native tools it needs, including FFmpeg, Whisper, and SenseVoice.
+Cut The Crab **v1.0 currently supports macOS on Apple Silicon (M1 or newer).** The app bundles the native tools it needs, including FFmpeg, Whisper, and SenseVoice.
 
 ---
 
@@ -279,7 +309,7 @@ Cut The Crab **v1.0 targets macOS.** The app bundles the native tools it needs, 
 
 ```bash
 # Clone the repository
-git clone [https://github.com/YOUR_USERNAME/cut-the-crab.git](https://github.com/YOUR_USERNAME/cut-the-crab.git)
+git clone https://github.com/Ruined-Elixir/cut-the-crab.git
 cd cut-the-crab
 
 # Install dependencies
@@ -292,7 +322,6 @@ npm run tauri dev
 npm run tauri build
 ```
 
-> TODO: document how bundled binaries (FFmpeg, Whisper, SenseVoice) are placed before building.
 
 ---
 
@@ -318,26 +347,23 @@ npm run tauri build
 - [x] Video-linked subtitles
 - [x] FFmpeg export
 - [x] Project system with media relinking
-- [ ] TODO: Windows / Linux support
-- [ ] TODO: Next planned features
+### Future
+
+- [ ] Windows support
+- [ ] Linux support
+- [ ] Additional editing and workflow improvements
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome. Check the [issues page](https://github.com/YOUR_USERNAME/cut-the-crab/issues), or open a pull request.
+Contributions, issues, and feature requests are welcome. Check the [issues page](https://github.com/Ruined-Elixir/cut-the-crab/issues), or open a pull request.
 
 1. Fork the project
 2. Create your branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m "Add amazing feature"`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a pull request
-
----
-
-## 📄 License
-
-TODO: choose a license. See [`LICENSE`](LICENSE).
 
 ---
 

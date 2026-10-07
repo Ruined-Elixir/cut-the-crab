@@ -6,11 +6,11 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 0
 fi
 
-IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
-if [[ -z "$IDENTITY" ]]; then
-  echo "APPLE_SIGNING_IDENTITY must be set to a Developer ID Application identity before a distributable macOS build." >&2
-  exit 1
-fi
+IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+# if [[ -z "$IDENTITY" ]]; then
+#   echo "APPLE_SIGNING_IDENTITY must be set to a Developer ID Application identity before a distributable macOS build." >&2
+#   exit 1
+# fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RESOURCES="$ROOT/resources"
@@ -23,11 +23,18 @@ fi
 
 sign_one() {
   local target="$1"
-  local args=(--force --timestamp --options runtime --sign "$IDENTITY")
-  if [[ -n "${APPLE_TOOL_ENTITLEMENTS:-}" ]]; then
-    args+=(--entitlements "$APPLE_TOOL_ENTITLEMENTS")
+
+  if [[ "$IDENTITY" == "-" ]]; then
+    codesign --force --options runtime --sign "-" "$target"
+  else
+    local args=(--force --timestamp --options runtime --sign "$IDENTITY")
+
+    if [[ -n "${APPLE_TOOL_ENTITLEMENTS:-}" ]]; then
+      args+=(--entitlements "$APPLE_TOOL_ENTITLEMENTS")
+    fi
+
+    codesign "${args[@]}" "$target"
   fi
-  codesign "${args[@]}" "$target"
 }
 
 is_macho() {
