@@ -1,7 +1,0 @@
-1
-00:00:01,199 --> 00:00:03,799
-Hello everyone
-
-2
-00:00:04,500 --> 00:00:07,099
-This is a subtitle test lol
