@@ -1118,6 +1118,44 @@ export function useVideoTimeline({
     return newIds;
   };
 
+  /** Insert a pre-planned non-ripple group without shifting its requested times. */
+  const insertVideoClipCopiesAt = (
+    sourceClips: VideoTimelineClip[],
+    placements: Array<{ trackId: TimelineTrackId; timelineStart: number; layer?: number }>,
+  ) => {
+    if (!sourceClips.length || placements.length !== sourceClips.length) return [] as string[];
+    const newIds = sourceClips.map(() => crypto.randomUUID());
+    setVideoClips((current) => {
+      const copies = sourceClips.map((clip, index): VideoTimelineClip => {
+        const placement = placements[index];
+        const duration = Math.max(MIN_VIDEO_CLIP_DURATION, clip.timelineEnd - clip.timelineStart);
+        const range = snapPlacementRange(placement.timelineStart, duration);
+        return {
+          ...stripRippleAutoHealMetadata(clip),
+          id: newIds[index],
+          trackId: normalizeVideoTrackId(placement.trackId),
+          timelineStart: range.start,
+          timelineEnd: range.end,
+          layer: placement.layer,
+        };
+      });
+      const reserved: VideoTimelineClip[] = [];
+      for (const copy of copies) {
+        if (!isVideoRangeFree([...current, ...reserved], [], copy.trackId, copy.timelineStart, copy.timelineEnd)) {
+          console.warn("Video copy insertion cancelled: overlapping placement");
+          return current;
+        }
+        reserved.push(copy);
+      }
+      window.requestAnimationFrame(() => {
+        setSelectedVideoClipId(newIds[0] ?? null);
+        setSelectedVideoClipIds(newIds);
+      });
+      return sortVideoClips([...current, ...copies]);
+    });
+    return newIds;
+  };
+
   const updateVideoClipPlaybackRate = (id: string, requestedRate: number) => {
     const normalizedRate = normalizeVideoPlaybackRate(requestedRate);
 
@@ -1723,6 +1761,7 @@ export function useVideoTimeline({
     deleteVideoTrack,
     insertVideoClipCopy,
     insertVideoClipCopies,
+    insertVideoClipCopiesAt,
     duplicateVideoClip,
     insertVideoClipFromMedia,
     updateVideoClipPlaybackRate,

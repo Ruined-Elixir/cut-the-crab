@@ -776,6 +776,7 @@ function App() {
     deleteVideoClips,
     deleteVideoTrack,
     insertVideoClipCopies,
+    insertVideoClipCopiesAt,
     insertVideoClipFromMedia,
     updateVideoClipPlaybackRate,
     toggleVideoClipReverse,
@@ -2047,6 +2048,46 @@ function App() {
     return true;
   };
 
+  // Duplicate and paste share the same exact-time free-track placement rules.
+  const placeVideoClipCopies = (
+    sourceClips: VideoTimelineClip[],
+    requestedStart: number,
+    requestedTrackId?: TimelineTrackId,
+  ): boolean => {
+    if (!sourceClips.length) return false;
+    if (rippleMode) {
+      insertVideoClipCopies(sourceClips, requestedStart, requestedTrackId);
+      return true;
+    }
+    if (placementBusyRef.current) return false;
+    const groupStart = Math.min(...sourceClips.map(clip => clip.timelineStart));
+    const input = {
+      videoClips, audioClips, adjustmentLayers, trackSettings,
+      items: sourceClips.map(clip => ({
+        key: clip.id,
+        sourceTrackId: clip.trackId,
+        start: requestedStart + clip.timelineStart - groupStart,
+        duration: clip.timelineEnd - clip.timelineStart,
+      })),
+      preferredTrackId: requestedTrackId,
+    };
+    const plan = planVideoPlacement(input);
+    if (plan.assignments.length !== sourceClips.length || findPlanConflicts(input, plan).length) {
+      console.warn("Copy cancelled: placement conflict or incomplete plan");
+      return false;
+    }
+    const byKey = new Map(plan.assignments.map(item => [item.key, item]));
+    const placements = sourceClips.map(clip => byKey.get(clip.id));
+    if (placements.some(item => !item)) return false;
+    placementBusyRef.current = true;
+    window.requestAnimationFrame(() => { placementBusyRef.current = false; });
+    for (const pair of plan.newTracks) addVideoAudioTrackPair(pair.videoTrackId, pair.audioTrackId);
+    insertVideoClipCopiesAt(sourceClips, placements.map(item => ({
+      trackId: item!.trackId, timelineStart: item!.start, layer: item!.layer,
+    })));
+    return true;
+  };
+
   const copySelectedVideoClip = () => {
     if (selectedCollapsedCompound) {
       compoundClipboardRef.current = {
@@ -2154,14 +2195,14 @@ function App() {
     }
 
     beginHistoryTransaction();
-    clearSubtitleSelection();
-    insertVideoClipCopies(
+    const placed = placeVideoClipCopies(
       clipboard.clips,
       target.time,
       sourceTrackIds.length === 1 ? target.trackId : undefined,
     );
+    if (placed) clearSubtitleSelection();
     window.requestAnimationFrame(() => endHistoryTransaction());
-    return true;
+    return placed;
   };
 
   const pasteCompoundAtTarget = () => {
@@ -2238,10 +2279,10 @@ function App() {
     );
 
     beginHistoryTransaction();
-    clearSubtitleSelection();
-    insertVideoClipCopies(selectedVideoClips, groupEnd);
+    const placed = placeVideoClipCopies(selectedVideoClips, groupEnd);
+    if (placed) clearSubtitleSelection();
     window.requestAnimationFrame(() => endHistoryTransaction());
-    return true;
+    return placed;
   };
 
   const deleteSelectedAudioClipsWithHistory = () => {
