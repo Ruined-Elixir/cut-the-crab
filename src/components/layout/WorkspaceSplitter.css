@@ -1,0 +1,87 @@
+/* Workspace splitters. Each splitter occupies no space of its own. */
+
+.ws-splitter {
+  position: relative;
+  z-index: 300;
+  flex: none;
+  outline: none;
+  touch-action: none;
+}
+
+.ws-splitter-vertical {
+  width: 0;
+  height: 100%;
+  grid-row: 1;
+  cursor: col-resize;
+}
+
+/* Fixed grid tracks 2 and 4 of .workspace, so the other panels auto-place
+   into tracks 1, 3 and 5 whatever the order in the markup. */
+.ws-splitter-media {
+  grid-column: 2;
+}
+
+.ws-splitter-subtitle {
+  grid-column: 4;
+}
+
+.ws-splitter-horizontal {
+  width: 100%;
+  height: 0;
+  cursor: row-resize;
+}
+
+.ws-splitter-hit {
+  position: absolute;
+  display: block;
+}
+
+.ws-splitter-vertical .ws-splitter-hit {
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+}
+
+.ws-splitter-horizontal .ws-splitter-hit {
+  left: 0;
+  right: 0;
+  top: -5px;
+  height: 10px;
+}
+
+.ws-splitter-hit::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.ws-splitter-vertical .ws-splitter-hit::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+}
+
+.ws-splitter-horizontal .ws-splitter-hit::after {
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 2px;
+}
+
+.ws-splitter:hover .ws-splitter-hit::after,
+.ws-splitter.dragging .ws-splitter-hit::after,
+.ws-splitter:focus-visible .ws-splitter-hit::after {
+  background: rgba(10, 132, 255, 0.85);
+}
+
+/* Custom timeline height. The attribute selector matches only after the
+   timeline has been resized, and its specificity beats .timeline-panel rules. */
+.app[style*="--ws-timeline"] .timeline-panel {
+  flex: 0 0 var(--ws-timeline);
+  height: var(--ws-timeline);
+  min-height: 0;
+  max-height: none;
+}

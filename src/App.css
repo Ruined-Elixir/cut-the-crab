@@ -132,10 +132,12 @@ button {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(190px, 230px) minmax(0, 1.58fr) minmax(
-      300px,
-      0.84fr
-    );
+  grid-template-columns:
+    var(--ws-media, minmax(190px, 230px))
+    0px
+    minmax(0, 1.58fr)
+    0px
+    var(--ws-subtitle, minmax(300px, 0.84fr));
   overflow: hidden;
 }
 
@@ -156,10 +158,12 @@ button {
 
 @media (max-width: 1100px) {
   .workspace {
-    grid-template-columns: minmax(170px, 200px) minmax(0, 1fr) minmax(
-        270px,
-        0.72fr
-      );
+    grid-template-columns:
+      var(--ws-media, minmax(170px, 200px))
+      0px
+      minmax(0, 1fr)
+      0px
+      var(--ws-subtitle, minmax(270px, 0.72fr));
   }
 }
 
@@ -196,3 +200,8 @@ button {
 }
 
 .save-status-error { color: #ff6b6b; font-weight: 600; }
+
+/* Explicit columns prevent auto-placement around the zero-width splitters. */
+.workspace > .media-browser { grid-column: 1; }
+.workspace > .preview-panel { grid-column: 3; }
+.workspace > .subtitle-panel { grid-column: 5; }

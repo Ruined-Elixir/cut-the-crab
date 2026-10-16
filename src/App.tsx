@@ -1,4 +1,3 @@
-import { findPlanConflicts, planVideoPlacement } from "./utils/timelinePlacement";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -9,6 +8,8 @@ import CtcLogo from "./components/brand/CtcLogo";
 import HomeScreen from "./components/home/HomeScreen";
 import ProjectLoadingOverlay from "./components/loading/ProjectLoadingOverlay";
 import MediaBrowser from "./components/media/MediaBrowser";
+import WorkspaceSplitter from "./components/layout/WorkspaceSplitter";
+import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import MissingMediaModal from "./components/media/MissingMediaModal";
 import VideoPlayer, {
   type VideoPlayerHandle,
@@ -116,9 +117,8 @@ import {
   buildCompoundGroups,
   canShiftCompound,
   deleteCompound as deleteCompoundMembers,
+  duplicateCompound,
   insertCompoundCopy,
-  insertCompoundCopyAt,
-  type CompoundVideoPlacement,
   nextCompoundClipName,
   shiftCompound,
   trimCompound,
@@ -178,8 +178,6 @@ type CompoundClipboardPayload = {
   groupStart: number;
   groupEnd: number;
 };
-
-type ExportLifecycle = "idle" | "preparing" | "encoding" | "cancelling";
 
 type AppScreen = "home" | "editor";
 
@@ -612,21 +610,15 @@ function App() {
   // Video export UI
   // ==========================================================================
 
-  const [exportState, setExportState] = useState<ExportLifecycle>("idle");
-  const exportStateRef = useRef<ExportLifecycle>("idle");
-  const activeExportJobIdRef = useRef<string | null>(null);
-  const setExportLifecycle = useCallback((next: ExportLifecycle) => {
-    exportStateRef.current = next;
-    setExportState(next);
-  }, []);
-  const editorLocked = exportState !== "idle";
-  const isExporting = editorLocked;
-  const isCancellingExport = exportState === "cancelling";
+  const [isExporting, setIsExporting] = useState(false);
+  const [isCancellingExport, setIsCancellingExport] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("Preparing export...");
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportCancelError, setExportCancelError] = useState<string | null>(null);
+  const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null);
   const exportCancelRequestedRef = useRef(false);
+  const exportStartingRef = useRef(false);
   const [exportSettingsRequest, setExportSettingsRequest] = useState<{
     range: TimelineRange | null;
   } | null>(null);
@@ -656,9 +648,9 @@ function App() {
   const isLoadingVideoRef = useRef(false);
   const projectLoadGenerationRef = useRef(0);
   const projectLoadWaitersRef = useRef(new Map<number, () => void>());
-  const appRootRef = useRef<HTMLElement | null>(null);
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
   const timelineRef = useRef<TimelineHandle | null>(null);
+  const workspaceRootRef = useRef<HTMLElement | null>(null);
   const handleSkimPreviewChange = useCallback((time: number | null) => {
     videoPlayerRef.current?.setSkimPreviewTime(time);
   }, []);
@@ -777,7 +769,6 @@ function App() {
     deleteVideoClips,
     deleteVideoTrack,
     insertVideoClipCopies,
-    insertVideoClipCopiesAt,
     insertVideoClipFromMedia,
     updateVideoClipPlaybackRate,
     toggleVideoClipReverse,
@@ -1600,7 +1591,6 @@ function App() {
   } | null>(null);
   const lastVideoResizeSubtitleSyncKeyRef = useRef<string | null>(null);
   const latestVideoClipsRef = useRef(videoClips);
-  const placementBusyRef = useRef(false);
   latestVideoClipsRef.current = videoClips;
 
   const syncActiveVideoResizeSubtitles = useCallback(
@@ -2049,46 +2039,6 @@ function App() {
     return true;
   };
 
-  // Duplicate and paste share the same exact-time free-track placement rules.
-  const placeVideoClipCopies = (
-    sourceClips: VideoTimelineClip[],
-    requestedStart: number,
-    requestedTrackId?: TimelineTrackId,
-  ): boolean => {
-    if (!sourceClips.length) return false;
-    if (rippleMode) {
-      insertVideoClipCopies(sourceClips, requestedStart, requestedTrackId);
-      return true;
-    }
-    if (placementBusyRef.current) return false;
-    const groupStart = Math.min(...sourceClips.map(clip => clip.timelineStart));
-    const input = {
-      videoClips, audioClips, adjustmentLayers, trackSettings,
-      items: sourceClips.map(clip => ({
-        key: clip.id,
-        sourceTrackId: clip.trackId,
-        start: requestedStart + clip.timelineStart - groupStart,
-        duration: clip.timelineEnd - clip.timelineStart,
-      })),
-      preferredTrackId: requestedTrackId,
-    };
-    const plan = planVideoPlacement(input);
-    if (plan.assignments.length !== sourceClips.length || findPlanConflicts(input, plan).length) {
-      console.warn("Copy cancelled: placement conflict or incomplete plan");
-      return false;
-    }
-    const byKey = new Map(plan.assignments.map(item => [item.key, item]));
-    const placements = sourceClips.map(clip => byKey.get(clip.id));
-    if (placements.some(item => !item)) return false;
-    placementBusyRef.current = true;
-    window.requestAnimationFrame(() => { placementBusyRef.current = false; });
-    for (const pair of plan.newTracks) addVideoAudioTrackPair(pair.videoTrackId, pair.audioTrackId);
-    insertVideoClipCopiesAt(sourceClips, placements.map(item => ({
-      trackId: item!.trackId, timelineStart: item!.start, layer: item!.layer,
-    })));
-    return true;
-  };
-
   const copySelectedVideoClip = () => {
     if (selectedCollapsedCompound) {
       compoundClipboardRef.current = {
@@ -2196,59 +2146,14 @@ function App() {
     }
 
     beginHistoryTransaction();
-    const placed = placeVideoClipCopies(
+    clearSubtitleSelection();
+    insertVideoClipCopies(
       clipboard.clips,
       target.time,
       sourceTrackIds.length === 1 ? target.trackId : undefined,
     );
-    if (placed) clearSubtitleSelection();
     window.requestAnimationFrame(() => endHistoryTransaction());
-    return placed;
-  };
-
-  // Plan all video members first; do not create new tracks on a rejected copy.
-  const copyCompoundWithPlacement = (
-    sourceState: CompoundTimelineState,
-    compoundId: string,
-    requestedStart: number,
-  ) => {
-    if (rippleMode) {
-      return insertCompoundCopy(currentCompoundTimelineState(), sourceState, compoundId, requestedStart);
-    }
-    if (placementBusyRef.current) return null;
-    const group = buildCompoundGroups(sourceState.videoClips, sourceState.audioClips, sourceState.subtitles).get(compoundId);
-    if (!group) return null;
-    const members = sourceState.videoClips.filter(clip => clip.compoundId === compoundId);
-    const start = Math.max(0, requestedStart);
-    const placementInput = {
-      videoClips, audioClips, adjustmentLayers, trackSettings,
-      items: members.map(clip => ({
-        key: clip.id, sourceTrackId: clip.trackId,
-        start: start + (clip.timelineStart - group.start),
-        duration: clip.timelineEnd - clip.timelineStart,
-      })),
-    };
-    const plan = planVideoPlacement(placementInput);
-    if (findPlanConflicts(placementInput, plan).length > 0) return null;
-    const placements = new Map<string, CompoundVideoPlacement>();
-    for (const assignment of plan.assignments) {
-      placements.set(assignment.key, {
-        trackId: assignment.trackId, start: assignment.start,
-        end: assignment.end, layer: assignment.layer,
-      });
-    }
-    const result = insertCompoundCopyAt(
-      currentCompoundTimelineState(), sourceState, compoundId, start, placements,
-    );
-    if (result === "blocked") {
-      window.alert("Not enough space for this compound's audio or subtitles at this position.");
-      return null;
-    }
-    if (!result) return null;
-    placementBusyRef.current = true;
-    window.requestAnimationFrame(() => { placementBusyRef.current = false; });
-    for (const track of plan.newTracks) addVideoAudioTrackPair(track.videoTrackId, track.audioTrackId);
-    return result;
+    return true;
   };
 
   const pasteCompoundAtTarget = () => {
@@ -2282,7 +2187,12 @@ function App() {
       audioClips: clipboard.audioClips,
       subtitles: clipboard.subtitles,
     };
-    const result = copyCompoundWithPlacement(sourceState, clipboard.compoundId, target.time);
+    const result = insertCompoundCopy(
+      currentCompoundTimelineState(),
+      sourceState,
+      clipboard.compoundId,
+      target.time,
+    );
     if (!result) return false;
 
     markNextChangeImmediate();
@@ -2297,8 +2207,10 @@ function App() {
   const duplicateSelectedVideoClipWithHistory = () => {
     if (selectedCollapsedCompound) {
       if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
-      const result = copyCompoundWithPlacement(
-        currentCompoundTimelineState(), selectedCollapsedCompound.id, selectedCollapsedCompound.end,
+      const result = duplicateCompound(
+        currentCompoundTimelineState(),
+        selectedCollapsedCompound.id,
+        selectedCollapsedCompound.end,
       );
       if (!result) return false;
       markNextChangeImmediate();
@@ -2318,10 +2230,10 @@ function App() {
     );
 
     beginHistoryTransaction();
-    const placed = placeVideoClipCopies(selectedVideoClips, groupEnd);
-    if (placed) clearSubtitleSelection();
+    clearSubtitleSelection();
+    insertVideoClipCopies(selectedVideoClips, groupEnd);
     window.requestAnimationFrame(() => endHistoryTransaction());
-    return placed;
+    return true;
   };
 
   const deleteSelectedAudioClipsWithHistory = () => {
@@ -2629,14 +2541,6 @@ function App() {
     }));
   };
 
-  const addVideoAudioTrackPair = (videoId: TimelineTrackId, audioId: TimelineTrackId) => {
-    setTrackSettings(current => ({
-      ...current,
-      [videoId]: { ...defaultTrackControlState("video"), linkedTrackId: audioId, deleted: false },
-      [audioId]: { ...defaultTrackControlState("audio"), locked: true, linkedTrackId: videoId, deleted: false },
-    }));
-  };
-
   const handleAddTimelineTrack = (kind: TimelineTrackKind | "video-audio") => {
     markNextChangeImmediate();
 
@@ -2654,7 +2558,20 @@ function App() {
         audioClips,
       );
 
-      addVideoAudioTrackPair(videoId, audioId);
+      setTrackSettings((current) => ({
+        ...current,
+        [videoId]: {
+          ...defaultTrackControlState("video"),
+          linkedTrackId: audioId,
+          deleted: false,
+        },
+        [audioId]: {
+          ...defaultTrackControlState("audio"),
+          locked: true,
+          linkedTrackId: videoId,
+          deleted: false,
+        },
+      }));
       return;
     }
 
@@ -4499,29 +4416,10 @@ function App() {
 
     if (trackKind === "video") {
       if (asset.kind !== "video" || trackSettings[trackId]?.locked) return;
-      if (placementBusyRef.current) return;
-      placementBusyRef.current = true;
-      window.requestAnimationFrame(() => { placementBusyRef.current = false; });
-      const placementInput = {
-        videoClips, audioClips, adjustmentLayers, trackSettings,
-        items: [{ key: "media", sourceTrackId: trackId, start: timelineTime, duration: asset.duration }],
-        preferredTrackId: trackId,
-      };
-      const plan = rippleMode ? null : planVideoPlacement(placementInput);
-      if (plan && findPlanConflicts(placementInput, plan).length) {
-        console.warn("Insert cancelled: timeline placement conflict");
-        return;
-      }
       beginHistoryTransaction();
       clearSubtitleSelection();
       clearAudioClipSelection();
-      if (plan) {
-        for (const track of plan.newTracks) addVideoAudioTrackPair(track.videoTrackId, track.audioTrackId);
-        const placement = plan.assignments[0];
-        insertVideoClipFromMedia(asset, placement.start, placement.trackId, { layer: placement.layer });
-      } else {
-        insertVideoClipFromMedia(asset, timelineTime, trackId);
-      }
+      insertVideoClipFromMedia(asset, timelineTime, trackId);
       window.requestAnimationFrame(() => endHistoryTransaction());
       return;
     }
@@ -5069,14 +4967,18 @@ function App() {
     range: TimelineRange | null,
     frameSize: ExportFrameSize,
   ) => {
-    if (!videoPath || exportStateRef.current !== "idle") return;
+    // isExporting only becomes true after the save dialog/probe phase. This
+    // synchronous ref closes the double-click window before the first await.
+    if (!videoPath || isExporting || exportStartingRef.current) {
+      return;
+    }
+    exportStartingRef.current = true;
+
     const isRangeExport = range !== null;
-    setExportLifecycle("preparing");
     setExportError(null);
     setExportCancelError(null);
-    setExportProgress(0);
-    setExportStatus("Choose where to save the export...");
-    activeExportJobIdRef.current = null;
+    setIsCancellingExport(false);
+    setActiveExportJobId(null);
     exportCancelRequestedRef.current = false;
 
     try {
@@ -5088,12 +4990,17 @@ function App() {
         trackSettings,
         range,
         frameSize,
+        // Export from the same wide editing canvas shown by the Program
+        // Monitor, then crop the selected dashed aspect-ratio viewport.
+        // This keeps transformed multi-layer compositions pixel-consistent
+        // with what the user actually framed in the viewer.
         programPreviewSize:
           videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
-        isCancelled: () => exportCancelRequestedRef.current,
+
         onJobCreated: (jobId) => {
-          activeExportJobIdRef.current = jobId;
+          setActiveExportJobId(jobId);
         },
+
         onStart: () => {
           setExportProgress(0);
           setExportStatus(
@@ -5101,19 +5008,17 @@ function App() {
               ? `Preparing selected range export · ${frameSize.width}×${frameSize.height}...`
               : `Preparing edited timeline export · ${frameSize.width}×${frameSize.height}...`,
           );
-          if (!exportCancelRequestedRef.current) setExportLifecycle("encoding");
+          setIsExporting(true);
         },
+
         onProgress: ({ progress, status }) => {
           setExportProgress(progress);
           if (!exportCancelRequestedRef.current) {
             setExportStatus(status);
-          } else {
-            // Retry an early cancel after native registration is observable.
-            const jobId = activeExportJobIdRef.current;
-            if (jobId) void cancelVideoExport(jobId).catch(() => undefined);
           }
         },
       });
+
       if (outputPath && !exportCancelRequestedRef.current) {
         setExportProgress(100);
         setExportStatus("Export complete.");
@@ -5128,39 +5033,54 @@ function App() {
             : "Edited timeline export failed:",
           error,
         );
-        const message = error instanceof Error ? error.message :
-          typeof error === "string" ? error : "The export could not be completed.";
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "The export could not be completed.";
         setExportError(message || "The export could not be completed.");
       }
     } finally {
-      setExportLifecycle("idle");
-        activeExportJobIdRef.current = null;
+      exportStartingRef.current = false;
+      setIsExporting(false);
+      setIsCancellingExport(false);
+      setActiveExportJobId(null);
       exportCancelRequestedRef.current = false;
     }
   };
 
   const handleCancelExport = async () => {
-    const previous = exportStateRef.current;
-    if (previous !== "preparing" && previous !== "encoding") return;
+    if (!isExporting || !activeExportJobId || isCancellingExport) return;
+
     exportCancelRequestedRef.current = true;
-    setExportLifecycle("cancelling");
+    setIsCancellingExport(true);
     setExportCancelError(null);
     setExportStatus("Stopping export…");
-    const jobId = activeExportJobIdRef.current;
-    if (!jobId) return;
+
     try {
-      await cancelVideoExport(jobId);
+      await cancelVideoExport(activeExportJobId);
     } catch (error) {
       exportCancelRequestedRef.current = false;
-      setExportLifecycle(previous);
+      setIsCancellingExport(false);
       setExportStatus("Export is still running…");
-      const rawMessage = error instanceof Error ? error.message :
-        typeof error === "string" ? error : "Unable to cancel the export.";
-      const missingNativeCommand = rawMessage.includes("cancel_video_export") ||
+
+      const rawMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Unable to cancel the export.";
+      const missingNativeCommand =
+        rawMessage.includes("cancel_video_export") ||
         rawMessage.toLowerCase().includes("command not found");
-      setExportCancelError(missingNativeCommand
-        ? "This build does not include the native export-cancellation command yet. The export is still running."
-        : `Could not cancel the export: ${rawMessage}`);
+
+      setExportCancelError(
+        missingNativeCommand
+          ? "This build does not include the native export-cancellation command yet. The export is still running."
+          : `Could not cancel the export: ${rawMessage}`,
+      );
     }
   };
 
@@ -5269,7 +5189,7 @@ function App() {
   // ==========================================================================
 
   const handleAppMenuCommand = async (command: AppMenuCommand) => {
-    if (projectLoadBarrierActive || exportStateRef.current !== "idle") return;
+    if (projectLoadBarrierActive) return;
 
     const clipTranscription = parseClipTranscriptionCommand(command);
 
@@ -5850,33 +5770,10 @@ function App() {
 
   useAppMenuCommands(handleAppMenuCommand);
 
-  useEffect(() => {
-    if (!editorLocked) return;
-    const block = (event: KeyboardEvent) => {
-      const target = event.target as Element | null;
-      if (target?.closest?.(".export-progress-backdrop")) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-    window.addEventListener("keydown", block, true);
-    window.addEventListener("keyup", block, true);
-    return () => {
-      window.removeEventListener("keydown", block, true);
-      window.removeEventListener("keyup", block, true);
-    };
-  }, [editorLocked]);
-
-  useEffect(() => {
-    const root = appRootRef.current;
-    if (!root) return;
-    const regions = root.querySelectorAll<HTMLElement>(
-      ":scope > .topbar, :scope > .workspace",
-    );
-    regions.forEach((element) => element.toggleAttribute("inert", editorLocked));
-    if (editorLocked) (document.activeElement as HTMLElement | null)?.blur?.();
-    return () => regions.forEach((element) => element.removeAttribute("inert"));
-  }, [editorLocked]);
+  const workspaceLayout = useWorkspaceLayout(workspaceRootRef, {
+    active: screen === "editor",
+    locked: isExporting || exportStartingRef.current,
+  });
 
   const selectedSubtitle =
     subtitles.find((subtitle) => subtitle.id === selectedSubtitleId) ?? null;
@@ -5945,7 +5842,7 @@ function App() {
   // ==========================================================================
 
   return (
-    <main ref={appRootRef} className="app" data-can-undo={canUndo} data-can-redo={canRedo}>
+    <main ref={workspaceRootRef} className="app" data-can-undo={canUndo} data-can-redo={canRedo}>
       <header className="topbar">
         <button
           type="button"
@@ -6022,10 +5919,10 @@ function App() {
           onDropMedia={handleMediaDropOnTimeline}
           proxyStatesBySource={proxyStatesBySource}
         />
+        <WorkspaceSplitter id="media" layout={workspaceLayout} />
 
         <section className="preview-panel">
           <VideoPlayer
-            locked={editorLocked}
             ref={videoPlayerRef}
             videoPath={videoPath}
             videoName={videoName}
@@ -6086,6 +5983,7 @@ function App() {
             onSubtitlePositionChange={updateSubtitlePositionIfEditable}
           />
         </section>
+        <WorkspaceSplitter id="subtitle" layout={workspaceLayout} />
 
         <SubtitlePanel
           subtitles={filteredSubtitlesForActiveTrack}
@@ -6116,6 +6014,7 @@ function App() {
         />
       </div>
 
+      <WorkspaceSplitter id="timeline" layout={workspaceLayout} />
       <Timeline
         ref={timelineRef}
         duration={timelineDuration}
@@ -6358,7 +6257,7 @@ function App() {
           cancelling={isCancellingExport}
           errorMessage={exportError}
           cancelError={exportCancelError}
-          onCancel={isExporting && !isCancellingExport ? () => void handleCancelExport() : undefined}
+          onCancel={activeExportJobId ? () => void handleCancelExport() : undefined}
           onDismissError={() => setExportError(null)}
         />
       )}
