@@ -7,6 +7,7 @@ type VideoControlsProps = {
   duration: number;
   isPlaying: boolean;
   skipSeconds: number;
+  disabled?: boolean;
 
   onTogglePlayPause: () => void;
   onJumpBy: (seconds: number) => void;
@@ -36,6 +37,7 @@ function VideoControls({
   duration,
   isPlaying,
   skipSeconds,
+  disabled = false,
   onTogglePlayPause,
   onJumpBy,
   onSeekTo,
@@ -50,9 +52,10 @@ function VideoControls({
   } as CSSProperties;
 
   return (
-    <div className="video-monitor-controls">
+    <div className="video-monitor-controls" data-disabled={disabled}>
       <div className="video-monitor-scrubber-wrap">
         <input
+          disabled={disabled}
           type="range"
           min={0}
           max={safeDuration}
@@ -72,6 +75,7 @@ function VideoControls({
 
         <div className="video-monitor-transport" aria-label="Playback controls">
           <button
+            disabled={disabled}
             type="button"
             className="video-monitor-button"
             onClick={() => onSeekTo(0)}
@@ -85,6 +89,7 @@ function VideoControls({
           </button>
 
           <button
+            disabled={disabled}
             type="button"
             className="video-monitor-button video-monitor-skip-button"
             onClick={() => onJumpBy(-skipSeconds)}
@@ -99,6 +104,7 @@ function VideoControls({
           </button>
 
           <button
+            disabled={disabled}
             type="button"
             className="video-monitor-button video-monitor-play-button"
             onClick={onTogglePlayPause}
@@ -117,6 +123,7 @@ function VideoControls({
           </button>
 
           <button
+            disabled={disabled}
             type="button"
             className="video-monitor-button video-monitor-skip-button"
             onClick={() => onJumpBy(skipSeconds)}
@@ -131,6 +138,7 @@ function VideoControls({
           </button>
 
           <button
+            disabled={disabled}
             type="button"
             className="video-monitor-button"
             onClick={() => onSeekTo(safeDuration)}

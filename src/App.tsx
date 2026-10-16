@@ -177,6 +177,8 @@ type CompoundClipboardPayload = {
   groupEnd: number;
 };
 
+type ExportLifecycle = "idle" | "preparing" | "encoding" | "cancelling";
+
 type AppScreen = "home" | "editor";
 
 type ProjectLoadBarrierState = {
@@ -608,15 +610,21 @@ function App() {
   // Video export UI
   // ==========================================================================
 
-  const [isExporting, setIsExporting] = useState(false);
-  const [isCancellingExport, setIsCancellingExport] = useState(false);
+  const [exportState, setExportState] = useState<ExportLifecycle>("idle");
+  const exportStateRef = useRef<ExportLifecycle>("idle");
+  const activeExportJobIdRef = useRef<string | null>(null);
+  const setExportLifecycle = useCallback((next: ExportLifecycle) => {
+    exportStateRef.current = next;
+    setExportState(next);
+  }, []);
+  const editorLocked = exportState !== "idle";
+  const isExporting = editorLocked;
+  const isCancellingExport = exportState === "cancelling";
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("Preparing export...");
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportCancelError, setExportCancelError] = useState<string | null>(null);
-  const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null);
   const exportCancelRequestedRef = useRef(false);
-  const exportStartingRef = useRef(false);
   const [exportSettingsRequest, setExportSettingsRequest] = useState<{
     range: TimelineRange | null;
   } | null>(null);
@@ -646,6 +654,7 @@ function App() {
   const isLoadingVideoRef = useRef(false);
   const projectLoadGenerationRef = useRef(0);
   const projectLoadWaitersRef = useRef(new Map<number, () => void>());
+  const appRootRef = useRef<HTMLElement | null>(null);
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null);
   const timelineRef = useRef<TimelineHandle | null>(null);
   const handleSkimPreviewChange = useCallback((time: number | null) => {
@@ -4964,18 +4973,14 @@ function App() {
     range: TimelineRange | null,
     frameSize: ExportFrameSize,
   ) => {
-    // isExporting only becomes true after the save dialog/probe phase. This
-    // synchronous ref closes the double-click window before the first await.
-    if (!videoPath || isExporting || exportStartingRef.current) {
-      return;
-    }
-    exportStartingRef.current = true;
-
+    if (!videoPath || exportStateRef.current !== "idle") return;
     const isRangeExport = range !== null;
+    setExportLifecycle("preparing");
     setExportError(null);
     setExportCancelError(null);
-    setIsCancellingExport(false);
-    setActiveExportJobId(null);
+    setExportProgress(0);
+    setExportStatus("Choose where to save the export...");
+    activeExportJobIdRef.current = null;
     exportCancelRequestedRef.current = false;
 
     try {
@@ -4987,17 +4992,12 @@ function App() {
         trackSettings,
         range,
         frameSize,
-        // Export from the same wide editing canvas shown by the Program
-        // Monitor, then crop the selected dashed aspect-ratio viewport.
-        // This keeps transformed multi-layer compositions pixel-consistent
-        // with what the user actually framed in the viewer.
         programPreviewSize:
           videoPlayerRef.current?.getProgramPreviewSize() ?? undefined,
-
+        isCancelled: () => exportCancelRequestedRef.current,
         onJobCreated: (jobId) => {
-          setActiveExportJobId(jobId);
+          activeExportJobIdRef.current = jobId;
         },
-
         onStart: () => {
           setExportProgress(0);
           setExportStatus(
@@ -5005,17 +5005,19 @@ function App() {
               ? `Preparing selected range export · ${frameSize.width}×${frameSize.height}...`
               : `Preparing edited timeline export · ${frameSize.width}×${frameSize.height}...`,
           );
-          setIsExporting(true);
+          if (!exportCancelRequestedRef.current) setExportLifecycle("encoding");
         },
-
         onProgress: ({ progress, status }) => {
           setExportProgress(progress);
           if (!exportCancelRequestedRef.current) {
             setExportStatus(status);
+          } else {
+            // Retry an early cancel after native registration is observable.
+            const jobId = activeExportJobIdRef.current;
+            if (jobId) void cancelVideoExport(jobId).catch(() => undefined);
           }
         },
       });
-
       if (outputPath && !exportCancelRequestedRef.current) {
         setExportProgress(100);
         setExportStatus("Export complete.");
@@ -5030,54 +5032,39 @@ function App() {
             : "Edited timeline export failed:",
           error,
         );
-
-        const message =
-          error instanceof Error
-            ? error.message
-            : typeof error === "string"
-              ? error
-              : "The export could not be completed.";
+        const message = error instanceof Error ? error.message :
+          typeof error === "string" ? error : "The export could not be completed.";
         setExportError(message || "The export could not be completed.");
       }
     } finally {
-      exportStartingRef.current = false;
-      setIsExporting(false);
-      setIsCancellingExport(false);
-      setActiveExportJobId(null);
+      setExportLifecycle("idle");
+        activeExportJobIdRef.current = null;
       exportCancelRequestedRef.current = false;
     }
   };
 
   const handleCancelExport = async () => {
-    if (!isExporting || !activeExportJobId || isCancellingExport) return;
-
+    const previous = exportStateRef.current;
+    if (previous !== "preparing" && previous !== "encoding") return;
     exportCancelRequestedRef.current = true;
-    setIsCancellingExport(true);
+    setExportLifecycle("cancelling");
     setExportCancelError(null);
     setExportStatus("Stopping export…");
-
+    const jobId = activeExportJobIdRef.current;
+    if (!jobId) return;
     try {
-      await cancelVideoExport(activeExportJobId);
+      await cancelVideoExport(jobId);
     } catch (error) {
       exportCancelRequestedRef.current = false;
-      setIsCancellingExport(false);
+      setExportLifecycle(previous);
       setExportStatus("Export is still running…");
-
-      const rawMessage =
-        error instanceof Error
-          ? error.message
-          : typeof error === "string"
-            ? error
-            : "Unable to cancel the export.";
-      const missingNativeCommand =
-        rawMessage.includes("cancel_video_export") ||
+      const rawMessage = error instanceof Error ? error.message :
+        typeof error === "string" ? error : "Unable to cancel the export.";
+      const missingNativeCommand = rawMessage.includes("cancel_video_export") ||
         rawMessage.toLowerCase().includes("command not found");
-
-      setExportCancelError(
-        missingNativeCommand
-          ? "This build does not include the native export-cancellation command yet. The export is still running."
-          : `Could not cancel the export: ${rawMessage}`,
-      );
+      setExportCancelError(missingNativeCommand
+        ? "This build does not include the native export-cancellation command yet. The export is still running."
+        : `Could not cancel the export: ${rawMessage}`);
     }
   };
 
@@ -5186,7 +5173,7 @@ function App() {
   // ==========================================================================
 
   const handleAppMenuCommand = async (command: AppMenuCommand) => {
-    if (projectLoadBarrierActive) return;
+    if (projectLoadBarrierActive || exportStateRef.current !== "idle") return;
 
     const clipTranscription = parseClipTranscriptionCommand(command);
 
@@ -5767,6 +5754,34 @@ function App() {
 
   useAppMenuCommands(handleAppMenuCommand);
 
+  useEffect(() => {
+    if (!editorLocked) return;
+    const block = (event: KeyboardEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.(".export-progress-backdrop")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", block, true);
+    window.addEventListener("keyup", block, true);
+    return () => {
+      window.removeEventListener("keydown", block, true);
+      window.removeEventListener("keyup", block, true);
+    };
+  }, [editorLocked]);
+
+  useEffect(() => {
+    const root = appRootRef.current;
+    if (!root) return;
+    const regions = root.querySelectorAll<HTMLElement>(
+      ":scope > .topbar, :scope > .workspace",
+    );
+    regions.forEach((element) => element.toggleAttribute("inert", editorLocked));
+    if (editorLocked) (document.activeElement as HTMLElement | null)?.blur?.();
+    return () => regions.forEach((element) => element.removeAttribute("inert"));
+  }, [editorLocked]);
+
   const selectedSubtitle =
     subtitles.find((subtitle) => subtitle.id === selectedSubtitleId) ?? null;
 
@@ -5834,7 +5849,7 @@ function App() {
   // ==========================================================================
 
   return (
-    <main className="app" data-can-undo={canUndo} data-can-redo={canRedo}>
+    <main ref={appRootRef} className="app" data-can-undo={canUndo} data-can-redo={canRedo}>
       <header className="topbar">
         <button
           type="button"
@@ -5914,6 +5929,7 @@ function App() {
 
         <section className="preview-panel">
           <VideoPlayer
+            locked={editorLocked}
             ref={videoPlayerRef}
             videoPath={videoPath}
             videoName={videoName}
@@ -6246,7 +6262,7 @@ function App() {
           cancelling={isCancellingExport}
           errorMessage={exportError}
           cancelError={exportCancelError}
-          onCancel={activeExportJobId ? () => void handleCancelExport() : undefined}
+          onCancel={isExporting && !isCancellingExport ? () => void handleCancelExport() : undefined}
           onDismissError={() => setExportError(null)}
         />
       )}

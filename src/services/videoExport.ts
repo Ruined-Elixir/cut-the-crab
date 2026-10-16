@@ -85,6 +85,7 @@ type ExportTimelineVideoOptions = {
   onStart?: () => void;
   onProgress?: (progress: VideoExportProgress) => void;
   onJobCreated?: (jobId: string) => void;
+  isCancelled?: () => boolean;
 };
 
 type ClipRenderWindow = {
@@ -1364,6 +1365,7 @@ export async function exportStyledVideo(
   if (!outputPath) {
     return null;
   }
+  if (options.isCancelled?.()) return null;
 
   const frameSize = normalizeExportFrameSize(options.frameSize);
   const visibleSubtitles = subtitles.filter(
@@ -1381,6 +1383,8 @@ export async function exportStyledVideo(
     ...options.videoClips.map((clip) => clip.sourcePath),
     ...options.audioClips.map((clip) => clip.sourcePath),
   ]);
+
+  if (options.isCancelled?.()) return null;
 
   const { inputPaths, filterComplex, outputDuration } =
     buildTimelineFilterGraph(
@@ -1421,6 +1425,11 @@ export async function exportStyledVideo(
   await new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
   });
+
+  if (options.isCancelled?.()) {
+    unlisten();
+    return null;
+  }
 
   try {
     await invoke("export_styled_video", {

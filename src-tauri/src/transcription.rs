@@ -208,6 +208,8 @@ pub async fn transcribe_video(
                 let line = line.map_err(|error| format!("Failed reading Whisper output: {error}"))?;
                 if let Some(progress) = parse_whisper_progress(&line) {
                     let _ = whisper_app.emit("transcription-percent", progress);
+                } else {
+                    eprintln!("[Whisper] {line}");
                 }
             }
         }

@@ -123,6 +123,7 @@ type VideoPlayerProps = {
 
   onDurationChange?: (duration: number) => void;
   onTimeChange?: (currentTime: number) => void;
+  locked?: boolean;
 
   seekRequest?: SeekRequest | null;
 
@@ -840,6 +841,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       onVideoTransformChange,
       onApplyVideoCropToTrack,
       proxyPathsBySource = {},
+      locked = false,
       subtitles,
       selectedSubtitleId,
       interactiveSubtitleIds,
@@ -963,6 +965,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const audioClipsRef = useRef(audioClips);
     const trackSettingsRef = useRef(trackSettings);
     const isPlayingRef = useRef(false);
+    const lockedRef = useRef(locked);
+    lockedRef.current = locked;
     const videoTrackIdsRef = useRef<VideoTrackId[]>([]);
     const audioTrackIdsRef = useRef<AudioTrackId[]>([]);
     const displayTimeRef = useRef(currentTime);
@@ -2807,6 +2811,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     syncAllMediaToTimelineRef.current = syncAllMediaToTimeline;
 
     const seekTo = (time: number) => {
+      if (lockedRef.current) return;
       if (!Number.isFinite(time)) return;
 
       skimPreviewTimeRef.current = null;
@@ -2844,24 +2849,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     };
 
     const jumpBy = (seconds: number) => {
+      if (lockedRef.current) return;
       seekTo(currentTimeRef.current + seconds);
     };
 
+    const pausePlayback = () => {
+      if (!isPlayingRef.current) return;
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      cutHoldClipIdRef.current = null;
+      (Object.values(videoRefsByClipId.current) as Array<HTMLVideoElement | null>)
+        .forEach((element) => element?.pause());
+      (Object.values(audioRefsByPlaybackKey.current) as Array<HTMLAudioElement | null>)
+        .forEach((element) => element?.pause());
+    };
+
     const togglePlayPause = () => {
+      if (lockedRef.current) return;
       if (isPlayingRef.current) {
-        isPlayingRef.current = false;
-        setIsPlaying(false);
-        cutHoldClipIdRef.current = null;
-        (
-          Object.values(
-            videoRefsByClipId.current,
-          ) as Array<HTMLVideoElement | null>
-        ).forEach((element) => element?.pause());
-        (
-          Object.values(
-            audioRefsByPlaybackKey.current,
-          ) as Array<HTMLAudioElement | null>
-        ).forEach((element) => element?.pause());
+        pausePlayback();
         return;
       }
 
@@ -2893,6 +2899,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       setIsPlaying(true);
       syncAllMediaToTimeline(playbackStart, true, true);
     };
+
+    useEffect(() => {
+      if (locked) pausePlayback();
+    }, [locked]);
 
     useEffect(() => {
       setDuration(0);
@@ -5239,6 +5249,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             )}
 
             <VideoControls
+              disabled={locked}
               currentTime={currentTime}
               duration={monitorDuration}
               isPlaying={isPlaying}
