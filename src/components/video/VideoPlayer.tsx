@@ -1,3 +1,4 @@
+import { hitTestLayers, type HitTestLayer } from "../../utils/programHitTest";
 import {
   forwardRef,
   useEffect,
@@ -4155,6 +4156,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         window.removeEventListener("keydown", handleCropKeyDown, true);
     }, [cropModeClipId, onVideoTransformChange]);
 
+    // Alt+click cycles through all geometrically visible video layers.
+    const selectProgramLayerBelow = (event: ReactPointerEvent<HTMLDivElement>): boolean => {
+      const shell = shellRef.current;
+      if (!shell || shellDimensions.width <= 0 || shellDimensions.height <= 0) return false;
+      const rect = shell.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const layers: HitTestLayer[] = programLayerItems.map(({ clip }) => {
+        const evaluated = withEvaluatedVideoTransform(clip, displayTime);
+        const size = videoDimensions[clip.id] ?? { width: 16, height: 9 };
+        return {
+          id: clip.id, sourceWidth: size.width, sourceHeight: size.height,
+          positionX: evaluated.positionX ?? 0, positionY: evaluated.positionY ?? 0,
+          scale: evaluated.scale ?? 100, rotation: evaluated.rotation ?? 0,
+          cropTop: clip.cropTop ?? 0, cropRight: clip.cropRight ?? 0,
+          cropBottom: clip.cropBottom ?? 0, cropLeft: clip.cropLeft ?? 0,
+        };
+      });
+      const hits = hitTestLayers(point, shellDimensions, layers);
+      if (!hits.length) return false;
+      const index = selectedVideoClipId ? hits.indexOf(selectedVideoClipId) : -1;
+      const nextId = hits[(index + 1) % hits.length];
+      if (cropModeClipId && cropModeClipId !== nextId) finishCropMode();
+      onVideoClipSelect?.(nextId);
+      setProgramTransformClipId(nextId);
+      return true;
+    };
+
     const handleProgramClipPointerDown = (
       event: ReactPointerEvent<HTMLVideoElement>,
       clip: VideoTimelineClip | null,
@@ -4564,10 +4592,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 // the pointer returns to the Program Monitor.
                 clearSkimPreview(true);
               }}
-              onPointerDownCapture={() => {
-                // Pointer-enter is the normal path; capture is a fallback for
-                // WebKit edge cases where enter/leave delivery is skipped.
+              onPointerDownCapture={(event) => {
                 clearSkimPreview(true);
+                if (event.altKey && event.button === 0 && event.isPrimary) {
+                  const target = event.target as Element | null;
+                  if (target?.closest?.(".program-transform-handle, .program-crop-handle")) return;
+                  if (selectProgramLayerBelow(event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+                }
               }}
               onPointerDown={(event) => {
                 if (event.target === event.currentTarget) {
@@ -4628,10 +4662,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   const trackEnabled =
                     !isTrackHidden(trackSettings, trackId) &&
                     videoVisibility[trackId] !== false;
-                  const canProgramInteract =
-                    trackEnabled &&
-                    !!programInteractionClip &&
-                    isProgramVideoClipInteractive(programInteractionClip);
                   const trackVisible =
                     trackEnabled &&
                     (isDissolveParticipant ||
@@ -4738,7 +4768,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                         zIndex: programStackRanks.get(`video:${clip.id}`) ?? 10,
                         visibility: "visible",
                         opacity: visualOpacity,
-                        pointerEvents: canProgramInteract ? "auto" : "none",
+                        pointerEvents: "none",
                         mixBlendMode: cssBlendMode(clip.blendMode),
                       }}
                     >
@@ -4785,6 +4815,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                                 renderTime,
                               ),
                               ...transitionVisualStyle,
+                              pointerEvents: trackEnabled && programInteractionClip ? "auto" : "none",
                             }}
                             onLoadStart={() => {
                               videoReadyByClipIdRef.current[clip.id] = false;

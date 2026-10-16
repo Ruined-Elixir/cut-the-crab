@@ -689,3 +689,143 @@ export function collapsedCompoundTrackRegions(
 
   return { audio, subtitle };
 }
+
+
+export type CompoundVideoPlacement = {
+  trackId: TimelineTrackId;
+  start: number;
+  end: number;
+  /** Explicit stack layer for the copy; cleared when undefined. */
+  layer?: number;
+};
+
+/**
+ * Copy a compound at an exact position (non-ripple mode). Unlike
+ * insertCompoundCopy this never slides the group in time.
+ *
+ * - Video members go exactly where `videoPlacements` says (planned by
+ *   timelinePlacement: free track, or a new top track).
+ * - Audio and subtitle members keep their tracks and the exact time offset.
+ *   If one of them would collide, nothing is copied and "blocked" is returned.
+ *
+ * Returns null when the compound is missing or a video member has no placement.
+ */
+export function insertCompoundCopyAt(
+  state: CompoundTimelineState,
+  sourceState: CompoundTimelineState,
+  compoundId: string,
+  requestedStart: number,
+  videoPlacements: Map<string, CompoundVideoPlacement>,
+): {
+  state: CompoundTimelineState;
+  compoundId: string;
+  anchorVideoId: string;
+} | "blocked" | null {
+  const groups = buildCompoundGroups(
+    sourceState.videoClips,
+    sourceState.audioClips,
+    sourceState.subtitles,
+  );
+  const group = groups.get(compoundId);
+  if (!group) return null;
+
+  const sourceVideos = sourceState.videoClips.filter(
+    (clip) => clip.compoundId === compoundId,
+  );
+  const sourceAudios = sourceState.audioClips.filter(
+    (clip) => clip.compoundId === compoundId,
+  );
+  const sourceSubtitles = sourceState.subtitles.filter(
+    (subtitle) => subtitle.compoundId === compoundId,
+  );
+
+  if (sourceVideos.some((clip) => !videoPlacements.has(clip.id))) return null;
+
+  const delta = Math.max(0, requestedStart) - group.start;
+
+  for (const clip of sourceAudios) {
+    const start = clip.timelineStart + delta;
+    const end = clip.timelineEnd + delta;
+    if (
+      state.audioClips.some(
+        (other) =>
+          other.trackId === clip.trackId &&
+          overlaps(start, end, other.timelineStart, other.timelineEnd),
+      )
+    ) {
+      return "blocked";
+    }
+  }
+
+  for (const subtitle of sourceSubtitles) {
+    const trackId = getSubtitleTrackId(subtitle);
+    const start = subtitle.startTime + delta;
+    const end = subtitle.endTime + delta;
+    if (
+      state.subtitles.some(
+        (other) =>
+          getSubtitleTrackId(other) === trackId &&
+          overlaps(start, end, other.startTime, other.endTime),
+      )
+    ) {
+      return "blocked";
+    }
+  }
+
+  const newCompoundId = crypto.randomUUID();
+  const videoIdMap = new Map<string, string>();
+  const audioIdMap = new Map<string, string>();
+  const subtitleIdMap = new Map<string, string>();
+  for (const id of group.videoIds) videoIdMap.set(id, crypto.randomUUID());
+  for (const id of group.audioIds) audioIdMap.set(id, crypto.randomUUID());
+  for (const id of group.subtitleIds) subtitleIdMap.set(id, crypto.randomUUID());
+
+  const copiedVideos = sourceVideos.map((clip) => {
+    const placement = videoPlacements.get(clip.id)!;
+    return {
+      ...clip,
+      id: videoIdMap.get(clip.id)!,
+      compoundId: newCompoundId,
+      compoundAnchor: clip.id === group.anchorVideoId,
+      compoundName: group.name,
+      trackId: placement.trackId,
+      timelineStart: placement.start,
+      timelineEnd: placement.end,
+      layer: placement.layer,
+      rippleAutoHealInBoundaryId: undefined,
+      rippleAutoHealOutBoundaryId: undefined,
+    };
+  });
+  const copiedAudios = sourceAudios.map((clip) => ({
+    ...clip,
+    id: audioIdMap.get(clip.id)!,
+    compoundId: newCompoundId,
+    timelineStart: clip.timelineStart + delta,
+    timelineEnd: clip.timelineEnd + delta,
+    linkedVideoClipId: clip.linkedVideoClipId
+      ? (videoIdMap.get(clip.linkedVideoClipId) ?? clip.linkedVideoClipId)
+      : undefined,
+  }));
+  const copiedSubtitles = sourceSubtitles.map((subtitle) => ({
+    ...subtitle,
+    id: subtitleIdMap.get(subtitle.id)!,
+    compoundId: newCompoundId,
+    startTime: subtitle.startTime + delta,
+    endTime: subtitle.endTime + delta,
+    // Point copied captions at the copied clip, not the original.
+    linkedVideoClipId: subtitle.linkedVideoClipId
+      ? (videoIdMap.get(subtitle.linkedVideoClipId) ?? subtitle.linkedVideoClipId)
+      : undefined,
+  }));
+
+  return {
+    state: {
+      videoClips: [...state.videoClips, ...copiedVideos],
+      audioClips: [...state.audioClips, ...copiedAudios],
+      subtitles: [...state.subtitles, ...copiedSubtitles],
+    },
+    compoundId: newCompoundId,
+    anchorVideoId: videoIdMap.get(group.anchorVideoId)!,
+  };
+}
+

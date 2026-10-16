@@ -116,8 +116,9 @@ import {
   buildCompoundGroups,
   canShiftCompound,
   deleteCompound as deleteCompoundMembers,
-  duplicateCompound,
   insertCompoundCopy,
+  insertCompoundCopyAt,
+  type CompoundVideoPlacement,
   nextCompoundClipName,
   shiftCompound,
   trimCompound,
@@ -2205,6 +2206,51 @@ function App() {
     return placed;
   };
 
+  // Plan all video members first; do not create new tracks on a rejected copy.
+  const copyCompoundWithPlacement = (
+    sourceState: CompoundTimelineState,
+    compoundId: string,
+    requestedStart: number,
+  ) => {
+    if (rippleMode) {
+      return insertCompoundCopy(currentCompoundTimelineState(), sourceState, compoundId, requestedStart);
+    }
+    if (placementBusyRef.current) return null;
+    const group = buildCompoundGroups(sourceState.videoClips, sourceState.audioClips, sourceState.subtitles).get(compoundId);
+    if (!group) return null;
+    const members = sourceState.videoClips.filter(clip => clip.compoundId === compoundId);
+    const start = Math.max(0, requestedStart);
+    const placementInput = {
+      videoClips, audioClips, adjustmentLayers, trackSettings,
+      items: members.map(clip => ({
+        key: clip.id, sourceTrackId: clip.trackId,
+        start: start + (clip.timelineStart - group.start),
+        duration: clip.timelineEnd - clip.timelineStart,
+      })),
+    };
+    const plan = planVideoPlacement(placementInput);
+    if (findPlanConflicts(placementInput, plan).length > 0) return null;
+    const placements = new Map<string, CompoundVideoPlacement>();
+    for (const assignment of plan.assignments) {
+      placements.set(assignment.key, {
+        trackId: assignment.trackId, start: assignment.start,
+        end: assignment.end, layer: assignment.layer,
+      });
+    }
+    const result = insertCompoundCopyAt(
+      currentCompoundTimelineState(), sourceState, compoundId, start, placements,
+    );
+    if (result === "blocked") {
+      window.alert("Not enough space for this compound's audio or subtitles at this position.");
+      return null;
+    }
+    if (!result) return null;
+    placementBusyRef.current = true;
+    window.requestAnimationFrame(() => { placementBusyRef.current = false; });
+    for (const track of plan.newTracks) addVideoAudioTrackPair(track.videoTrackId, track.audioTrackId);
+    return result;
+  };
+
   const pasteCompoundAtTarget = () => {
     const clipboard = compoundClipboardRef.current;
     if (!clipboard) return false;
@@ -2236,12 +2282,7 @@ function App() {
       audioClips: clipboard.audioClips,
       subtitles: clipboard.subtitles,
     };
-    const result = insertCompoundCopy(
-      currentCompoundTimelineState(),
-      sourceState,
-      clipboard.compoundId,
-      target.time,
-    );
+    const result = copyCompoundWithPlacement(sourceState, clipboard.compoundId, target.time);
     if (!result) return false;
 
     markNextChangeImmediate();
@@ -2256,10 +2297,8 @@ function App() {
   const duplicateSelectedVideoClipWithHistory = () => {
     if (selectedCollapsedCompound) {
       if (!compoundGroupIsEditable(selectedCollapsedCompound)) return false;
-      const result = duplicateCompound(
-        currentCompoundTimelineState(),
-        selectedCollapsedCompound.id,
-        selectedCollapsedCompound.end,
+      const result = copyCompoundWithPlacement(
+        currentCompoundTimelineState(), selectedCollapsedCompound.id, selectedCollapsedCompound.end,
       );
       if (!result) return false;
       markNextChangeImmediate();
