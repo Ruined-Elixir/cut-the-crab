@@ -5770,10 +5770,33 @@ function App() {
 
   useAppMenuCommands(handleAppMenuCommand);
 
+  const timelineRowCount = Object.values(trackSettings).filter(
+    (settings) => settings.deleted !== true,
+  ).length;
+
   const workspaceLayout = useWorkspaceLayout(workspaceRootRef, {
     active: screen === "editor",
     locked: isExporting || exportStartingRef.current,
+    contentKey: timelineRowCount,
   });
+
+  // Prevent the editor tools, splitters and Timeline from changing state while
+  // an export is running. The export progress overlay remains interactive.
+  useEffect(() => {
+    const root = workspaceRootRef.current;
+    if (!root) return;
+    const sections = root.querySelectorAll<HTMLElement>(
+      ":scope > .topbar, :scope > .workspace, :scope > .timeline-panel",
+    );
+    sections.forEach((section) => {
+      section.inert = isExporting;
+    });
+    return () => {
+      sections.forEach((section) => {
+        section.inert = false;
+      });
+    };
+  }, [isExporting, screen]);
 
   const selectedSubtitle =
     subtitles.find((subtitle) => subtitle.id === selectedSubtitleId) ?? null;

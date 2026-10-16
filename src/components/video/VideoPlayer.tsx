@@ -1,3 +1,4 @@
+import ToolbarMenu, { type ToolbarMenuItem } from "../common/ToolbarMenu";
 import { hitTestLayers, type HitTestLayer } from "../../utils/programHitTest";
 import {
   forwardRef,
@@ -3860,6 +3861,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const startPositionY =
         (selectedDisplayClip ?? selectedActiveClip).positionY ?? 0;
 
+      setProgramMoveSnappingActive(true);
+
       const handlePointerMove = (moveEvent: PointerEvent) => {
         const pointerCornerX = moveEvent.clientX - pointerOffsetX;
         const pointerCornerY = moveEvent.clientY - pointerOffsetY;
@@ -3896,6 +3899,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       };
 
       const handlePointerUp = () => {
+        setProgramMoveSnappingActive(false);
+        setProgramSnapGuides([]);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("pointercancel", handlePointerUp);
@@ -4447,6 +4452,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       };
     })();
 
+    const programMenuItems: ToolbarMenuItem[] = [];
+    if (primaryVideoUrl && selectedActiveClip) {
+      programMenuItems.push(
+        { kind: "action", id: "effects", label: "Effects", hint: selectedActiveClip.effects?.length ? String(selectedActiveClip.effects.length) : undefined, onSelect: () => onOpenVideoEffects?.(selectedActiveClip.id) },
+        { kind: "action", id: "masks", label: "Masks", hint: selectedActiveClip.mask ? "1" : undefined, onSelect: () => onOpenVideoMasks?.(selectedActiveClip.id) },
+        { kind: "separator", id: "s-blend" },
+        { kind: "heading", id: "h-blend", label: "Blend" },
+      );
+      for (const mode of VIDEO_BLEND_MODES) {
+        programMenuItems.push({ kind: "action", id: `blend-${mode}`, role: "radio", label: VIDEO_BLEND_MODE_LABELS[mode], checked: normalizeVideoBlendMode(selectedActiveClip.blendMode) === mode, disabled: selectedTrackLocked || !onVideoBlendModeChange, onSelect: () => onVideoBlendModeChange?.(selectedActiveClip.id, mode) });
+      }
+      programMenuItems.push({ kind: "separator", id: "s-view" });
+    }
+    if (primaryVideoUrl) {
+      programMenuItems.push({ kind: "action", id: "layers", role: "checkbox", label: "Layers panel", checked: layersPanelOpen, onSelect: () => setLayersPanelOpen((current) => !current) });
+    }
+    programMenuItems.push({ kind: "action", id: "change-video", label: primaryVideoUrl ? "Change video" : "Choose video", onSelect: () => void onChooseVideo?.() });
+
     return (
       <div className="video-player">
         <div className="video-player-toolbar">
@@ -4503,6 +4526,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               </div>
             )}
 
+          <div className="program-tools-inline">
           {primaryVideoUrl && selectedActiveClip && (
             <button
               type="button"
@@ -4554,6 +4578,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             </label>
           )}
 
+          </div>
           {primaryVideoUrl && (
             <button
               type="button"
@@ -4578,6 +4603,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               {videoName}
             </span>
           )}
+          <ToolbarMenu className="program-tools-menu" label="Tools" title="Effects, masks, blend and layers" items={programMenuItems} />
         </div>
 
         {primaryVideoUrl ? (

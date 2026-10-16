@@ -15,9 +15,9 @@
         "title": "Cut The Crab",
         "width": 1280,
         "height": 800,
-        "minWidth": 640,
-        "minHeight": 480,
-        "resizable": true,
+        "minWidth": 1000,
+        "minHeight": 640,
+
         "center": true
       }
     ],

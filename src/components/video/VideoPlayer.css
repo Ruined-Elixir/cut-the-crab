@@ -87,6 +87,8 @@
 }
 
 .video-shell {
+  border-radius: 12px;
+  clip-path: inset(0 round 12px);
   position: relative;
   flex: 1;
   min-height: 0;
@@ -648,4 +650,13 @@
  * stage while still staying inside the clip mask/blend wrapper. */
 .program-video-mask-wrapper > .program-video-vignette {
   z-index: 1 !important;
+}
+
+/* Batch A: responsive Program toolbar. */
+.video-player-toolbar { container-type: inline-size; container-name: program-toolbar; flex-wrap: wrap; row-gap: 6px; }
+.program-tools-inline { display: contents; }
+.program-tools-menu { display: none; order: 4; height: 28px; margin-left: auto; }
+@container program-toolbar (max-width: 700px) {
+  .program-tools-inline, .program-layers-button, .video-file-button, .video-name { display: none; }
+  .program-tools-menu { display: inline-flex; }
 }

@@ -1,3 +1,4 @@
+import ToolbarMenu, { type ToolbarMenuItem } from "../common/ToolbarMenu";
 import {
   forwardRef,
   useEffect,
@@ -1897,6 +1898,51 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
   const canCreateCompound =
     mixedSelectionCount >= 2 && selectedVideoClipIds.length > 0;
 
+  const retimeLocked = !!singleSelectedVideoClip &&
+    (trackSettings[singleSelectedVideoClip.trackId]?.locked ||
+      singleSelectedVideoClip.freezeFrameSourceTime !== undefined);
+  const toolsMenuItems: ToolbarMenuItem[] = [];
+  if (timelineRange) {
+    toolsMenuItems.push(
+      { kind: "heading", id: "h-range", label: "Range" },
+      { kind: "action", id: "range-delete", label: rippleMode ? "Delete range (ripple)" : "Delete range", onSelect: () => onDeleteRange?.() },
+      { kind: "action", id: "range-lift", label: "Lift range", onSelect: () => onLiftRange?.() },
+      { kind: "action", id: "range-extract", label: "Extract range", onSelect: () => onExtractRange?.() },
+      { kind: "action", id: "range-export", label: "Export range", onSelect: () => onExportRange?.() },
+      { kind: "separator", id: "s-range" },
+    );
+  }
+  if (singleSelectedVideoClip && !selectedCompoundId) {
+    const currentRate = videoPlaybackRate(singleSelectedVideoClip);
+    toolsMenuItems.push({ kind: "heading", id: "h-speed", label: "Speed" });
+    for (const rate of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]) {
+      toolsMenuItems.push({ kind: "action", id: `speed-${rate}`, role: "radio", label: `${rate}x`, checked: Math.abs(currentRate - rate) < 0.001, disabled: retimeLocked, onSelect: () => onVideoPlaybackRateChange?.(singleSelectedVideoClip.id, rate) });
+    }
+    toolsMenuItems.push(
+      { kind: "separator", id: "s-speed" },
+      { kind: "action", id: "reverse", role: "checkbox", label: "Reverse", checked: singleSelectedVideoClip.playbackDirection === "reverse", disabled: retimeLocked, onSelect: () => onToggleVideoReverse?.(singleSelectedVideoClip.id) },
+      { kind: "action", id: "freeze", label: "Freeze frame", disabled: retimeLocked, onSelect: () => onInsertFreezeFrame?.(singleSelectedVideoClip.id) },
+      { kind: "separator", id: "s-retime" },
+    );
+  }
+  if (!expandedCompoundId) {
+    toolsMenuItems.push({ kind: "action", id: "adjustment", label: "Add adjustment layer", onSelect: () => onCreateAdjustmentLayer?.() });
+    if (selectedAdjustmentLayerId) toolsMenuItems.push({ kind: "action", id: "adjustment-controls", label: "Adjustment controls", onSelect: () => onOpenAdjustmentControls?.() });
+    toolsMenuItems.push({ kind: "action", id: "compound-create", label: "Create compound", disabled: !canCreateCompound, onSelect: () => onCreateCompound?.() });
+    if (selectedCompoundId) toolsMenuItems.push(
+      { kind: "action", id: "compound-open", label: "Open compound", onSelect: () => onOpenCompound?.(selectedCompoundId) },
+      { kind: "action", id: "compound-break", label: "Break apart compound", onSelect: () => onBreakApartCompound?.(selectedCompoundId) },
+    );
+  } else {
+    toolsMenuItems.push({ kind: "action", id: "compound-done", label: "Done editing compound", onSelect: () => onCloseCompound?.() });
+  }
+  toolsMenuItems.push(
+    { kind: "separator", id: "s-edit" },
+    { kind: "action", id: "copy", label: "Copy clips", disabled: selectedVideoClipIds.length === 0, onSelect: () => onCopyVideoClip?.() },
+    { kind: "action", id: "fit", label: "Fit timeline", onSelect: () => fitTimelineContent() },
+    { kind: "action", id: "frame", label: "Frame selection", disabled: !selectionRevealTarget, onSelect: () => frameSelection() },
+  );
+
   return (
     <section className="timeline-panel">
       <div className="timeline-header">
@@ -2044,6 +2090,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
             Ripple
           </button>
 
+          <div className="timeline-tools-inline">
           {singleSelectedVideoClip && !selectedCompoundId && (
             <label
               className="timeline-speed-control"
@@ -2224,6 +2271,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
               Copy
             </button>
           </div>
+
+          </div>
+          <ToolbarMenu className="timeline-tools-menu" label="Tools" title="Clip, range and compound tools" items={toolsMenuItems} />
 
           <button
             type="button"

@@ -14,6 +14,7 @@ import {
   currentSize,
   parseGridTrackSizes,
   parseStoredLayout,
+  sizeExpression,
   sizeFromDrag,
   splitterBounds,
   type LayoutMeasure,
@@ -33,8 +34,10 @@ import {
  *   --ws-subtitle  width of the Subtitle panel
  *   --ws-timeline  height of the Timeline
  *
- * When a variable is not set the stylesheet defaults apply, so nothing changes
- * until the user drags a splitter. Double-click a splitter to reset it.
+ * The values are CSS math expressions (see sizeExpression), so the browser
+ * keeps them inside the allowed range while the window is being resized.
+ * When a variable is not set the stylesheet defaults apply. Double-click a
+ * splitter to reset it.
  */
 
 const CSS_VARS: Record<SplitterId, string> = {
@@ -51,6 +54,8 @@ const LABELS: Record<SplitterId, string> = {
 
 const KEY_STEP = 16;
 const KEY_STEP_LARGE = 64;
+/** Room for the timeline's horizontal scrollbar below the last track. */
+const TIMELINE_CONTENT_SLACK = 16;
 
 function readStoredLayout(): StoredLayout {
   try {
@@ -65,10 +70,23 @@ function measure(root: HTMLElement | null): LayoutMeasure | null {
   const workspace = root.querySelector<HTMLElement>(".workspace");
   if (!workspace) return null;
   const timeline = root.querySelector<HTMLElement>(".timeline-panel");
+  const body = root.querySelector<HTMLElement>(".timeline-body");
+  const stack = root.querySelector<HTMLElement>(".timeline-track-stack");
 
   // Resolved grid tracks: media, splitter, program, splitter, subtitle.
   const tracks = parseGridTrackSizes(getComputedStyle(workspace).gridTemplateColumns);
   const rect = workspace.getBoundingClientRect();
+
+  // The height at which every track row is visible and nothing is left empty.
+  let timelineContentMax: number | undefined;
+  if (timeline && body && stack) {
+    const chrome = timeline.getBoundingClientRect().height - body.clientHeight;
+    const contentBottom =
+      stack.getBoundingClientRect().bottom -
+      body.getBoundingClientRect().top +
+      body.scrollTop;
+    timelineContentMax = Math.ceil(chrome + contentBottom + TIMELINE_CONTENT_SLACK);
+  }
 
   return {
     workspaceWidth: rect.width,
@@ -76,12 +94,18 @@ function measure(root: HTMLElement | null): LayoutMeasure | null {
     subtitleWidth: tracks[4] ?? 0,
     workspaceHeight: rect.height,
     timelineHeight: timeline?.getBoundingClientRect().height ?? 0,
+    timelineContentMax,
   };
 }
 
-function applySize(root: HTMLElement, id: SplitterId, value: number | null) {
+function applySize(
+  root: HTMLElement,
+  id: SplitterId,
+  value: number | null,
+  timelineContentMax?: number,
+) {
   if (value === null) root.style.removeProperty(CSS_VARS[id]);
-  else root.style.setProperty(CSS_VARS[id], `${Math.round(value)}px`);
+  else root.style.setProperty(CSS_VARS[id], sizeExpression(id, value, timelineContentMax));
 }
 
 type DragState = {
@@ -97,7 +121,12 @@ type DragState = {
 
 export function useWorkspaceLayout(
   rootRef: RefObject<HTMLElement | null>,
-  options: { active: boolean; locked: boolean },
+  options: {
+    active: boolean;
+    locked: boolean;
+    /** Changes whenever the number of timeline rows changes. */
+    contentKey?: number;
+  },
 ) {
   // The size the user asked for. The applied size may be smaller when the
   // window is small, and grows back when the window does.
@@ -118,14 +147,19 @@ export function useWorkspaceLayout(
   const applyAll = () => {
     const root = rootRef.current;
     if (!root) return;
+    const live = measure(root);
     for (const id of SPLITTER_IDS) {
       const desired = desiredRef.current[id];
       if (desired === undefined) {
         applySize(root, id, null);
         continue;
       }
-      const live = measure(root);
-      applySize(root, id, live ? clampSplit(id, desired, live) : desired);
+      applySize(
+        root,
+        id,
+        live ? clampSplit(id, desired, live) : desired,
+        live?.timelineContentMax,
+      );
     }
   };
 
@@ -143,6 +177,15 @@ export function useWorkspaceLayout(
     return () => observer.disconnect();
   }, [options.active]);
 
+  // Tracks added or removed: the timeline may now be taller than its content.
+  useLayoutEffect(() => {
+    if (!options.active) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (!dragRef.current) applyAll();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [options.active, options.contentKey]);
+
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
@@ -151,7 +194,7 @@ export function useWorkspaceLayout(
     if (drag.frame !== null) window.cancelAnimationFrame(drag.frame);
     const root = rootRef.current;
     if (drag.pending !== null) {
-      if (root) applySize(root, drag.id, drag.pending);
+      if (root) applySize(root, drag.id, drag.pending, drag.measure.timelineContentMax);
       desiredRef.current = { ...desiredRef.current, [drag.id]: Math.round(drag.pending) };
       persist();
     }
@@ -216,7 +259,9 @@ export function useWorkspaceLayout(
         drag.frame = window.requestAnimationFrame(() => {
           drag.frame = null;
           const root = rootRef.current;
-          if (root && drag.pending !== null) applySize(root, drag.id, drag.pending);
+          if (root && drag.pending !== null) {
+            applySize(root, drag.id, drag.pending, drag.measure.timelineContentMax);
+          }
         });
       }
     },
@@ -245,7 +290,7 @@ export function useWorkspaceLayout(
 
       event.preventDefault();
       const clamped = clampSplit(id, next, live);
-      applySize(root, id, clamped);
+      applySize(root, id, clamped, live.timelineContentMax);
       desiredRef.current = { ...desiredRef.current, [id]: clamped };
       persist();
     },
@@ -254,9 +299,9 @@ export function useWorkspaceLayout(
       if (lockedRef.current) return;
       const root = rootRef.current;
       if (!root) return;
-      const rest = { ...desiredRef.current };
-      delete rest[id];
-      desiredRef.current = rest;
+      const next = { ...desiredRef.current };
+      delete next[id];
+      desiredRef.current = next;
       applySize(root, id, null);
       persist();
     },
