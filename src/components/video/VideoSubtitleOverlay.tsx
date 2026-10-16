@@ -24,6 +24,7 @@ import {
 
 import type { RenderedVideoRect } from "../../utils/videoGeometry";
 import { subtitleCanvasRect } from "../../utils/subtitleCanvas";
+import { ensureSubtitleFontLoaded } from "../../utils/subtitleTextMetrics";
 import {
   PROGRAM_FRAME_SNAP_THRESHOLD_PX,
   programFrameSnapLines,
@@ -715,7 +716,22 @@ function VideoSubtitleOverlay({
     return () => observer.disconnect();
   }, [shellRef]);
 
-  const assContent = useMemo(() => buildAssTrack(subtitles), [subtitles]);
+  const [fontReady, setFontReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureSubtitleFontLoaded(DEFAULT_ASS_FONT_FAMILY, DEFAULT_ASS_FONT_URL).then(
+      (ready) => {
+        if (!cancelled) setFontReady(ready);
+      },
+    );
+    return () => { cancelled = true; };
+  }, []);
+
+  const assContent = useMemo(
+    () => buildAssTrack(subtitles, { roundedBackgrounds: fontReady }),
+    [subtitles, fontReady],
+  );
 
   /*
    * Double-buffered libass refresh.

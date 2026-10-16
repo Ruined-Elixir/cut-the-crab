@@ -1,10 +1,23 @@
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
-
+import {
+  BACKGROUND_WRAP_SAFETY,
+  SUBTITLE_BACKGROUND_PADDING,
+  backgroundAnchorOffset,
+  clampBackgroundRadius,
+  roundedBoxSize,
+  roundedRectPath,
+  type LineMeasurer,
+} from "./subtitleBackground";
 import {
   SUBTITLE_CANVAS_HEIGHT,
   SUBTITLE_CANVAS_WIDTH,
   canvasPercentToOutputPoint,
 } from "./subtitleCanvas";
+import {
+  getSubtitleLineRatio,
+  isSubtitleFontReady,
+  measureSubtitleLine,
+} from "./subtitleTextMetrics";
 
 export const ASS_WIDTH = SUBTITLE_CANVAS_WIDTH;
 export const ASS_HEIGHT = SUBTITLE_CANVAS_HEIGHT;
@@ -89,17 +102,24 @@ function getAlignment(textAlign: Subtitle["textAlign"]): number {
   }
 }
 
-/*
- * Use ASS BorderStyle=3 for subtitle backgrounds. This is the standard opaque
- * box mode and is supported consistently by both the browser libass renderer
- * and FFmpeg/libass. OutlineColour becomes the box colour and Outline controls
- * its padding.
- */
 export type AssSourceViewport = {
   left: number;
   top: number;
   width: number;
   height: number;
+};
+
+/** What the rounded-background planner needs from the browser. */
+export type AssBackgroundMetrics = {
+  isReady: () => boolean;
+  lineRatio: () => number;
+  measureLine: LineMeasurer;
+};
+
+const BROWSER_BACKGROUND_METRICS: AssBackgroundMetrics = {
+  isReady: isSubtitleFontReady,
+  lineRatio: getSubtitleLineRatio,
+  measureLine: measureSubtitleLine,
 };
 
 type AssTrackOptions = {
@@ -111,12 +131,63 @@ type AssTrackOptions = {
    * same aspect-ratio box shown by the Program Monitor.
    */
   sourceViewport?: AssSourceViewport;
+  /**
+   * Draw rounded backgrounds as vector shapes where possible. Defaults to true.
+   * When false (or when the font cannot be measured) the square BorderStyle=3
+   * box is used instead.
+   */
+  roundedBackgrounds?: boolean;
+  /** Test hook. Defaults to the browser font metrics. */
+  backgroundMetrics?: AssBackgroundMetrics;
 };
+
+type RoundedBackgroundPlan = {
+  /** Box size in design units (the units of subtitle.fontSize). */
+  width: number;
+  height: number;
+  radius: number;
+};
+
+function hasSubtitleBackground(subtitle: Subtitle): boolean {
+  return !!subtitle.backgroundColor && subtitle.backgroundColor !== "transparent";
+}
+
+/*
+ * A rounded background is only planned when it can match the square box:
+ * the subtitle has a background and a radius, the font could be measured, and
+ * the box is narrower than the frame (otherwise libass would wrap the text and
+ * the line count would no longer match).
+ */
+function planRoundedBackground(
+  subtitle: Subtitle,
+  frameWidthDesign: number,
+  metrics: AssBackgroundMetrics,
+): RoundedBackgroundPlan | null {
+  const radius = clampBackgroundRadius(subtitle.backgroundRadius);
+  if (!hasSubtitleBackground(subtitle) || radius <= 0) return null;
+  if (!metrics.isReady()) return null;
+
+  const lineRatio = metrics.lineRatio();
+  if (!Number.isFinite(lineRatio) || lineRatio <= 0) return null;
+
+  const size = roundedBoxSize({
+    text: subtitle.text,
+    fontSize: subtitle.fontSize ?? 24,
+    italic: !!subtitle.isItalic,
+    lineRatio,
+    measureLine: metrics.measureLine,
+  });
+
+  if (size.width > frameWidthDesign * BACKGROUND_WRAP_SAFETY) return null;
+
+  return { width: size.width, height: size.height, radius };
+}
 
 function createStyle(
   index: number,
   subtitle: Subtitle,
   designScale: number,
+  rounded: boolean,
 ): string {
   const fontFamily = sanitizeStyleValue(
     resolveAssFontFamily(subtitle.fontFamily),
@@ -125,8 +196,7 @@ function createStyle(
   const fontSize = (subtitle.fontSize ?? 24) * designScale;
   const textColor = hexToAssColor(subtitle.color ?? "#ffffff");
 
-  const hasBackground =
-    !!subtitle.backgroundColor && subtitle.backgroundColor !== "transparent";
+  const hasBackground = hasSubtitleBackground(subtitle);
 
   const backgroundColor = hasBackground
     ? hexToAssColor(subtitle.backgroundColor!)
@@ -136,16 +206,18 @@ function createStyle(
   const italic = subtitle.isItalic ? -1 : 0;
   const underline = subtitle.isUnderlined ? -1 : 0;
 
-  const borderStyle = hasBackground ? 3 : 1;
-
   /*
-   * BorderStyle=3 uses OutlineColour as the opaque box colour and Outline as
-   * the box padding. Keeping the same 8-design-pixel padding also means the
-   * Program Monitor's dashed move rectangle can mirror the rendered box.
+   * Square background: BorderStyle=3 uses OutlineColour as the opaque box
+   * colour and Outline as the box padding.
+   * Rounded background: the box is a separate vector shape, so the text itself
+   * uses BorderStyle=1 with no outline.
    */
-  const outline = (hasBackground ? 8 : 2) * designScale;
+  const borderStyle = rounded ? 1 : hasBackground ? 3 : 1;
+  const outline = rounded
+    ? 0
+    : (hasBackground ? SUBTITLE_BACKGROUND_PADDING : 2) * designScale;
   const shadow = 0;
-  const outlineColor = hasBackground ? backgroundColor : "&H00000000";
+  const outlineColor = !rounded && hasBackground ? backgroundColor : "&H00000000";
 
   return [
     `Style: Subtitle${index}`,
@@ -174,23 +246,61 @@ function createStyle(
   ].join(",");
 }
 
+/** Style used only to colour the drawn rounded box. */
+function createBackgroundStyle(index: number, subtitle: Subtitle): string {
+  const fontFamily = sanitizeStyleValue(
+    resolveAssFontFamily(subtitle.fontFamily),
+  );
+  const backgroundColor = hexToAssColor(subtitle.backgroundColor!);
+
+  return [
+    `Style: Background${index}`,
+    fontFamily,
+    "24",
+    backgroundColor,
+    "&H00000000",
+    "&H00000000",
+    backgroundColor,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    1,
+    0,
+    0,
+    5,
+    0,
+    0,
+    0,
+    1,
+  ].join(",");
+}
+
 function subtitleLayer(subtitle: Subtitle) {
   const match = /^subtitle-(\d+)$/.exec(getSubtitleTrackId(subtitle));
   return match ? Math.max(0, Number(match[1]) - 1) : 0;
 }
 
-function createDialogue(
+function createDialogues(
   index: number,
   subtitle: Subtitle,
   playResWidth: number,
   playResHeight: number,
   sourceViewport: AssSourceViewport,
-): string {
+  designScale: number,
+  plan: RoundedBackgroundPlan | null,
+): string[] {
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
 
-  // Use the shared canonical-canvas-to-export-viewport mapping. Values beyond
-  // the viewport intentionally remain unclamped for libass to crop.
+  // Map the authored canonical Program-space point through the same centered
+  // crop used for video export. Values are intentionally allowed outside the
+  // output frame so libass naturally clips subtitles that sit beyond a chosen
+  // aspect viewport, exactly like the dashed Program Monitor box.
   const { x, y } = canvasPercentToOutputPoint(
     subtitle.positionX ?? 50,
     subtitle.positionY ?? 80,
@@ -201,10 +311,34 @@ function createDialogue(
 
   const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
+  const layer = subtitleLayer(subtitle);
+
+  // Each track keeps two layers: the background below, the text above.
+  const backgroundLayer = layer * 2;
+  const textLayer = layer * 2 + 1;
 
   const override = `{\\an${alignment}\\pos(${x.toFixed(2)},${y.toFixed(2)})}`;
+  const lines: string[] = [];
 
-  return `Dialogue: ${subtitleLayer(subtitle)},${start},${end},Subtitle${index},,0,0,0,,${override}${text}`;
+  if (plan) {
+    const offset =
+      backgroundAnchorOffset(subtitle.textAlign, SUBTITLE_BACKGROUND_PADDING) *
+      designScale;
+    const path = roundedRectPath(
+      plan.width * designScale,
+      plan.height * designScale,
+      plan.radius * designScale,
+    );
+    lines.push(
+      `Dialogue: ${backgroundLayer},${start},${end},Background${index},,0,0,0,,{\\an${alignment}\\pos(${(x + offset).toFixed(2)},${y.toFixed(2)})\\p1}${path}{\\p0}`,
+    );
+  }
+
+  lines.push(
+    `Dialogue: ${textLayer},${start},${end},Subtitle${index},,0,0,0,,${override}${text}`,
+  );
+
+  return lines;
 }
 
 export function buildAssTrack(
@@ -250,18 +384,33 @@ export function buildAssTrack(
     (a, b) => a.startTime - b.startTime || subtitleLayer(a) - subtitleLayer(b),
   );
 
+  const roundedAllowed = options.roundedBackgrounds !== false;
+  const metrics = options.backgroundMetrics ?? BROWSER_BACKGROUND_METRICS;
+  const plans = sorted.map((subtitle) =>
+    roundedAllowed
+      ? planRoundedBackground(subtitle, safeSourceViewport.width, metrics)
+      : null,
+  );
+
   const styles = sorted
-    .map((subtitle, index) => createStyle(index, subtitle, designScale))
+    .flatMap((subtitle, index) => {
+      const rounded = plans[index] !== null;
+      const lines = [createStyle(index, subtitle, designScale, rounded)];
+      if (rounded) lines.push(createBackgroundStyle(index, subtitle));
+      return lines;
+    })
     .join("\n");
 
   const events = sorted
-    .map((subtitle, index) =>
-      createDialogue(
+    .flatMap((subtitle, index) =>
+      createDialogues(
         index,
         subtitle,
         playResWidth,
         playResHeight,
         safeSourceViewport,
+        designScale,
+        plans[index],
       ),
     )
     .join("\n");

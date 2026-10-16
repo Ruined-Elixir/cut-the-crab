@@ -15,7 +15,8 @@ import type {
   VideoTransformKeyframeProperty,
 } from "../types/timelineModel";
 
-import { ASS_HEIGHT, ASS_WIDTH, buildAssTrack } from "../utils/assSubtitles";
+import { ASS_HEIGHT, ASS_WIDTH, buildAssTrack, DEFAULT_ASS_FONT_FAMILY, DEFAULT_ASS_FONT_URL } from "../utils/assSubtitles";
+import { ensureSubtitleFontLoaded } from "../utils/subtitleTextMetrics";
 import { programViewportRectForAspect } from "../utils/programSnapping";
 import {
   adjustmentLayerChannel,
@@ -1371,6 +1372,7 @@ export async function exportStyledVideo(
   const visibleSubtitles = subtitles.filter(
     (subtitle) => !options.trackSettings[getSubtitleTrackId(subtitle)]?.hidden,
   );
+  await ensureSubtitleFontLoaded(DEFAULT_ASS_FONT_FAMILY, DEFAULT_ASS_FONT_URL);
   const assContent = buildAssTrack(
     subtitlesForExportRange(visibleSubtitles, normalizedRange),
     {

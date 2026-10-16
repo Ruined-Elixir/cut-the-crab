@@ -6,6 +6,8 @@ export type SubtitleStyle = {
 
   color?: string;
   backgroundColor?: string;
+  /** Corner radius in 1920×1080 design pixels; zero means square. */
+  backgroundRadius?: number;
 
   isBold?: boolean;
   isItalic?: boolean;

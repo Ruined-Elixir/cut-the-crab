@@ -71,6 +71,7 @@ function sameSubtitleValue(a: Subtitle, b: Subtitle) {
     a.fontFamily === b.fontFamily &&
     a.color === b.color &&
     a.backgroundColor === b.backgroundColor &&
+    a.backgroundRadius === b.backgroundRadius &&
     a.isBold === b.isBold &&
     a.isItalic === b.isItalic &&
     a.isUnderlined === b.isUnderlined &&

@@ -8,6 +8,9 @@ import type {
 
 import { DEFAULT_ASS_FONT_FAMILY } from "../../utils/assSubtitles";
 
+import SubtitlePresetsSection from "./SubtitlePresetsSection";
+import SubtitleBackgroundSection from "./SubtitleBackgroundSection";
+
 import "./SubtitleInspector.css";
 
 type SubtitleAppearanceScope = "track" | "all";
@@ -46,6 +49,7 @@ function SubtitleInspector({
   const fontFamily = subtitle?.fontFamily ?? DEFAULT_ASS_FONT_FAMILY;
   const color = subtitle?.color ?? "#ffffff";
   const backgroundColor = subtitle?.backgroundColor ?? "transparent";
+  const backgroundRadius = subtitle?.backgroundRadius ?? 0;
   const isBold = subtitle?.isBold ?? false;
   const isItalic = subtitle?.isItalic ?? false;
   const isUnderlined = subtitle?.isUnderlined ?? false;
@@ -63,12 +67,14 @@ function SubtitleInspector({
       fontFamily,
       color,
       backgroundColor,
+      backgroundRadius,
       isBold,
       isItalic,
       isUnderlined,
       textAlign,
     }),
     [
+      backgroundRadius,
       backgroundColor,
       color,
       fontFamily,
@@ -418,6 +424,15 @@ function SubtitleInspector({
             </div>
           </div>
         </section>
+        <SubtitleBackgroundSection
+          radius={backgroundRadius}
+          hasBackground={backgroundColor !== "transparent"}
+          onChange={(radius) => onStyleChange(subtitle.id, { backgroundRadius: radius })}
+        />
+        <SubtitlePresetsSection
+          currentStyle={appearanceStyle}
+          onApply={(style) => onStyleChange(subtitle.id, style)}
+        />
       </div>
     </section>
   );

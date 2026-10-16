@@ -1,0 +1,120 @@
+.subtitle-preset-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subtitle-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.subtitle-preset-apply {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 8px;
+  background: var(--control-fill);
+  color: var(--label);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subtitle-preset-apply:hover {
+  background: var(--control-fill-hover);
+}
+
+.subtitle-preset-swatch {
+  flex-shrink: 0;
+  width: 34px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.subtitle-preset-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-preset-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+}
+
+.subtitle-preset-icon {
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--secondary-label);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.subtitle-preset-icon:hover {
+  background: var(--control-fill-hover);
+  color: var(--label);
+}
+
+.subtitle-preset-save {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.subtitle-preset-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--label);
+  font: inherit;
+  font-size: 11px;
+}
+
+.subtitle-preset-save-button {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 7px;
+  background: var(--control-fill);
+  color: var(--label);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.subtitle-preset-save-button:hover:not(:disabled) {
+  background: var(--control-fill-hover);
+}
+
+.subtitle-preset-save-button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.subtitle-preset-message {
+  margin: 6px 0 0;
+  color: #ff8a80;
+  font-size: 10px;
+}

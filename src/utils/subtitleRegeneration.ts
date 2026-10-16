@@ -53,6 +53,7 @@ function copyPresentation(template: Subtitle | null) {
     fontFamily: template.fontFamily,
     color: template.color,
     backgroundColor: template.backgroundColor,
+    backgroundRadius: template.backgroundRadius,
     isBold: template.isBold,
     isItalic: template.isItalic,
     isUnderlined: template.isUnderlined,

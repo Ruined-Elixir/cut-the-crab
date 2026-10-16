@@ -28,6 +28,7 @@ import { normalizeVideoPlaybackRate } from "../utils/videoRetime";
 import { normalizeVideoEffects } from "../utils/videoEffects";
 import { normalizeVideoMask } from "../utils/videoMasks";
 import { normalizeVideoBlendMode } from "../utils/blendModes";
+import { clampBackgroundRadius } from "../utils/subtitleBackground";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
@@ -283,6 +284,11 @@ function defaultTitleFromVideoPath(videoPath: string) {
   return fileName.replace(/\.[^/.\\]+$/, "") || "Untitled Project";
 }
 
+function parseBackgroundRadius(value: unknown): number | undefined {
+  const radius = clampBackgroundRadius(value);
+  return radius > 0 ? radius : undefined;
+}
+
 function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
   if (!isRecord(value)) {
     return null;
@@ -317,6 +323,7 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
     fontFamily: asOptionalString(value.fontFamily),
     color: asOptionalString(value.color),
     backgroundColor: asOptionalString(value.backgroundColor),
+    backgroundRadius: parseBackgroundRadius(value.backgroundRadius),
     isBold: asOptionalBoolean(value.isBold),
     isItalic: asOptionalBoolean(value.isItalic),
     isUnderlined: asOptionalBoolean(value.isUnderlined),
