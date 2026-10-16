@@ -29,6 +29,7 @@ import { normalizeVideoEffects } from "../utils/videoEffects";
 import { normalizeVideoMask } from "../utils/videoMasks";
 import { normalizeVideoBlendMode } from "../utils/blendModes";
 import { clampBackgroundRadius } from "../utils/subtitleBackground";
+import { clampBoxWidth, normalizeRotation } from "../utils/subtitleBox";
 import type {
   ProjectLanguage,
   ProjectMediaAsset,
@@ -289,6 +290,17 @@ function parseBackgroundRadius(value: unknown): number | undefined {
   return radius > 0 ? radius : undefined;
 }
 
+function parseBoxWidth(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(clampBoxWidth(value)) : undefined;
+}
+
+function parseRotation(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rotation = Math.round(normalizeRotation(value) * 10) / 10;
+  return rotation === 0 ? undefined : rotation;
+}
+
 function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
   if (!isRecord(value)) {
     return null;
@@ -316,6 +328,8 @@ function normalizeSubtitle(value: unknown, index: number): Subtitle | null {
     text,
     positionX: asOptionalNumber(value.positionX),
     positionY: asOptionalNumber(value.positionY),
+    boxWidth: parseBoxWidth(value.boxWidth),
+    rotation: parseRotation(value.rotation),
     compoundId: asOptionalString(value.compoundId),
     linkedVideoClipId: asOptionalString(value.linkedVideoClipId),
     linkedVideoSourcePath: asOptionalString(value.linkedVideoSourcePath),

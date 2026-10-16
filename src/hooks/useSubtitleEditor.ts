@@ -1,3 +1,4 @@
+import type { SubtitleBoxPatch } from "../utils/subtitleBox";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
@@ -64,6 +65,8 @@ function sameSubtitleValue(a: Subtitle, b: Subtitle) {
     a.text === b.text &&
     a.positionX === b.positionX &&
     a.positionY === b.positionY &&
+    a.boxWidth === b.boxWidth &&
+    a.rotation === b.rotation &&
     a.compoundId === b.compoundId &&
     a.linkedVideoClipId === b.linkedVideoClipId &&
     a.linkedVideoSourcePath === b.linkedVideoSourcePath &&
@@ -370,6 +373,12 @@ export function useSubtitleEditor(videoDuration: number) {
         subtitle.id === id ? { ...subtitle, positionX, positionY } : subtitle,
       ),
     );
+  };
+
+  const updateSubtitleBox = (id: string, patch: SubtitleBoxPatch) => {
+    setSubtitles((current) => current.map((subtitle) =>
+      subtitle.id === id ? { ...subtitle, ...patch } : subtitle,
+    ));
   };
 
   const moveSubtitle = (id: string, newStartTime: number) => {
@@ -816,6 +825,7 @@ export function useSubtitleEditor(videoDuration: number) {
 
     updateSubtitleText,
     updateSubtitlePosition,
+    updateSubtitleBox,
     updateSubtitleStyle,
     updateSubtitleStyles,
     updateAllSubtitleStyles,

@@ -34,6 +34,10 @@ export type Subtitle = SubtitleStyle & {
 
   positionX?: number;
   positionY?: number;
+  /** Fixed box width in 1920x1080 design pixels; unset means auto width. */
+  boxWidth?: number;
+  /** Clockwise rotation in degrees. */
+  rotation?: number;
 
   /** Optional compound-clip membership. */
   compoundId?: string;

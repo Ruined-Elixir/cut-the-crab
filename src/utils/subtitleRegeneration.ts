@@ -60,6 +60,8 @@ function copyPresentation(template: Subtitle | null) {
     textAlign: template.textAlign,
     positionX: template.positionX,
     positionY: template.positionY,
+    boxWidth: template.boxWidth,
+    rotation: template.rotation,
   };
 }
 

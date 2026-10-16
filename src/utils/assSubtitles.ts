@@ -8,6 +8,7 @@ import {
   roundedRectPath,
   type LineMeasurer,
 } from "./subtitleBackground";
+import { computeSubtitleBox, type SubtitleBoxGeometry } from "./subtitleBox";
 import {
   SUBTITLE_CANVAS_HEIGHT,
   SUBTITLE_CANVAS_WIDTH,
@@ -109,7 +110,7 @@ export type AssSourceViewport = {
   height: number;
 };
 
-/** What the rounded-background planner needs from the browser. */
+/** What the rounded-background and box planners need from the browser. */
 export type AssBackgroundMetrics = {
   isReady: () => boolean;
   lineRatio: () => number;
@@ -132,9 +133,9 @@ type AssTrackOptions = {
    */
   sourceViewport?: AssSourceViewport;
   /**
-   * Draw rounded backgrounds as vector shapes where possible. Defaults to true.
-   * When false (or when the font cannot be measured) the square BorderStyle=3
-   * box is used instead.
+   * Draw rounded backgrounds, sized boxes and rotation as vector shapes where
+   * possible. Defaults to true. When false (or when the font cannot be
+   * measured) the plain layout is used instead.
    */
   roundedBackgrounds?: boolean;
   /** Test hook. Defaults to the browser font metrics. */
@@ -147,6 +148,11 @@ type RoundedBackgroundPlan = {
   height: number;
   radius: number;
 };
+
+type RenderPlan =
+  | { kind: "plain" }
+  | { kind: "rounded"; box: RoundedBackgroundPlan }
+  | { kind: "boxed"; geometry: SubtitleBoxGeometry; radius: number };
 
 function hasSubtitleBackground(subtitle: Subtitle): boolean {
   return !!subtitle.backgroundColor && subtitle.backgroundColor !== "transparent";
@@ -183,11 +189,59 @@ function planRoundedBackground(
   return { width: size.width, height: size.height, radius };
 }
 
+/*
+ * A subtitle with a box width or a rotation is laid out by the app, not by
+ * libass: lines are wrapped to the box, and the text and its background are
+ * rotated together around the box centre.
+ */
+function planSubtitle(
+  subtitle: Subtitle,
+  frameWidthDesign: number,
+  metrics: AssBackgroundMetrics,
+  roundedAllowed: boolean,
+): RenderPlan {
+  const wantsBox = (subtitle.boxWidth ?? 0) > 0 || (subtitle.rotation ?? 0) !== 0;
+
+  if (wantsBox && roundedAllowed && metrics.isReady()) {
+    const lineRatio = metrics.lineRatio();
+    if (Number.isFinite(lineRatio) && lineRatio > 0) {
+      const geometry = computeSubtitleBox({
+        text: subtitle.text,
+        fontSize: subtitle.fontSize ?? 24,
+        italic: !!subtitle.isItalic,
+        textAlign: subtitle.textAlign ?? "center",
+        positionX: subtitle.positionX ?? 50,
+        positionY: subtitle.positionY ?? 80,
+        boxWidth: subtitle.boxWidth,
+        rotation: subtitle.rotation,
+        lineRatio,
+        measureLine: metrics.measureLine,
+      });
+      return {
+        kind: "boxed",
+        geometry,
+        radius: clampBackgroundRadius(subtitle.backgroundRadius),
+      };
+    }
+  }
+
+  const rounded = roundedAllowed
+    ? planRoundedBackground(subtitle, frameWidthDesign, metrics)
+    : null;
+  return rounded ? { kind: "rounded", box: rounded } : { kind: "plain" };
+}
+
+/** True when the background is a separate vector shape behind the text. */
+function drawsOwnBackground(subtitle: Subtitle, plan: RenderPlan): boolean {
+  if (plan.kind === "rounded") return true;
+  return plan.kind === "boxed" && hasSubtitleBackground(subtitle);
+}
+
 function createStyle(
   index: number,
   subtitle: Subtitle,
   designScale: number,
-  rounded: boolean,
+  separateBackground: boolean,
 ): string {
   const fontFamily = sanitizeStyleValue(
     resolveAssFontFamily(subtitle.fontFamily),
@@ -209,15 +263,16 @@ function createStyle(
   /*
    * Square background: BorderStyle=3 uses OutlineColour as the opaque box
    * colour and Outline as the box padding.
-   * Rounded background: the box is a separate vector shape, so the text itself
-   * uses BorderStyle=1 with no outline.
+   * Separate background (rounded or sized box): the box is its own vector
+   * shape, so the text uses BorderStyle=1 with no outline.
    */
-  const borderStyle = rounded ? 1 : hasBackground ? 3 : 1;
-  const outline = rounded
+  const borderStyle = separateBackground ? 1 : hasBackground ? 3 : 1;
+  const outline = separateBackground
     ? 0
     : (hasBackground ? SUBTITLE_BACKGROUND_PADDING : 2) * designScale;
   const shadow = 0;
-  const outlineColor = !rounded && hasBackground ? backgroundColor : "&H00000000";
+  const outlineColor =
+    !separateBackground && hasBackground ? backgroundColor : "&H00000000";
 
   return [
     `Style: Subtitle${index}`,
@@ -246,7 +301,7 @@ function createStyle(
   ].join(",");
 }
 
-/** Style used only to colour the drawn rounded box. */
+/** Style used only to colour the drawn background box. */
 function createBackgroundStyle(index: number, subtitle: Subtitle): string {
   const fontFamily = sanitizeStyleValue(
     resolveAssFontFamily(subtitle.fontFamily),
@@ -292,10 +347,55 @@ function createDialogues(
   playResHeight: number,
   sourceViewport: AssSourceViewport,
   designScale: number,
-  plan: RoundedBackgroundPlan | null,
+  plan: RenderPlan,
 ): string[] {
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
+  const alignment = getAlignment(subtitle.textAlign);
+  const layer = subtitleLayer(subtitle);
+
+  // Each track keeps two layers: the background below, the text above.
+  const backgroundLayer = layer * 2;
+  const textLayer = layer * 2 + 1;
+  const lines: string[] = [];
+
+  if (plan.kind === "boxed") {
+    const g = plan.geometry;
+    const toOutput = (canvasX: number, canvasY: number) =>
+      canvasPercentToOutputPoint(
+        (canvasX / ASS_WIDTH) * 100,
+        (canvasY / ASS_HEIGHT) * 100,
+        sourceViewport,
+        playResWidth,
+        playResHeight,
+      );
+
+    const center = toOutput(g.centerX, g.centerY);
+    const anchor = toOutput(g.textAnchorX, g.centerY);
+    // Positive rotation is clockwise in the editor, counter-clockwise in ASS.
+    const rotate =
+      g.rotation !== 0
+        ? `\\org(${center.x.toFixed(2)},${center.y.toFixed(2)})\\frz${(-g.rotation).toFixed(2)}`
+        : "";
+
+    if (hasSubtitleBackground(subtitle)) {
+      const path = roundedRectPath(
+        g.width * designScale,
+        g.height * designScale,
+        plan.radius * designScale,
+      );
+      lines.push(
+        `Dialogue: ${backgroundLayer},${start},${end},Background${index},,0,0,0,,{\\an5\\pos(${center.x.toFixed(2)},${center.y.toFixed(2)})${rotate}\\p1}${path}{\\p0}`,
+      );
+    }
+
+    // \q2: no automatic wrapping. The lines were wrapped to the box already.
+    const text = g.lines.map(escapeAssText).join("\\N");
+    lines.push(
+      `Dialogue: ${textLayer},${start},${end},Subtitle${index},,0,0,0,,{\\an${alignment}\\q2\\pos(${anchor.x.toFixed(2)},${anchor.y.toFixed(2)})${rotate}}${text}`,
+    );
+    return lines;
+  }
 
   // Map the authored canonical Program-space point through the same centered
   // crop used for video export. Values are intentionally allowed outside the
@@ -309,25 +409,17 @@ function createDialogues(
     playResHeight,
   );
 
-  const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
-  const layer = subtitleLayer(subtitle);
-
-  // Each track keeps two layers: the background below, the text above.
-  const backgroundLayer = layer * 2;
-  const textLayer = layer * 2 + 1;
-
   const override = `{\\an${alignment}\\pos(${x.toFixed(2)},${y.toFixed(2)})}`;
-  const lines: string[] = [];
 
-  if (plan) {
+  if (plan.kind === "rounded") {
     const offset =
       backgroundAnchorOffset(subtitle.textAlign, SUBTITLE_BACKGROUND_PADDING) *
       designScale;
     const path = roundedRectPath(
-      plan.width * designScale,
-      plan.height * designScale,
-      plan.radius * designScale,
+      plan.box.width * designScale,
+      plan.box.height * designScale,
+      plan.box.radius * designScale,
     );
     lines.push(
       `Dialogue: ${backgroundLayer},${start},${end},Background${index},,0,0,0,,{\\an${alignment}\\pos(${(x + offset).toFixed(2)},${y.toFixed(2)})\\p1}${path}{\\p0}`,
@@ -387,16 +479,14 @@ export function buildAssTrack(
   const roundedAllowed = options.roundedBackgrounds !== false;
   const metrics = options.backgroundMetrics ?? BROWSER_BACKGROUND_METRICS;
   const plans = sorted.map((subtitle) =>
-    roundedAllowed
-      ? planRoundedBackground(subtitle, safeSourceViewport.width, metrics)
-      : null,
+    planSubtitle(subtitle, safeSourceViewport.width, metrics, roundedAllowed),
   );
 
   const styles = sorted
     .flatMap((subtitle, index) => {
-      const rounded = plans[index] !== null;
-      const lines = [createStyle(index, subtitle, designScale, rounded)];
-      if (rounded) lines.push(createBackgroundStyle(index, subtitle));
+      const separate = drawsOwnBackground(subtitle, plans[index]);
+      const lines = [createStyle(index, subtitle, designScale, separate)];
+      if (separate) lines.push(createBackgroundStyle(index, subtitle));
       return lines;
     })
     .join("\n");

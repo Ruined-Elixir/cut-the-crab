@@ -1,3 +1,4 @@
+import type { SubtitleBoxPatch } from "../../utils/subtitleBox";
 import ToolbarMenu, { type ToolbarMenuItem } from "../common/ToolbarMenu";
 import { hitTestLayers, type HitTestLayer } from "../../utils/programHitTest";
 import {
@@ -189,6 +190,7 @@ type VideoPlayerProps = {
     positionX: number,
     positionY: number,
   ) => void;
+  onSubtitleBoxChange?: (id: string, patch: SubtitleBoxPatch) => void;
 
 };
 
@@ -849,6 +851,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       interactiveSubtitleIds,
       onSubtitleSelect,
       onSubtitlePositionChange,
+      onSubtitleBoxChange,
     },
     ref,
   ) {
@@ -5254,6 +5257,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 shellRef={shellRef}
                 onSubtitleSelect={onSubtitleSelect}
                 onSubtitlePositionChange={onSubtitlePositionChange}
+                onSubtitleBoxChange={onSubtitleBoxChange}
               />
             </div>
 

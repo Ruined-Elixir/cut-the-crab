@@ -1,3 +1,4 @@
+import type { SubtitleBoxPatch } from "./utils/subtitleBox";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -716,6 +717,7 @@ function App() {
 
     updateSubtitleText,
     updateSubtitlePosition,
+    updateSubtitleBox,
     updateSubtitleStyle,
     updateSubtitleStyles,
 
@@ -3236,6 +3238,13 @@ function App() {
       return;
     }
     updateSubtitlePosition(id, positionX, positionY);
+  };
+
+  const updateSubtitleBoxIfEditable = (id: string, patch: SubtitleBoxPatch) => {
+    const subtitle = subtitles.find((item) => item.id === id);
+    if (!subtitle || trackSettings[getSubtitleTrackId(subtitle)]?.locked) return;
+    markNextChangeImmediate();
+    updateSubtitleBox(id, patch);
   };
 
   const updateSubtitleStyleWithSelection = (
@@ -6004,6 +6013,7 @@ function App() {
             interactiveSubtitleIds={programInteractiveSubtitleIds}
             onSubtitleSelect={handleProgramSubtitleSelect}
             onSubtitlePositionChange={updateSubtitlePositionIfEditable}
+            onSubtitleBoxChange={updateSubtitleBoxIfEditable}
           />
         </section>
         <WorkspaceSplitter id="subtitle" layout={workspaceLayout} />

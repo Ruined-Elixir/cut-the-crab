@@ -24,7 +24,9 @@ import {
 
 import type { RenderedVideoRect } from "../../utils/videoGeometry";
 import { subtitleCanvasRect } from "../../utils/subtitleCanvas";
-import { ensureSubtitleFontLoaded } from "../../utils/subtitleTextMetrics";
+import { ensureSubtitleFontLoaded, getSubtitleLineRatio, measureSubtitleLine } from "../../utils/subtitleTextMetrics";
+import { applyBoxPatch, computeSubtitleBox, normalizeRotation, type SubtitleBoxPatch } from "../../utils/subtitleBox";
+import SubtitleBoxFrame from "./SubtitleBoxFrame";
 import {
   PROGRAM_FRAME_SNAP_THRESHOLD_PX,
   programFrameSnapLines,
@@ -57,6 +59,17 @@ type VideoSubtitleOverlayProps = {
     positionX: number,
     positionY: number,
   ) => void;
+  onSubtitleBoxChange?: (id: string, patch: SubtitleBoxPatch) => void;
+};
+
+type BoxDraft = {
+  subtitleId: string;
+  patch: SubtitleBoxPatch;
+  kind: "resize" | "rotate" | "scale";
+  factor: number;
+  baseRotation: number;
+  originX: number;
+  originY: number;
 };
 
 type DraftPosition = {
@@ -123,6 +136,7 @@ function VideoSubtitleOverlay({
   shellRef,
   onSubtitleSelect,
   onSubtitlePositionChange,
+  onSubtitleBoxChange,
 }: VideoSubtitleOverlayProps) {
   const [renderedVideoRect, setRenderedVideoRect] =
     useState<RenderedVideoRect | null>(null);
@@ -146,6 +160,9 @@ function VideoSubtitleOverlay({
   const [draftPosition, setDraftPosition] = useState<DraftPosition | null>(
     null,
   );
+  const [boxDraft, setBoxDraft] = useState<BoxDraft | null>(null);
+  const boxDraftRef = useRef<BoxDraft | null>(null);
+  const boxDraftTimerRef = useRef<number | null>(null);
   const [subtitleSnapGuides, setSubtitleSnapGuides] = useState<
     ProgramSnapGuide[]
   >([]);
@@ -329,8 +346,6 @@ function VideoSubtitleOverlay({
     lastWorkerSyncAtRef.current = performance.now();
   }, [activeSubtitle?.id]);
 
-  const previewScale = (renderedVideoRect?.height ?? ASS_HEIGHT) / ASS_HEIGHT;
-
   const effectivePosition =
     activeSubtitle && draftPosition?.subtitleId === activeSubtitle.id
       ? {
@@ -344,69 +359,19 @@ function VideoSubtitleOverlay({
           }
         : null;
 
-  const positionStyle =
-    activeSubtitle && effectivePosition
-      ? {
-          left: renderedVideoRect
-            ? `${
-                renderedVideoRect.left +
-                renderedVideoRect.width * (effectivePosition.positionX / 100)
-              }px`
-            : `${effectivePosition.positionX}%`,
-
-          top: renderedVideoRect
-            ? `${
-                renderedVideoRect.top +
-                renderedVideoRect.height * (effectivePosition.positionY / 100)
-              }px`
-            : `${effectivePosition.positionY}%`,
-        }
-      : undefined;
-
-  /*
-   * Transparent DOM proxy used only as the subtitle move handle.
-   *
-   * The box mirrors the canonical libass background geometry:
-   * - background subtitles get the same 8-design-pixel box padding
-   * - transparent subtitles have no synthetic padding
-   *
-   * The proxy itself stays transparent so the libass canvas remains the only
-   * visible subtitle renderer.
-   */
-  const interactionStyle =
-    activeSubtitle && positionStyle
-      ? ({
-          ...positionStyle,
-
-          maxWidth: renderedVideoRect
-            ? `${renderedVideoRect.width * 0.92}px`
-            : "92%",
-
-          fontSize: `${(activeSubtitle.fontSize ?? 24) * previewScale}px`,
-          fontFamily: activeSubtitle.fontFamily ?? DEFAULT_ASS_FONT_FAMILY,
-          fontWeight: activeSubtitle.isBold ? 700 : 400,
-          fontStyle: activeSubtitle.isItalic ? "italic" : "normal",
-          lineHeight: 1,
-          padding:
-            activeSubtitle.backgroundColor &&
-            activeSubtitle.backgroundColor !== "transparent"
-              ? `${8 * previewScale}px`
-              : "0px",
-          textAlign: activeSubtitle.textAlign ?? "center",
-
-          color: "transparent",
-          backgroundColor: "transparent",
-          textDecoration: activeSubtitle.isUnderlined ? "underline" : "none",
-          textShadow: "none",
-        } as CSSProperties)
-      : undefined;
-
   /*
    * Translate the exact libass canvas during drag instead of showing CSS text.
    * Translation stays active after pointer-up until the rebuilt ASS renderer
    * is ready, preventing a snap back to the old position.
    */
   const dragCanvasTransform = useMemo(() => {
+    if (boxDraft && activeSubtitle && boxDraft.subtitleId === activeSubtitle.id) {
+      if (boxDraft.kind === "rotate") {
+        const delta = normalizeRotation((boxDraft.patch.rotation ?? 0) - boxDraft.baseRotation);
+        return `rotate(${delta}deg)`;
+      }
+      if (boxDraft.kind === "scale") return `scale(${boxDraft.factor})`;
+    }
     if (
       !activeSubtitle ||
       !draftPosition ||
@@ -435,7 +400,10 @@ function VideoSubtitleOverlay({
       renderedVideoRect.height;
 
     return `translate(${deltaX}px, ${deltaY}px)`;
-  }, [activeSubtitle, draftPosition, renderedVideoRect]);
+  }, [activeSubtitle, draftPosition, renderedVideoRect, boxDraft]);
+
+  const dragCanvasOrigin = boxDraft && activeSubtitle && boxDraft.subtitleId === activeSubtitle.id && (boxDraft.kind === "rotate" || boxDraft.kind === "scale")
+    ? `${boxDraft.originX}px ${boxDraft.originY}px` : undefined;
 
   const subtitleFrameStyle: CSSProperties = renderedVideoRect
     ? {
@@ -461,12 +429,14 @@ function VideoSubtitleOverlay({
     opacity: frontCanvasIndex === 0 ? 1 : 0,
     transform:
       frontCanvasIndex === 0 ? dragCanvasTransform : "translate(0px, 0px)",
+    transformOrigin: frontCanvasIndex === 0 ? dragCanvasOrigin : undefined,
   };
 
   const canvas1Style: CSSProperties = {
     opacity: frontCanvasIndex === 1 ? 1 : 0,
     transform:
       frontCanvasIndex === 1 ? dragCanvasTransform : "translate(0px, 0px)",
+    transformOrigin: frontCanvasIndex === 1 ? dragCanvasOrigin : undefined,
   };
 
   useEffect(() => {
@@ -477,6 +447,8 @@ function VideoSubtitleOverlay({
     if (!activeSubtitle) {
       setDraftPosition(null);
       draftPositionRef.current = null;
+      boxDraftRef.current = null;
+      setBoxDraft(null);
       setSubtitleSnapGuides([]);
     }
   }, [activeSubtitle]);
@@ -733,6 +705,66 @@ function VideoSubtitleOverlay({
     [subtitles, fontReady],
   );
 
+  // Use the identical glyph metrics and wrap rules as ASS generation.
+  const boxMetrics = fontReady
+    ? { lineRatio: getSubtitleLineRatio(), measureLine: measureSubtitleLine }
+    : { lineRatio: 1.3, measureLine: (line: string, emPx: number) => line.length * emPx * 0.55 };
+  const boxSubtitle = activeSubtitle ? {
+    ...activeSubtitle,
+    ...(effectivePosition ?? {}),
+    ...(boxDraft?.subtitleId === activeSubtitle.id ? boxDraft.patch : {}),
+  } : null;
+  const boxInput = boxSubtitle ? {
+    text: boxSubtitle.text,
+    fontSize: boxSubtitle.fontSize ?? 24,
+    italic: !!boxSubtitle.isItalic,
+    textAlign: boxSubtitle.textAlign ?? ("center" as const),
+    positionX: boxSubtitle.positionX ?? 50,
+    positionY: boxSubtitle.positionY ?? 80,
+    boxWidth: boxSubtitle.boxWidth,
+    rotation: boxSubtitle.rotation,
+    ...boxMetrics,
+  } : null;
+  const boxGeometry = boxInput ? computeSubtitleBox(boxInput) : null;
+  const autoBoxGeometry = boxInput ? computeSubtitleBox({ ...boxInput, boxWidth: undefined, rotation: 0 }) : null;
+
+  const clearBoxDraft = () => {
+    if (boxDraftTimerRef.current !== null) {
+      window.clearTimeout(boxDraftTimerRef.current);
+      boxDraftTimerRef.current = null;
+    }
+    boxDraftRef.current = null;
+    setBoxDraft(null);
+  };
+  const handleBoxDraft = (
+    patch: SubtitleBoxPatch | null,
+    kind: "resize" | "rotate" | "scale",
+    hint?: { originX: number; originY: number; scale?: number },
+  ) => {
+    if (!activeSubtitle || !boxGeometry) return;
+    if (!patch) { clearBoxDraft(); return; }
+    const previous = boxDraftRef.current;
+    const same = previous?.subtitleId === activeSubtitle.id && previous.kind === kind ? previous : null;
+    const frameScale = renderedVideoRect ? renderedVideoRect.width / ASS_WIDTH : 1;
+    const next: BoxDraft = {
+      subtitleId: activeSubtitle.id,
+      patch,
+      kind,
+      baseRotation: same?.baseRotation ?? (activeSubtitle.rotation ?? 0),
+      originX: hint?.originX ?? same?.originX ?? boxGeometry.centerX * frameScale,
+      originY: hint?.originY ?? same?.originY ?? boxGeometry.centerY * frameScale,
+      factor: hint?.scale ?? 1,
+    };
+    boxDraftRef.current = next;
+    setBoxDraft(next);
+  };
+  const handleBoxCommit = (patch: SubtitleBoxPatch) => {
+    if (!activeSubtitle || !onSubtitleBoxChange) { clearBoxDraft(); return; }
+    onSubtitleBoxChange(activeSubtitle.id, patch);
+    if (boxDraftTimerRef.current !== null) window.clearTimeout(boxDraftTimerRef.current);
+    boxDraftTimerRef.current = window.setTimeout(clearBoxDraft, 2500);
+  };
+
   /*
    * Double-buffered libass refresh.
    *
@@ -834,6 +866,9 @@ function VideoSubtitleOverlay({
                 setFrontCanvasIndex(backIndex);
                 setDraftPosition(null);
                 draftPositionRef.current = null;
+                boxDraftRef.current = null;
+                setBoxDraft(null);
+                if (boxDraftTimerRef.current !== null) window.clearTimeout(boxDraftTimerRef.current);
 
                 disposeFrame = window.requestAnimationFrame(() => {
                   if (oldFrontIndex === backIndex) return;
@@ -930,38 +965,32 @@ function VideoSubtitleOverlay({
           />
         </div>
 
-        {activeSubtitle && interactionStyle ? (
-          <button
-            ref={interactionButtonRef}
-            className={[
-              "video-subtitle-interaction",
-              selectedSubtitleId === activeSubtitle.id ? "selected" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            style={interactionStyle}
-            onPointerDown={handleSubtitlePointerDown}
-            onMouseDown={(event) => {
-              if (event.button !== 0) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-            onAuxClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onDragStart={(event) => event.preventDefault()}
-            type="button"
-            aria-label={`Move subtitle: ${activeSubtitle.text}`}
-            title="Drag to move subtitle"
+        {activeSubtitle && boxInput && boxGeometry && autoBoxGeometry && renderedVideoRect ? (
+          <SubtitleBoxFrame
+            geometry={boxGeometry}
+            autoGeometry={autoBoxGeometry}
+            fontSize={boxInput.fontSize}
+            layoutFor={(patch) => computeSubtitleBox(applyBoxPatch(boxInput, patch))}
+            frameRect={renderedVideoRect}
+            shellRef={shellRef}
+            selected={selectedSubtitleId === activeSubtitle.id}
+            editable={!!onSubtitleBoxChange}
+            onDraft={handleBoxDraft}
+            onCommit={handleBoxCommit}
           >
-            {activeSubtitle.text}
-          </button>
+            <button
+              ref={interactionButtonRef}
+              type="button"
+              className="sbx-move"
+              onPointerDown={handleSubtitlePointerDown}
+              onMouseDown={(event) => { if (event.button !== 0) { event.preventDefault(); event.stopPropagation(); } }}
+              onAuxClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              onDragStart={(event) => event.preventDefault()}
+              aria-label={`Move subtitle ${activeSubtitle.text}`}
+              title={`Drag to move subtitle ${activeSubtitle.text}`}
+            />
+          </SubtitleBoxFrame>
         ) : null}
       </div>
 
