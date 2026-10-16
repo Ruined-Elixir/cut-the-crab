@@ -7,13 +7,16 @@ import type {
 } from "../../types/subtitle";
 
 import { DEFAULT_ASS_FONT_FAMILY } from "../../utils/assSubtitles";
+import { MAX_FONT_SIZE, MIN_FONT_SIZE } from "../../utils/subtitlePresets";
 
-import SubtitlePresetsSection from "./SubtitlePresetsSection";
 import SubtitleBackgroundSection from "./SubtitleBackgroundSection";
+import SubtitlePresetsSection from "./SubtitlePresetsSection";
 
-import "./SubtitleInspector.css";
+import "./SubtitleInspectorTabs.css";
 
 type SubtitleAppearanceScope = "track" | "all";
+
+type InspectorTab = "presets" | "text" | "background";
 
 type SubtitleInspectorProps = {
   subtitle: Subtitle | null;
@@ -29,13 +32,44 @@ type SubtitleInspectorProps = {
 
 const FONT_OPTIONS = [DEFAULT_ASS_FONT_FAMILY];
 
-function AlignmentIcon({ alignment }: { alignment: SubtitleTextAlign }) {
+const TABS: Array<{ id: InspectorTab; label: string }> = [
+  { id: "presets", label: "Presets" },
+  { id: "text", label: "Text" },
+  { id: "background", label: "Background" },
+];
+
+const ALIGNMENTS: Array<{ id: SubtitleTextAlign; label: string }> = [
+  { id: "left", label: "Left" },
+  { id: "center", label: "Center" },
+  { id: "right", label: "Right" },
+];
+
+type ColorFieldProps = {
+  label: string;
+  value: string;
+  transparent?: boolean;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+};
+
+/* A labelled swatch. The native colour input covers it, so a click anywhere
+   on the swatch opens the picker. */
+function ColorField({ label, value, transparent, disabled, onChange }: ColorFieldProps) {
   return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      {alignment === "left" && <path d="M3 5h12M3 9h8M3 13h10" />}
-      {alignment === "center" && <path d="M3 5h12M5 9h8M4 13h10" />}
-      {alignment === "right" && <path d="M3 5h12M7 9h8M5 13h10" />}
-    </svg>
+    <label className={`si-color${disabled ? " disabled" : ""}`}>
+      <span
+        className={`si-color-chip${transparent ? " transparent" : ""}`}
+        style={transparent ? undefined : { background: value }}
+      />
+      <span className="si-color-label">{label}</span>
+      <input
+        type="color"
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -45,6 +79,8 @@ function SubtitleInspector({
   onStyleChange,
   onApplyAppearance,
 }: SubtitleInspectorProps) {
+  const [tab, setTab] = useState<InspectorTab>("presets");
+
   const fontSize = subtitle?.fontSize ?? 24;
   const fontFamily = subtitle?.fontFamily ?? DEFAULT_ASS_FONT_FAMILY;
   const color = subtitle?.color ?? "#ffffff";
@@ -54,6 +90,7 @@ function SubtitleInspector({
   const isItalic = subtitle?.isItalic ?? false;
   const isUnderlined = subtitle?.isUnderlined ?? false;
   const textAlign = subtitle?.textAlign ?? "center";
+  const hasBackground = backgroundColor !== "transparent";
 
   const [fontSizeInput, setFontSizeInput] = useState(String(fontSize));
 
@@ -74,8 +111,8 @@ function SubtitleInspector({
       textAlign,
     }),
     [
-      backgroundRadius,
       backgroundColor,
+      backgroundRadius,
       color,
       fontFamily,
       fontSize,
@@ -86,99 +123,89 @@ function SubtitleInspector({
     ],
   );
 
-  const commitFontSize = () => {
-    if (!subtitle) {
-      return;
-    }
+  if (!subtitle) {
+    return (
+      <div className="subtitle-inspector si-panel si-empty">
+        <p>Select a subtitle to edit its appearance.</p>
+      </div>
+    );
+  }
 
-    const parsed = Number(fontSizeInput);
+  const apply = (style: SubtitleStyle) => onStyleChange(subtitle.id, style);
 
+  const commitFontSize = (raw: string) => {
+    const parsed = Number(raw);
     if (!Number.isFinite(parsed)) {
       setFontSizeInput(String(fontSize));
       return;
     }
-
-    const next = Math.max(10, Math.min(96, Math.round(parsed)));
-
+    const next = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(parsed)));
     setFontSizeInput(String(next));
-
-    if (next !== fontSize) {
-      onStyleChange(subtitle.id, {
-        fontSize: next,
-      });
-    }
+    if (next !== fontSize) apply({ fontSize: next });
   };
 
-  if (!subtitle) {
-    return (
-      <section
-        className="subtitle-inspector empty"
-        aria-label="Subtitle inspector"
-      >
-        <div className="subtitle-inspector-heading">
-          <div>
-            <span className="subtitle-inspector-eyebrow">Inspector</span>
-            <h3>No Selection</h3>
-          </div>
-        </div>
-
-        <div className="subtitle-inspector-empty-state">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="5" width="16" height="14" rx="2.5" />
-            <path d="M8 10h8M8 14h5" />
-          </svg>
-
-          <p>Select a subtitle to edit its appearance.</p>
-        </div>
-      </section>
-    );
-  }
+  // Approximate preview only: the real box is drawn by libass at export size.
+  const previewSize = Math.max(11, Math.min(24, Math.round(fontSize * 0.5)));
 
   const selectionLabel =
-    selectedCount > 1
-      ? `${selectedCount} Subtitles Selected`
-      : "1 Subtitle Selected";
+    selectedCount > 1 ? `${selectedCount} subtitles selected` : "1 subtitle selected";
 
   return (
-    <section className="subtitle-inspector" aria-label="Subtitle inspector">
-      <div className="subtitle-inspector-heading">
-        <div>
-          <span className="subtitle-inspector-eyebrow">Inspector</span>
-          <h3>Appearance</h3>
+    <div className="subtitle-inspector si-panel">
+      <div className="si-header">
+        <div
+          className="si-preview"
+          style={{
+            color,
+            background: hasBackground ? backgroundColor : "rgba(255,255,255,0.06)",
+            borderRadius: hasBackground ? Math.round(backgroundRadius * 0.5) : 6,
+            fontFamily: `"${fontFamily}", sans-serif`,
+            fontSize: previewSize,
+            fontWeight: isBold ? 700 : 400,
+            fontStyle: isItalic ? "italic" : "normal",
+            textDecoration: isUnderlined ? "underline" : "none",
+          }}
+          title="Approximate preview"
+        >
+          Aa 字幕
         </div>
-
-        <span className="subtitle-inspector-selection-count">
-          {selectionLabel}
-        </span>
+        <div className="si-header-text">
+          <span className="si-title">Appearance</span>
+          <span className="si-count">
+            {selectionLabel}
+            {selectedCount > 1 ? ". Changes apply to all." : ""}
+          </span>
+        </div>
       </div>
 
-      <div className="subtitle-inspector-scroll">
-        <section className="inspector-section inspector-appearance-section">
-          <div className="inspector-section-header">
-            <span>Appearance</span>
+      <div className="si-tabs" role="tablist" aria-label="Subtitle appearance">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`si-tab${tab === item.id ? " active" : ""}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-            {selectedCount > 1 && (
-              <span className="inspector-section-note">
-                Applies to selection
-              </span>
-            )}
-          </div>
+      <div className="si-content" role="tabpanel">
+        {tab === "presets" && (
+          <SubtitlePresetsSection currentStyle={appearanceStyle} onApply={apply} />
+        )}
 
-          <div className="inspector-compact-fields">
-            <label className="inspector-compact-field inspector-font-field">
-              <span>Font</span>
+        {tab === "text" && (
+          <>
+            <div className="si-field">
+              <span className="si-field-label">Font</span>
               <select
-                className="inspector-control inspector-font-control"
-                value={
-                  FONT_OPTIONS.includes(fontFamily)
-                    ? fontFamily
-                    : DEFAULT_ASS_FONT_FAMILY
-                }
-                onChange={(event) =>
-                  onStyleChange(subtitle.id, {
-                    fontFamily: event.target.value,
-                  })
-                }
+                className="si-select"
+                value={fontFamily}
+                onChange={(event) => apply({ fontFamily: event.target.value })}
               >
                 {FONT_OPTIONS.map((font) => (
                   <option key={font} value={font}>
@@ -186,27 +213,31 @@ function SubtitleInspector({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <label className="inspector-compact-field inspector-size-field">
-              <span>Size</span>
-              <div className="inspector-number-wrap">
+            <div className="si-field">
+              <span className="si-field-label">Size</span>
+              <div className="si-stepper">
+                <button
+                  type="button"
+                  aria-label="Smaller"
+                  disabled={fontSize <= MIN_FONT_SIZE}
+                  onClick={() => commitFontSize(String(fontSize - 1))}
+                >
+                  -
+                </button>
                 <input
-                  className="inspector-control inspector-size-control"
-                  type="number"
-                  min={10}
-                  max={96}
-                  step={1}
                   value={fontSizeInput}
+                  inputMode="numeric"
+                  aria-label="Font size"
                   onChange={(event) => setFontSizeInput(event.target.value)}
-                  onBlur={commitFontSize}
+                  onBlur={() => commitFontSize(fontSizeInput)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      commitFontSize();
+                      commitFontSize(fontSizeInput);
                       event.currentTarget.blur();
                     }
-
                     if (event.key === "Escape") {
                       event.preventDefault();
                       setFontSizeInput(String(fontSize));
@@ -214,227 +245,125 @@ function SubtitleInspector({
                     }
                   }}
                 />
-                <span>pt</span>
-              </div>
-            </label>
-          </div>
-
-          <div className="inspector-tool-row">
-            <div className="inspector-tool-group">
-              <span className="inspector-tool-label">Colour</span>
-
-              <label
-                className="inspector-color-tool"
-                title="Text colour"
-                aria-label="Text colour"
-              >
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(event) =>
-                    onStyleChange(subtitle.id, {
-                      color: event.target.value,
-                    })
-                  }
-                />
-                <span className="inspector-color-tool-letter">A</span>
-                <span
-                  className="inspector-color-tool-bar"
-                  style={{ backgroundColor: color }}
-                />
-              </label>
-
-              <label
-                className={[
-                  "inspector-color-tool",
-                  "background",
-                  backgroundColor === "transparent" ? "transparent" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                title="Background colour"
-                aria-label="Background colour"
-              >
-                <input
-                  type="color"
-                  value={
-                    backgroundColor === "transparent"
-                      ? "#000000"
-                      : backgroundColor
-                  }
-                  onChange={(event) =>
-                    onStyleChange(subtitle.id, {
-                      backgroundColor: event.target.value,
-                    })
-                  }
-                />
-                <span
-                  className="inspector-color-tool-letter background-letter"
-                  style={
-                    backgroundColor === "transparent"
-                      ? undefined
-                      : { backgroundColor }
-                  }
+                <button
+                  type="button"
+                  aria-label="Larger"
+                  disabled={fontSize >= MAX_FONT_SIZE}
+                  onClick={() => commitFontSize(String(fontSize + 1))}
                 >
-                  A
-                </span>
-                <span
-                  className="inspector-color-tool-bar"
-                  style={{
-                    backgroundColor:
-                      backgroundColor === "transparent"
-                        ? "transparent"
-                        : backgroundColor,
-                  }}
-                />
-              </label>
-
-              <button
-                type="button"
-                className="inspector-mini-button inspector-clear-background"
-                title="Remove background colour"
-                aria-label="Remove background colour"
-                disabled={backgroundColor === "transparent"}
-                onClick={() =>
-                  onStyleChange(subtitle.id, {
-                    backgroundColor: "transparent",
-                  })
-                }
-              >
-                ∅
-              </button>
+                  +
+                </button>
+              </div>
+              <span className="si-unit">pt</span>
             </div>
 
-            <div className="inspector-tool-group">
-              <span className="inspector-tool-label">Style</span>
-
-              <button
-                type="button"
-                className={[
-                  "inspector-mini-button",
-                  isBold ? "active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label="Bold"
-                title="Bold"
-                aria-pressed={isBold}
-                onClick={() =>
-                  onStyleChange(subtitle.id, {
-                    isBold: !isBold,
-                  })
-                }
-              >
-                <strong>B</strong>
-              </button>
-
-              <button
-                type="button"
-                className={[
-                  "inspector-mini-button",
-                  isItalic ? "active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label="Italic"
-                title="Italic"
-                aria-pressed={isItalic}
-                onClick={() =>
-                  onStyleChange(subtitle.id, {
-                    isItalic: !isItalic,
-                  })
-                }
-              >
-                <em>I</em>
-              </button>
-
-              <button
-                type="button"
-                className={[
-                  "inspector-mini-button",
-                  isUnderlined ? "active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label="Underline"
-                title="Underline"
-                aria-pressed={isUnderlined}
-                onClick={() =>
-                  onStyleChange(subtitle.id, {
-                    isUnderlined: !isUnderlined,
-                  })
-                }
-              >
-                <span className="inspector-underline-icon">U</span>
-              </button>
+            <div className="si-field">
+              <span className="si-field-label">Color</span>
+              <ColorField
+                label="Text"
+                value={color}
+                onChange={(value) => apply({ color: value })}
+              />
             </div>
-          </div>
 
-          <div className="inspector-alignment-compact-row">
-            <span className="inspector-tool-label">Alignment</span>
+            <div className="si-field">
+              <span className="si-field-label">Style</span>
+              <div className="si-segmented">
+                <button
+                  type="button"
+                  aria-pressed={isBold}
+                  className={isBold ? "active" : ""}
+                  onClick={() => apply({ isBold: !isBold })}
+                >
+                  <b>Bold</b>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={isItalic}
+                  className={isItalic ? "active" : ""}
+                  onClick={() => apply({ isItalic: !isItalic })}
+                >
+                  <i>Italic</i>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={isUnderlined}
+                  className={isUnderlined ? "active" : ""}
+                  onClick={() => apply({ isUnderlined: !isUnderlined })}
+                >
+                  <u>Underline</u>
+                </button>
+              </div>
+            </div>
 
-            <div className="inspector-segmented-control compact">
-              {(["left", "center", "right"] as SubtitleTextAlign[]).map(
-                (alignment) => (
+            <div className="si-field">
+              <span className="si-field-label">Align</span>
+              <div className="si-segmented">
+                {ALIGNMENTS.map((item) => (
                   <button
-                    key={alignment}
+                    key={item.id}
                     type="button"
-                    className={textAlign === alignment ? "active" : ""}
-                    aria-label={`${alignment} align`}
-                    title={`${alignment[0].toUpperCase()}${alignment.slice(1)} align`}
-                    aria-pressed={textAlign === alignment}
-                    onClick={() =>
-                      onStyleChange(subtitle.id, {
-                        textAlign: alignment,
-                      })
-                    }
+                    aria-pressed={textAlign === item.id}
+                    className={textAlign === item.id ? "active" : ""}
+                    onClick={() => apply({ textAlign: item.id })}
                   >
-                    <AlignmentIcon alignment={alignment} />
+                    {item.label}
                   </button>
-                ),
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          </>
+        )}
 
-          <div className="inspector-apply-row">
-            <span className="inspector-tool-label">Apply appearance</span>
-
-            <div className="inspector-apply-actions">
+        {tab === "background" && (
+          <>
+            <div className="si-field">
+              <span className="si-field-label">Fill</span>
+              <ColorField
+                label={hasBackground ? "Background" : "None"}
+                value={hasBackground ? backgroundColor : "#000000"}
+                transparent={!hasBackground}
+                onChange={(value) => apply({ backgroundColor: value })}
+              />
               <button
                 type="button"
-                className="inspector-apply-button"
-                onClick={() =>
-                  onApplyAppearance(subtitle.id, "track", appearanceStyle)
-                }
-                title="Copy this subtitle appearance to every subtitle on the same track"
+                className="si-link"
+                disabled={!hasBackground}
+                onClick={() => apply({ backgroundColor: "transparent" })}
               >
-                Same Track
-              </button>
-
-              <button
-                type="button"
-                className="inspector-apply-button"
-                onClick={() =>
-                  onApplyAppearance(subtitle.id, "all", appearanceStyle)
-                }
-                title="Copy this subtitle appearance to every subtitle"
-              >
-                All Subtitles
+                Remove
               </button>
             </div>
+
+            <SubtitleBackgroundSection
+              radius={backgroundRadius}
+              hasBackground={hasBackground}
+              onChange={(radius) => apply({ backgroundRadius: radius })}
+            />
+          </>
+        )}
+
+        <div className="si-copy">
+          <span className="si-field-label">Copy this look to</span>
+          <div className="si-copy-buttons">
+            <button
+              type="button"
+              onClick={() => onApplyAppearance(subtitle.id, "track", appearanceStyle)}
+              title="Copy this subtitle's appearance to every subtitle on the same track"
+            >
+              Same track
+            </button>
+            <button
+              type="button"
+              onClick={() => onApplyAppearance(subtitle.id, "all", appearanceStyle)}
+              title="Copy this subtitle's appearance to every subtitle"
+            >
+              All subtitles
+            </button>
           </div>
-        </section>
-        <SubtitleBackgroundSection
-          radius={backgroundRadius}
-          hasBackground={backgroundColor !== "transparent"}
-          onChange={(radius) => onStyleChange(subtitle.id, { backgroundRadius: radius })}
-        />
-        <SubtitlePresetsSection
-          currentStyle={appearanceStyle}
-          onApply={(style) => onStyleChange(subtitle.id, style)}
-        />
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 

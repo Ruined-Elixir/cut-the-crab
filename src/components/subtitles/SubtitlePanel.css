@@ -294,3 +294,33 @@
   flex: 1;
   min-height: 0;
 }
+
+/* Resizable divider. The visible line stays 1px; pointer target extends beyond. */
+.subtitle-panel.inspector-expanded .subtitle-panel-divider {
+  position: relative;
+  z-index: 2;
+  cursor: row-resize;
+  touch-action: none;
+  outline: none;
+  transition: background 0.12s ease;
+}
+
+.subtitle-panel.inspector-expanded .subtitle-panel-divider::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+
+.subtitle-panel.inspector-expanded .subtitle-panel-divider:hover,
+.subtitle-panel.inspector-expanded .subtitle-panel-divider.dragging {
+  background: rgba(10, 132, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.75);
+}
+
+.subtitle-panel.inspector-expanded .subtitle-panel-divider:focus-visible {
+  background: rgba(10, 132, 255, 0.75);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.45);
+}

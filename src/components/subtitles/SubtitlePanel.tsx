@@ -6,6 +6,7 @@ import type { Subtitle, SubtitleStyle } from "../../types/subtitle";
 
 import SubtitleInspector from "./SubtitleInspector";
 import SubtitleList from "./SubtitleList";
+import { useInspectorResize } from "./useInspectorResize";
 
 import "./SubtitlePanel.css";
 
@@ -56,6 +57,7 @@ function SubtitlePanel({
   onReveal,
 }: SubtitlePanelProps) {
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
+  const resize = useInspectorResize();
   const currentTime = usePlaybackClockTime();
   const activeSubtitles = subtitles.filter(
     (subtitle) => currentTime >= subtitle.startTime && currentTime < subtitle.endTime,
@@ -68,6 +70,8 @@ function SubtitlePanel({
 
   return (
     <aside
+      ref={resize.panelRef}
+      style={resize.panelStyle(isInspectorExpanded)}
       className={[
         "subtitle-panel",
         isInspectorExpanded ? "inspector-expanded" : "inspector-collapsed",
@@ -134,7 +138,10 @@ function SubtitlePanel({
         />
       </section>
 
-      <div className="subtitle-panel-divider" aria-hidden="true" />
+      <div
+        className={`subtitle-panel-divider${resize.dragging ? " dragging" : ""}`}
+        {...resize.handleProps(isInspectorExpanded)}
+      />
 
       <section className="subtitle-inspector-disclosure">
         <button
