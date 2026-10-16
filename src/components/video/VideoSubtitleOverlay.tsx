@@ -22,10 +22,8 @@ import {
   DEFAULT_ASS_FONT_URL,
 } from "../../utils/assSubtitles";
 
-import {
-  getRenderedVideoRect,
-  type RenderedVideoRect,
-} from "../../utils/videoGeometry";
+import type { RenderedVideoRect } from "../../utils/videoGeometry";
+import { subtitleCanvasRect } from "../../utils/subtitleCanvas";
 import {
   PROGRAM_FRAME_SNAP_THRESHOLD_PX,
   programFrameSnapLines,
@@ -119,7 +117,6 @@ function VideoSubtitleOverlay({
   currentTime,
   isPlaying,
   videoSourceKey = "",
-  clockVideo = null,
   selectedSubtitleId,
   interactiveSubtitleIds,
   shellRef,
@@ -692,46 +689,31 @@ function VideoSubtitleOverlay({
     window.addEventListener("pointercancel", handlePointerUp);
   };
 
-  /*
-   * Keep canvases aligned to the actual displayed video image rather than the
-   * whole shell (which may contain letterbox/pillarbox space).
-   */
+  // Subtitles are anchored to the fixed 16:9 Program canvas, independent of
+  // the aspect ratio or stacking order of the current video clips.
   useEffect(() => {
     const shell = shellRef.current;
+    if (!shell) return;
 
-    if (!shell) {
-      return;
-    }
-
-    const video =
-      clockVideo ?? shell.querySelector<HTMLVideoElement>("video.video-track-layer");
-
-    if (!video) {
-      return;
-    }
-
-    const updateVideoRect = () => {
-      const rect = getRenderedVideoRect(video, shell);
-
-      if (rect) {
-        setRenderedVideoRect(rect);
-      }
+    const updateCanvasRect = () => {
+      const bounds = shell.getBoundingClientRect();
+      const next = subtitleCanvasRect({ width: bounds.width, height: bounds.height });
+      setRenderedVideoRect((previous) =>
+        previous &&
+        Math.abs(previous.left - next.left) < 0.01 &&
+        Math.abs(previous.top - next.top) < 0.01 &&
+        Math.abs(previous.width - next.width) < 0.01 &&
+        Math.abs(previous.height - next.height) < 0.01
+          ? previous
+          : next,
+      );
     };
 
-    updateVideoRect();
-
-    const observer = new ResizeObserver(updateVideoRect);
-
+    updateCanvasRect();
+    const observer = new ResizeObserver(updateCanvasRect);
     observer.observe(shell);
-    observer.observe(video);
-
-    video.addEventListener("loadedmetadata", updateVideoRect);
-
-    return () => {
-      observer.disconnect();
-      video.removeEventListener("loadedmetadata", updateVideoRect);
-    };
-  }, [clockVideo, shellRef, videoSourceKey]);
+    return () => observer.disconnect();
+  }, [shellRef]);
 
   const assContent = useMemo(() => buildAssTrack(subtitles), [subtitles]);
 

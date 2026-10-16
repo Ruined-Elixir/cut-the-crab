@@ -1,7 +1,13 @@
 import { getSubtitleTrackId, type Subtitle } from "../types/subtitle";
 
-export const ASS_WIDTH = 1920;
-export const ASS_HEIGHT = 1080;
+import {
+  SUBTITLE_CANVAS_HEIGHT,
+  SUBTITLE_CANVAS_WIDTH,
+  canvasPercentToOutputPoint,
+} from "./subtitleCanvas";
+
+export const ASS_WIDTH = SUBTITLE_CANVAS_WIDTH;
+export const ASS_HEIGHT = SUBTITLE_CANVAS_HEIGHT;
 
 /*
  * For true preview/export parity, every selectable font should be bundled
@@ -183,17 +189,15 @@ function createDialogue(
   const start = formatAssTime(subtitle.startTime);
   const end = formatAssTime(subtitle.endTime);
 
-  const sourceX = ((subtitle.positionX ?? 50) / 100) * ASS_WIDTH;
-  const sourceY = ((subtitle.positionY ?? 80) / 100) * ASS_HEIGHT;
-
-  // Map the authored canonical Program-space point through the same centered
-  // crop used for video export. Values are intentionally allowed outside the
-  // output frame so libass naturally clips subtitles that sit beyond a chosen
-  // aspect viewport, exactly like the dashed Program Monitor box.
-  const x =
-    ((sourceX - sourceViewport.left) / sourceViewport.width) * playResWidth;
-  const y =
-    ((sourceY - sourceViewport.top) / sourceViewport.height) * playResHeight;
+  // Use the shared canonical-canvas-to-export-viewport mapping. Values beyond
+  // the viewport intentionally remain unclamped for libass to crop.
+  const { x, y } = canvasPercentToOutputPoint(
+    subtitle.positionX ?? 50,
+    subtitle.positionY ?? 80,
+    sourceViewport,
+    playResWidth,
+    playResHeight,
+  );
 
   const alignment = getAlignment(subtitle.textAlign);
   const text = escapeAssText(subtitle.text);
