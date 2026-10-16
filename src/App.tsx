@@ -1,3 +1,4 @@
+import { findPlanConflicts, planVideoPlacement } from "./utils/timelinePlacement";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -1597,6 +1598,7 @@ function App() {
   } | null>(null);
   const lastVideoResizeSubtitleSyncKeyRef = useRef<string | null>(null);
   const latestVideoClipsRef = useRef(videoClips);
+  const placementBusyRef = useRef(false);
   latestVideoClipsRef.current = videoClips;
 
   const syncActiveVideoResizeSubtitles = useCallback(
@@ -2547,6 +2549,14 @@ function App() {
     }));
   };
 
+  const addVideoAudioTrackPair = (videoId: TimelineTrackId, audioId: TimelineTrackId) => {
+    setTrackSettings(current => ({
+      ...current,
+      [videoId]: { ...defaultTrackControlState("video"), linkedTrackId: audioId, deleted: false },
+      [audioId]: { ...defaultTrackControlState("audio"), locked: true, linkedTrackId: videoId, deleted: false },
+    }));
+  };
+
   const handleAddTimelineTrack = (kind: TimelineTrackKind | "video-audio") => {
     markNextChangeImmediate();
 
@@ -2564,20 +2574,7 @@ function App() {
         audioClips,
       );
 
-      setTrackSettings((current) => ({
-        ...current,
-        [videoId]: {
-          ...defaultTrackControlState("video"),
-          linkedTrackId: audioId,
-          deleted: false,
-        },
-        [audioId]: {
-          ...defaultTrackControlState("audio"),
-          locked: true,
-          linkedTrackId: videoId,
-          deleted: false,
-        },
-      }));
+      addVideoAudioTrackPair(videoId, audioId);
       return;
     }
 
@@ -4422,10 +4419,29 @@ function App() {
 
     if (trackKind === "video") {
       if (asset.kind !== "video" || trackSettings[trackId]?.locked) return;
+      if (placementBusyRef.current) return;
+      placementBusyRef.current = true;
+      window.requestAnimationFrame(() => { placementBusyRef.current = false; });
+      const placementInput = {
+        videoClips, audioClips, adjustmentLayers, trackSettings,
+        items: [{ key: "media", sourceTrackId: trackId, start: timelineTime, duration: asset.duration }],
+        preferredTrackId: trackId,
+      };
+      const plan = rippleMode ? null : planVideoPlacement(placementInput);
+      if (plan && findPlanConflicts(placementInput, plan).length) {
+        console.warn("Insert cancelled: timeline placement conflict");
+        return;
+      }
       beginHistoryTransaction();
       clearSubtitleSelection();
       clearAudioClipSelection();
-      insertVideoClipFromMedia(asset, timelineTime, trackId);
+      if (plan) {
+        for (const track of plan.newTracks) addVideoAudioTrackPair(track.videoTrackId, track.audioTrackId);
+        const placement = plan.assignments[0];
+        insertVideoClipFromMedia(asset, placement.start, placement.trackId, { layer: placement.layer });
+      } else {
+        insertVideoClipFromMedia(asset, timelineTime, trackId);
+      }
       window.requestAnimationFrame(() => endHistoryTransaction());
       return;
     }

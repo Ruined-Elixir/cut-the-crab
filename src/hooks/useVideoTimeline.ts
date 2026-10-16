@@ -1,3 +1,4 @@
+import { isVideoRangeFree, snapPlacementRange } from "../utils/timelinePlacement";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProjectMediaAsset } from "../types/project";
@@ -983,6 +984,7 @@ export function useVideoTimeline({
     asset: ProjectMediaAsset,
     requestedTimelineStart: number,
     requestedTrackId: TimelineTrackId = DEFAULT_VIDEO_TRACK_ID,
+    options: { layer?: number } = {},
   ) => {
     if (asset.duration <= 0) {
       return;
@@ -992,19 +994,15 @@ export function useVideoTimeline({
     const trackId = normalizeVideoTrackId(requestedTrackId);
 
     setVideoClips((current) => {
-      const timelineStart = rippleMode
-        ? Math.max(0, requestedTimelineStart)
-        : findNextAvailableTimelineStart(
-            current,
-            trackId,
-            requestedTimelineStart,
-            asset.duration,
-          );
+      const placed = snapPlacementRange(requestedTimelineStart, asset.duration);
+      if (!rippleMode && !isVideoRangeFree(current, [], trackId, placed.start, placed.end)) return current;
+      const timelineStart = rippleMode ? Math.max(0, requestedTimelineStart) : placed.start;
 
       const clip: VideoTimelineClip = {
         id: newId,
         kind: "video",
         trackId,
+        ...(options.layer === undefined ? {} : { layer: options.layer }),
         sourceId: asset.id,
         sourcePath: asset.path,
         sourceName: asset.name,
@@ -1032,7 +1030,7 @@ export function useVideoTimeline({
         audioFadeInDuration: 0,
         audioFadeOutDuration: 0,
         timelineStart,
-        timelineEnd: timelineStart + asset.duration,
+        timelineEnd: rippleMode ? timelineStart + asset.duration : placed.end,
       };
 
       window.requestAnimationFrame(() => {
