@@ -2382,6 +2382,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(
         <div ref={scrollRef} className="timeline-scroll" onWheel={handleWheel}>
           <div
             className="timeline-content"
+            data-workspace-duration={workspaceDuration}
             style={{
               width: `${timelineTrackWidthPx}px`,
             }}

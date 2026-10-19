@@ -137,6 +137,8 @@ import {
   type TimelineRange,
   type TimelineRangeEditMode,
 } from "./utils/timelineRangeEdits";
+import { findPlanConflicts, planVideoPlacement, snapPlacementRange, type PlacementInput} from "./utils/timelinePlacement";
+import { stripRippleAutoHealMetadata } from "./utils/timelineRippleEdits";
 import {
   effectiveVideoLayer,
   normalizedProgramLayersForVideoOrder,
@@ -568,11 +570,13 @@ function App() {
     currentTimeRef.current = next;
     setPlaybackClockTime(next, true);
   }, []);
-  const handlePlaybackTimeChange = useCallback((time: number) => {
+  const handlePlaybackTimeChange = useCallback((time: number, immediate = false) => {
     if (!Number.isFinite(time)) return;
     const next = Math.max(0, time);
     currentTimeRef.current = next;
-    setPlaybackClockTime(next);
+    // Pausing/starting/seeking must not wait for the normal 32 ms playhead
+    // render throttle; continuous playback can still use the throttled path.
+    setPlaybackClockTime(next, immediate);
   }, []);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [videoPath, setVideoPath] = useState<string | null>(null);
@@ -916,6 +920,7 @@ function App() {
     videoDuration,
   ]);
 
+  const placementCommitBusyRef = useRef(false);
   const latestSaveStateRef = useRef({
     activeProjectId,
     videoPath,
@@ -945,6 +950,9 @@ function App() {
     videoDuration,
     hasUnsavedChanges,
   };
+
+  // Hold off a second placement until React has committed the first one.
+  useEffect(() => { placementCommitBusyRef.current = false; }, [videoClips, trackSettings]);
 
   const editedContentEnd = Math.max(
     0,
@@ -995,6 +1003,65 @@ function App() {
       setTrackSettings(snapshot.trackSettings);
     },
   });
+
+  const getPlacementSnapshot = () => {
+    const latest = latestSaveStateRef.current;
+    return {
+      videoClips: latest.videoClips,
+      audioClips: latest.audioClips,
+      adjustmentLayers: latest.adjustmentLayers,
+      trackSettings: { ...DEFAULT_TIMELINE_TRACK_SETTINGS, ...latest.trackSettings } as TimelineTrackSettings,
+    };
+  };
+
+  const prepareVideoPlacement = (items: PlacementInput["items"], preferredTrackId?: TimelineTrackId) => {
+    const snapshot = getPlacementSnapshot();
+    const input: PlacementInput = { ...snapshot, items, preferredTrackId };
+    if (new Set(items.map(item => item.key)).size !== items.length) throw new Error("Duplicate placement key");
+    const plan = planVideoPlacement(input);
+    if (plan.assignments.length !== items.length || findPlanConflicts(input, plan).length) {
+      throw new Error("No non-overlapping placement available");
+    }
+    const settings: TimelineTrackSettings = { ...snapshot.trackSettings };
+    for (const pair of plan.newTracks) {
+      if ((settings[pair.videoTrackId] && !settings[pair.videoTrackId].deleted) ||
+          (settings[pair.audioTrackId] && !settings[pair.audioTrackId].deleted)) {
+        throw new Error("Planned track already exists");
+      }
+      settings[pair.videoTrackId] = { ...defaultTrackControlState("video"), linkedTrackId: pair.audioTrackId, deleted: false };
+      settings[pair.audioTrackId] = { ...defaultTrackControlState("audio"), locked: true, linkedTrackId: pair.videoTrackId, deleted: false };
+    }
+    for (const assignment of plan.assignments) {
+      const video = settings[assignment.trackId];
+      const audioId = video?.linkedTrackId;
+      const audio = audioId ? settings[audioId] : undefined;
+      if (!/^video-\d+$/.test(assignment.trackId) || !video || video.deleted || video.locked || video.hidden ||
+          !audioId || !/^audio-\d+$/.test(audioId) || !audio || audio.deleted || audio.linkedTrackId !== assignment.trackId) {
+        throw new Error("Invalid eligible video/audio track pair");
+      }
+    }
+    return { snapshot, plan, settings, newVideoTracks: new Set(plan.newTracks.map(pair => pair.videoTrackId)) };
+  };
+
+  const layerForExistingPlacement = (clips: VideoTimelineClip[], trackId: TimelineTrackId, atTime: number): number | undefined => {
+    const nearest = clips.filter(clip => clip.trackId === trackId).sort((a, b) =>
+      Math.abs(a.timelineStart - atTime) - Math.abs(b.timelineStart - atTime) || a.id.localeCompare(b.id))[0];
+    return nearest ? effectiveVideoLayer(nearest) : undefined;
+  };
+
+  const commitVideoPlacement = (clips: VideoTimelineClip[], settings: TimelineTrackSettings, ids: string[]) => {
+    placementCommitBusyRef.current = true;
+    beginHistoryTransaction();
+    try {
+      clearSubtitleSelection();
+      clearAudioClipSelection();
+      setTrackSettings(settings);
+      replaceVideoClips(clips);
+      selectVideoClips(ids, ids[0] ?? null);
+    } finally {
+      window.requestAnimationFrame(() => endHistoryTransaction());
+    }
+  };
 
   const selectedAdjustmentLayer = selectedAdjustmentLayerId
     ? (adjustmentLayers.find(
@@ -2118,44 +2185,51 @@ function App() {
     timelinePasteTargetRef.current = { trackId, time: Math.max(0, time) };
   };
 
+  const placeOrdinaryVideoCopies = (sources: VideoTimelineClip[], requestedStart: number, preferredTrackId?: TimelineTrackId): boolean => {
+    if (!sources.length || !Number.isFinite(requestedStart) || placementCommitBusyRef.current || isExporting || exportStartingRef.current) return false;
+    if (rippleMode) {
+      beginHistoryTransaction();
+      clearSubtitleSelection();
+      insertVideoClipCopies(sources, requestedStart, preferredTrackId);
+      window.requestAnimationFrame(() => endHistoryTransaction());
+      return true;
+    }
+    if (sources.some(clip => clip.compoundId)) return false;
+    try {
+      const start = snapPlacementRange(Math.max(0, requestedStart), 1).start;
+      const delta = start - Math.min(...sources.map(clip => clip.timelineStart));
+      const prepared = prepareVideoPlacement(sources.map(clip => ({
+        key: clip.id, sourceTrackId: clip.trackId, start: clip.timelineStart + delta,
+        duration: clip.timelineEnd - clip.timelineStart,
+      })), preferredTrackId);
+      const assignments = new Map(prepared.plan.assignments.map(a => [a.key, a]));
+      const copies = sources.map((source): VideoTimelineClip => {
+        const a = assignments.get(source.id);
+        if (!a) throw new Error("Missing planned copy assignment");
+        return {
+          ...stripRippleAutoHealMetadata(source), id: crypto.randomUUID(), trackId: a.trackId,
+          timelineStart: a.start, timelineEnd: a.end,
+          layer: prepared.newVideoTracks.has(a.trackId) ? a.layer :
+            layerForExistingPlacement(prepared.snapshot.videoClips, a.trackId, a.start),
+          compoundId: undefined, compoundName: undefined, compoundAnchor: undefined,
+          compoundDisplay: undefined, compoundMemberCount: undefined,
+        };
+      });
+      commitVideoPlacement([...prepared.snapshot.videoClips, ...copies], prepared.settings, copies.map(c => c.id));
+      return true;
+    } catch (error) {
+      console.error("Video copy placement failed:", error);
+      return false;
+    }
+  };
+
   const pasteVideoClipAtTarget = () => {
     const clipboard = videoClipboardRef.current;
-
-    if (!clipboard || clipboard.clips.length === 0) {
-      return false;
-    }
-
-    const target = timelinePasteTargetRef.current ?? {
-      trackId: clipboard.clips[0].trackId,
-      time: clipboard.groupEnd,
-    };
-    const sourceTrackIds = [
-      ...new Set(clipboard.clips.map((clip) => clip.trackId)),
-    ];
-    const targetTrackIds =
-      sourceTrackIds.length === 1 ? [target.trackId] : sourceTrackIds;
-
-    if (
-      timelineTrackKindFromId(target.trackId) !== "video" ||
-      targetTrackIds.some(
-        (trackId) =>
-          timelineTrackKindFromId(trackId) !== "video" ||
-          trackSettings[trackId]?.deleted === true ||
-          trackSettings[trackId]?.locked,
-      )
-    ) {
-      return false;
-    }
-
-    beginHistoryTransaction();
-    clearSubtitleSelection();
-    insertVideoClipCopies(
-      clipboard.clips,
-      target.time,
-      sourceTrackIds.length === 1 ? target.trackId : undefined,
-    );
-    window.requestAnimationFrame(() => endHistoryTransaction());
-    return true;
+    if (!clipboard?.clips.length) return false;
+    const target = timelinePasteTargetRef.current ?? { trackId: clipboard.clips[0].trackId, time: clipboard.groupEnd };
+    if (timelineTrackKindFromId(target.trackId) !== "video") return false;
+    const tracks = new Set(clipboard.clips.map(c => c.trackId));
+    return placeOrdinaryVideoCopies(clipboard.clips, target.time, tracks.size === 1 ? target.trackId : undefined);
   };
 
   const pasteCompoundAtTarget = () => {
@@ -2223,19 +2297,9 @@ function App() {
       return true;
     }
 
-    if (!selectedVideoClipsAreEditable) {
-      return false;
-    }
-
-    const groupEnd = Math.max(
-      ...selectedVideoClips.map((clip) => clip.timelineEnd),
-    );
-
-    beginHistoryTransaction();
-    clearSubtitleSelection();
-    insertVideoClipCopies(selectedVideoClips, groupEnd);
-    window.requestAnimationFrame(() => endHistoryTransaction());
-    return true;
+    if (!selectedVideoClipsAreEditable) return false;
+    const groupEnd = Math.max(...selectedVideoClips.map(clip => clip.timelineEnd));
+    return placeOrdinaryVideoCopies(selectedVideoClips, groupEnd);
   };
 
   const deleteSelectedAudioClipsWithHistory = () => {
@@ -4414,34 +4478,49 @@ function App() {
     return id;
   };
 
-  const insertMediaAssetOnTimeline = (
-    asset: ProjectMediaAsset,
-    timelineTime: number,
-    trackId: TimelineTrackId,
-  ) => {
-    if (asset.duration <= 0) return;
-
-    const trackKind = timelineTrackKindFromId(trackId);
-
-    if (trackKind === "video") {
-      if (asset.kind !== "video" || trackSettings[trackId]?.locked) return;
-      beginHistoryTransaction();
-      clearSubtitleSelection();
-      clearAudioClipSelection();
-      insertVideoClipFromMedia(asset, timelineTime, trackId);
-      window.requestAnimationFrame(() => endHistoryTransaction());
+  const insertMediaAssetOnTimeline = (asset: ProjectMediaAsset, timelineTime: number, trackId: TimelineTrackId) => {
+    if (!Number.isFinite(asset.duration) || asset.duration <= 0 || !Number.isFinite(timelineTime) || isExporting || exportStartingRef.current || placementCommitBusyRef.current) return;
+    const kind = timelineTrackKindFromId(trackId);
+    const settings = latestSaveStateRef.current.trackSettings;
+    if (kind === "video") {
+      if (asset.kind !== "video" || settings[trackId]?.locked || settings[trackId]?.deleted) return;
+      const requested = Math.max(0, timelineTime);
+      if (rippleMode) {
+        beginHistoryTransaction();
+        clearSubtitleSelection();
+        clearAudioClipSelection();
+        insertVideoClipFromMedia(asset, requested, trackId);
+        window.requestAnimationFrame(() => endHistoryTransaction());
+        return;
+      }
+      try {
+        const prepared = prepareVideoPlacement([{
+          key: "media", sourceTrackId: trackId, start: requested, duration: asset.duration,
+        }], trackId);
+        const assignment = prepared.plan.assignments[0];
+        if (!assignment) throw new Error("No video placement assignment");
+        const clip: VideoTimelineClip = {
+          id: crypto.randomUUID(), kind: "video", trackId: assignment.trackId,
+          layer: prepared.newVideoTracks.has(assignment.trackId) ? assignment.layer :
+            layerForExistingPlacement(prepared.snapshot.videoClips, assignment.trackId, assignment.start),
+          sourceId: asset.id, sourcePath: asset.path, sourceName: asset.name,
+          sourceIn: 0, sourceOut: asset.duration, sourceDuration: asset.duration,
+          playbackRate: 1, positionX: 0, positionY: 0, scale: 100, rotation: 0,
+          opacity: 100, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0,
+          transitionInType: "none", transitionInDuration: 0.5,
+          transitionOutType: "none", transitionOutDuration: 0.5,
+          videoFadeInDuration: 0, videoFadeOutDuration: 0, audioVolume: 100,
+          audioMuted: false, audioFadeInDuration: 0, audioFadeOutDuration: 0,
+          timelineStart: assignment.start, timelineEnd: assignment.end,
+        };
+        commitVideoPlacement([...prepared.snapshot.videoClips, clip], prepared.settings, [clip.id]);
+      } catch (error) {
+        console.error("Media insertion failed before commit:", error);
+      }
       return;
     }
-
-    if (trackKind === "audio") {
-      // A linked audio row mirrors its owning video track and does not accept
-      // independent media. Standalone audio rows accept audio files and the
-      // audio stream of imported video files.
-      if (
-        trackSettings[trackId]?.linkedTrackId ||
-        trackSettings[trackId]?.locked
-      )
-        return;
+    if (kind === "audio") {
+      if (settings[trackId]?.linkedTrackId || settings[trackId]?.locked || settings[trackId]?.deleted) return;
       markNextChangeImmediate();
       clearSubtitleSelection();
       clearVideoClipSelection();

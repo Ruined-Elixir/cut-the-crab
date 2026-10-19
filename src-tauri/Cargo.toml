@@ -1,6 +1,6 @@
 [package]
 name = "cut-the-crab"
-version = "1.0.0"
+version = "2.0.0"
 description = "Cut The Crab desktop nonlinear video editor"
 authors = ["Ruined"]
 edition = "2021"

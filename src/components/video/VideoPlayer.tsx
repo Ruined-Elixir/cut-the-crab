@@ -125,7 +125,7 @@ type VideoPlayerProps = {
   onChooseVideo?: () => void | Promise<void>;
 
   onDurationChange?: (duration: number) => void;
-  onTimeChange?: (currentTime: number) => void;
+  onTimeChange?: (currentTime: number, immediate?: boolean) => void;
   locked?: boolean;
 
   seekRequest?: SeekRequest | null;
@@ -881,6 +881,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const subtitleClockVideoRef = useRef<HTMLVideoElement | null>(null);
     const subtitleClockClipIdRef = useRef<string | null>(null);
     const lastSubtitleClockRenderAtRef = useRef(0);
+    // A transport pause must not seek the just-paused video a second time.
+    // Explicit timeline scrubs still use the normal exact-frame seek path.
+    const pauseHoldTimelineTimeRef = useRef<number | null>(null);
+    // rVFC reports the time of the frame actually submitted for presentation.
+    // The performance.now transport clock can be ahead of this visible frame.
+    const lastPresentedFrameRef = useRef<{
+      clipId: string;
+      sourceTime: number;
+      timelineTime: number;
+      observedAt: number;
+    } | null>(null);
+    // Force WebKit to decode the initial paused frame even when it waits for a
+    // non-zero seek before emitting loadeddata. Keyed by media element instance.
+    const initialFramePrimedRef = useRef(new WeakMap<HTMLVideoElement, string>());
     const [skimPreviewTime, setSkimPreviewTime] = useState<number | null>(null);
     const [videoVisibility, setVideoVisibility] = useState<VisibilityState>({});
     const [presentedVideoClipIds, setPresentedVideoClipIds] = useState<
@@ -1335,7 +1349,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     );
 
     useEffect(() => {
-      currentTimeRef.current = currentTime;
+      // This store value is throttled for React rendering (32 ms). Writing it
+      // back into the authoritative transport ref *while playing* makes each
+      // rendered update rewind the playback clock and causes timing jitter.
+      // Seek requests write currentTimeRef synchronously in seekTo instead.
+      if (!isPlayingRef.current && pauseHoldTimelineTimeRef.current === null &&
+          skimPreviewTimeRef.current === null) {
+        currentTimeRef.current = currentTime;
+      }
     }, [currentTime]);
 
     useEffect(() => {
@@ -2824,6 +2845,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
       const maxDuration = Math.max(0, timelineDurationRef.current || 0);
       const nextTime = Math.max(0, Math.min(maxDuration, time));
+      pauseHoldTimelineTimeRef.current = null;
       const shouldResume = isPlayingRef.current;
       cutHoldClipIdRef.current = null;
       displayTimeRef.current = nextTime;
@@ -2860,13 +2882,46 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     const pausePlayback = () => {
       if (!isPlayingRef.current) return;
+
+      // Pause the decoded decks *first*. There is no transport seek on Pause.
+      // WebKit's displayed video frame may lag the performance.now playhead;
+      // use the latest presentation timestamp when it is still fresh, rather
+      // than allowing the editor to jump ahead to the speculative clock time.
+      const now = performance.now();
+      const frame = lastPresentedFrameRef.current;
+      const timelineBeforePause = currentTimeRef.current;
+      let pausedAt = timelineBeforePause;
+      if (
+        frame &&
+        now - frame.observedAt < 200 &&
+        frame.timelineTime <= timelineBeforePause + 0.05 &&
+        timelineBeforePause - frame.timelineTime < 0.3
+      ) {
+        const clip = videoClipsRef.current.find((item) => item.id === frame.clipId);
+        const video = videoRefsByClipId.current[frame.clipId];
+        const isPresented = Object.values(presentedVideoClipIdsRef.current).includes(frame.clipId);
+        if (clip && video && isPresented && !isFreezeFrameClip(clip) &&
+            !isReverseVideoClip(clip)) {
+          pausedAt = frame.timelineTime;
+        }
+      }
+
       isPlayingRef.current = false;
-      setIsPlaying(false);
-      cutHoldClipIdRef.current = null;
       (Object.values(videoRefsByClipId.current) as Array<HTMLVideoElement | null>)
         .forEach((element) => element?.pause());
       (Object.values(audioRefsByPlaybackKey.current) as Array<HTMLAudioElement | null>)
         .forEach((element) => element?.pause());
+
+      pauseHoldTimelineTimeRef.current = pausedAt;
+      currentTimeRef.current = pausedAt;
+      displayTimeRef.current = pausedAt;
+      playbackAnchorTimelineRef.current = pausedAt;
+      playbackAnchorPerformanceRef.current = now;
+      setIsPlaying(false);
+      // A transport boundary must publish immediately; a throttled store
+      // update can render a later playhead after the user pressed Pause.
+      onTimeChangeRef.current?.(pausedAt, true);
+      cutHoldClipIdRef.current = null;
     };
 
     const togglePlayPause = () => {
@@ -2890,6 +2945,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         onTimeChangeRef.current?.(0);
       }
 
+      pauseHoldTimelineTimeRef.current = null;
+      currentTimeRef.current = playbackStart;
+      // Show the transport as playing immediately; do not wait for a throttled
+      // playhead event to update the controls.
+      onTimeChangeRef.current?.(playbackStart, true);
       playbackAnchorTimelineRef.current = playbackStart;
       playbackAnchorPerformanceRef.current = performance.now();
 
@@ -2902,7 +2962,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       cutHoldClipIdRef.current = null;
       isPlayingRef.current = true;
       setIsPlaying(true);
-      syncAllMediaToTimeline(playbackStart, true, true);
+      // A paused video is already decoded at this position. Resuming should
+      // play it, not re-seek and wait for another frame to be decoded.
+      syncAllMediaToTimeline(playbackStart, true, false);
     };
 
     useEffect(() => {
@@ -2950,10 +3012,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     }, [videoPath]);
 
     useEffect(() => {
-      if (isPlaying) {
+      if (isPlaying) return;
+
+      // Pause leaves the existing decoded frame in place. Force-seeking here
+      // was moving the picture forward after the user had pressed Pause and
+      // could also disturb the subtitle canvas's frozen cue.
+      const heldTime = pauseHoldTimelineTimeRef.current;
+      if (heldTime !== null && Math.abs(displayTime - heldTime) < 1 / 60) {
         return;
       }
-
+      pauseHoldTimelineTimeRef.current = null;
       syncAllMediaToTimeline(displayTime, false, true);
     }, [
       displayTime,
@@ -3064,6 +3132,29 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       );
 
       if (activeClip?.id === clipId) {
+        // WebKit may postpone decoding a paused element at source time zero
+        // until play() is first called. A tiny in-frame seek requests its first
+        // decoded picture immediately without starting playback or audio.
+        if (!isPlayingRef.current && video && !video.seeking &&
+            video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
+            initialFramePrimedRef.current.get(video) !== video.currentSrc) {
+          initialFramePrimedRef.current.set(video, video.currentSrc);
+          const sourceTime = timelineTimeToSourceTime(activeClip, timelineTime);
+          const sourceEnd = Math.min(
+            Math.max(activeClip.sourceIn, activeClip.sourceOut),
+            Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY,
+          );
+          // At a trimmed/reversed source endpoint, ask for the last real
+          // frame rather than the exact end-of-media position.
+          const primeTime = sourceTime >= sourceEnd - 0.002
+            ? Math.max(0, sourceTime - 0.001)
+            : Math.min(sourceEnd, sourceTime + 0.001);
+          try {
+            video.currentTime = Math.max(0, primeTime);
+          } catch (error) {
+            console.warn(`${trackId} initial paused-frame prime failed:`, error);
+          }
+        }
         activeVideoClipIdRefs.current[trackId] = null;
         syncVideoTrackToTimeline(
           trackId,
@@ -3136,6 +3227,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       onDurationChangeRef.current?.(audio.duration);
     };
 
+    const transportCommandsRef = useRef({ togglePlayPause, jumpBy });
+    transportCommandsRef.current = { togglePlayPause, jumpBy };
+
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement;
@@ -3155,17 +3249,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         if (event.code === "Space") {
           event.preventDefault();
-          togglePlayPause();
+          transportCommandsRef.current.togglePlayPause();
         }
 
         if (event.code === "ArrowLeft") {
           event.preventDefault();
-          jumpBy(-skipSeconds);
+          transportCommandsRef.current.jumpBy(-skipSeconds);
         }
 
         if (event.code === "ArrowRight") {
           event.preventDefault();
-          jumpBy(skipSeconds);
+          transportCommandsRef.current.jumpBy(skipSeconds);
         }
       };
 
@@ -3366,6 +3460,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         );
 
         const now = performance.now();
+        // Retain every actual presented-frame timestamp, even when we throttle
+        // React subtitle renders. Transport Pause reads the freshest sample.
+        lastPresentedFrameRef.current = {
+          clipId: clockClip.id,
+          sourceTime: mediaTime,
+          timelineTime: clampedTime,
+          observedAt: now,
+        };
         if (now - lastSubtitleClockRenderAtRef.current < 32) return;
         lastSubtitleClockRenderAtRef.current = now;
         setPresentedFrameTimelineTime((previous) =>

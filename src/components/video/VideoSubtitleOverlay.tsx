@@ -260,11 +260,9 @@ function VideoSubtitleOverlay({
     currentTimeRef.current = currentTime;
     isPlayingRef.current = isPlaying;
 
-    if (hardSync) {
-      clearSubtitleCanvas(canvas0Ref.current);
-      clearSubtitleCanvas(canvas1Ref.current);
-    }
-
+    // Never erase the visible ASS canvas before the worker has painted the
+    // target frame. Clearing both buffers on pause/seek makes captions vanish
+    // and can leave a whole cue blank until the next renderer rebuild.
     // While playing, SubtitlesOctopus advances from setIsPaused(false, time).
     // Four corrections per second are enough to keep it aligned without
     // flooding the worker. Paused/seeking states still synchronize immediately.
@@ -290,7 +288,8 @@ function VideoSubtitleOverlay({
       try {
         syncedRenderer.setRate?.(1);
         syncedRenderer.setIsPaused?.(!isPlaying, currentTimeRef.current);
-        syncedRenderer.setCurrentTime?.(currentTimeRef.current);
+        // Paused and playing state share the same exact timeline clock. The
+        // sync effect drives seeking; no second competing seek is needed here.
       } catch (error) {
         console.error("Failed to update libass transport state:", error);
       }
@@ -316,6 +315,10 @@ function VideoSubtitleOverlay({
     if (selectedActive) {
       return selectedActive;
     }
+
+    // Most of the timeline contains just one active cue. Avoid sorting unless
+    // two or more subtitle tracks actually overlap at the playhead.
+    if (active.length < 2) return active[0];
 
     return active.sort((a, b) => {
       const aIndex = Number(getSubtitleTrackId(a).split("-")[1] ?? 1);
@@ -705,28 +708,65 @@ function VideoSubtitleOverlay({
     [subtitles, fontReady],
   );
 
-  // Use the identical glyph metrics and wrap rules as ASS generation.
-  const boxMetrics = fontReady
-    ? { lineRatio: getSubtitleLineRatio(), measureLine: measureSubtitleLine }
-    : { lineRatio: 1.3, measureLine: (line: string, emPx: number) => line.length * emPx * 0.55 };
-  const boxSubtitle = activeSubtitle ? {
-    ...activeSubtitle,
-    ...(effectivePosition ?? {}),
-    ...(boxDraft?.subtitleId === activeSubtitle.id ? boxDraft.patch : {}),
-  } : null;
-  const boxInput = boxSubtitle ? {
-    text: boxSubtitle.text,
-    fontSize: boxSubtitle.fontSize ?? 24,
-    italic: !!boxSubtitle.isItalic,
-    textAlign: boxSubtitle.textAlign ?? ("center" as const),
-    positionX: boxSubtitle.positionX ?? 50,
-    positionY: boxSubtitle.positionY ?? 80,
-    boxWidth: boxSubtitle.boxWidth,
-    rotation: boxSubtitle.rotation,
-    ...boxMetrics,
-  } : null;
-  const boxGeometry = boxInput ? computeSubtitleBox(boxInput) : null;
-  const autoBoxGeometry = boxInput ? computeSubtitleBox({ ...boxInput, boxWidth: undefined, rotation: 0 }) : null;
+  // Geometry is relatively expensive: measuring CJK text calls canvas
+  // measureText for each wrapped line. The playhead updates many times per
+  // second, but the box does not change while the same subtitle is on screen.
+  // Cache the metrics and geometries until the subtitle or drag actually moves.
+  const boxMetrics = useMemo(
+    () =>
+      fontReady
+        ? { lineRatio: getSubtitleLineRatio(), measureLine: measureSubtitleLine }
+        : {
+            lineRatio: 1.3,
+            measureLine: (line: string, emPx: number) => line.length * emPx * 0.55,
+          },
+    [fontReady],
+  );
+
+  const effectiveBoxX = effectivePosition?.positionX;
+  const effectiveBoxY = effectivePosition?.positionY;
+  const boxSubtitle = useMemo(
+    () =>
+      activeSubtitle
+        ? {
+            ...activeSubtitle,
+            positionX: effectiveBoxX,
+            positionY: effectiveBoxY,
+            ...(boxDraft?.subtitleId === activeSubtitle.id ? boxDraft.patch : {}),
+          }
+        : null,
+    [activeSubtitle, effectiveBoxX, effectiveBoxY, boxDraft],
+  );
+
+  const boxInput = useMemo(
+    () =>
+      boxSubtitle
+        ? {
+            text: boxSubtitle.text,
+            fontSize: boxSubtitle.fontSize ?? 24,
+            italic: !!boxSubtitle.isItalic,
+            textAlign: boxSubtitle.textAlign ?? ("center" as const),
+            positionX: boxSubtitle.positionX ?? 50,
+            positionY: boxSubtitle.positionY ?? 80,
+            boxWidth: boxSubtitle.boxWidth,
+            rotation: boxSubtitle.rotation,
+            ...boxMetrics,
+          }
+        : null,
+    [boxSubtitle, boxMetrics],
+  );
+
+  const boxGeometry = useMemo(
+    () => (boxInput ? computeSubtitleBox(boxInput) : null),
+    [boxInput],
+  );
+  const autoBoxGeometry = useMemo(
+    () =>
+      boxInput
+        ? computeSubtitleBox({ ...boxInput, boxWidth: undefined, rotation: 0 })
+        : null,
+    [boxInput],
+  );
 
   const clearBoxDraft = () => {
     if (boxDraftTimerRef.current !== null) {
@@ -929,6 +969,11 @@ function VideoSubtitleOverlay({
 
   useEffect(() => {
     return () => {
+      // A pending drag fallback should never outlive a closed project.
+      if (boxDraftTimerRef.current !== null) {
+        window.clearTimeout(boxDraftTimerRef.current);
+        boxDraftTimerRef.current = null;
+      }
       disposeRendererOnce(renderer0Ref.current);
       disposeRendererOnce(renderer1Ref.current);
 

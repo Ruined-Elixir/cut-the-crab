@@ -126,6 +126,9 @@ function MediaBrowser({
     const trackId = target.dataset.videoTrackId ?? target.dataset.audioTrackId;
     if (!trackId || timelineDuration <= 0) return null;
 
+    const workspace = target.closest<HTMLElement>(".timeline-content");
+    const observedDuration = Number(workspace?.dataset.workspaceDuration);
+    const dropDuration = Number.isFinite(observedDuration) && observedDuration > 0 ? observedDuration : timelineDuration;
     const rect = target.getBoundingClientRect();
     if (forceTimelineStart) {
       return { element: target, trackId, timelineTime: 0 };
@@ -135,7 +138,7 @@ function MediaBrowser({
       0,
       Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)),
     );
-    return { element: target, trackId, timelineTime: ratio * timelineDuration };
+    return { element: target, trackId, timelineTime: ratio * dropDuration };
   };
 
   const setTrackPreview = (
@@ -144,10 +147,13 @@ function MediaBrowser({
     mediaDuration: number,
   ) => {
     clearTrackPreview();
+    const workspace = element.closest<HTMLElement>(".timeline-content");
+    const observedDuration = Number(workspace?.dataset.workspaceDuration);
+    const dropDuration = Number.isFinite(observedDuration) && observedDuration > 0 ? observedDuration : timelineDuration;
     const left =
-      timelineDuration > 0 ? (timelineTime / timelineDuration) * 100 : 0;
+      dropDuration > 0 ? (timelineTime / dropDuration) * 100 : 0;
     const width =
-      timelineDuration > 0 ? (mediaDuration / timelineDuration) * 100 : 0;
+      dropDuration > 0 ? (mediaDuration / dropDuration) * 100 : 0;
     element.classList.add("media-drag-target");
     element.style.setProperty("--media-drag-left", `${left}%`);
     element.style.setProperty("--media-drag-width", `${Math.max(0.6, width)}%`);

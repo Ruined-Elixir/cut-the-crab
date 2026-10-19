@@ -20,7 +20,8 @@ export type PlacementPlan = {
 // Comparing integer frame boundaries avoids floating-point edge collisions.
 export function snapPlacementRange(start: number, duration: number) {
   if (!Number.isFinite(duration) || duration <= 0) throw new Error("Invalid clip duration");
-  const snappedStart = snapTimelineTimeToFrame(start);
+  if (!Number.isFinite(start)) throw new Error("Invalid clip start");
+  const snappedStart = snapTimelineTimeToFrame(Math.max(0, start));
   const startFrame = Math.round(snappedStart * TIMELINE_FPS);
   const frameCount = Math.max(1, Math.round(duration * TIMELINE_FPS));
   return { start: startFrame / TIMELINE_FPS, end: (startFrame + frameCount) / TIMELINE_FPS };
@@ -38,7 +39,7 @@ export function planVideoPlacement(input: PlacementInput): PlacementPlan {
   const usable = (id: string) => {
     const s = settings[id];
     const audio = s?.linkedTrackId;
-    return /^video-\d+$/.test(id) && !!s && !s.locked && !s.hidden && !s.deleted && !!audio && /^audio-\d+$/.test(audio) && !settings[audio]?.deleted;
+    return /^video-\d+$/.test(id) && !!s && !s.locked && !s.hidden && !s.deleted && !!audio && /^audio-\d+$/.test(audio) && !!settings[audio] && !settings[audio]?.deleted && settings[audio]?.linkedTrackId === id;
   };
   const trackIds = () => [...new Set([...Object.keys(settings), ...input.videoClips.map(c => c.trackId)])].filter(usable).sort((a,b) => timelineTrackIndexFromId(a) - timelineTrackIndexFromId(b));
   const maxLayer = Math.max(0, ...input.videoClips.map(effectiveVideoLayer), ...input.adjustmentLayers.map(effectiveAdjustmentLayer));
@@ -50,6 +51,7 @@ export function planVideoPlacement(input: PlacementInput): PlacementPlan {
     groups.set(item.sourceTrackId, group);
   }
   const singleSourceTrack = groups.size === 1;
+  const usedTargetTracks = new Set<string>();
   for (const [sourceTrackId, items] of groups) {
     const ranges = items.map(item => ({ item, range: snapPlacementRange(item.start, item.duration) }));
     const available = (id: string) => ranges.every(({range}, i) =>
@@ -59,7 +61,7 @@ export function planVideoPlacement(input: PlacementInput): PlacementPlan {
     );
     const preferred = singleSourceTrack ? (input.preferredTrackId ?? sourceTrackId) : sourceTrackId;
     let target = [preferred, ...trackIds()].filter((id, idx, arr) => arr.indexOf(id) === idx)
-      .find(id => usable(id) && available(id));
+      .find(id => usable(id) && !usedTargetTracks.has(id) && available(id));
     let newLayer: number | undefined;
     if (!target) {
       target = nextTimelineTrackId("video", settings, input.videoClips, input.audioClips);
@@ -69,6 +71,7 @@ export function planVideoPlacement(input: PlacementInput): PlacementPlan {
       newTracks.push({ videoTrackId: target, audioTrackId: audioId });
       newLayer = Math.max(maxLayer + newTracks.length, defaultLayerForTrack(target));
     }
+    usedTargetTracks.add(target);
     for (const {item, range} of ranges) {
       // An existing target track uses its layer defaults; never preserve source-layer overrides.
       assignments.push({ key: item.key, trackId: target, start: range.start, end: range.end,
